@@ -27,6 +27,18 @@ pub struct Stats {
     /// Largest single delivery (bankings within DELIVERY_WINDOW of each other).
     pub best_run: f64,
     pub deaths: u32,
+    /// Rivals scrapped, and the value of cargo they escaped with.
+    pub jumpers: u32,
+    pub lost: f64,
+}
+
+/// This shift's credited kills by rival hull.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Kills {
+    pub skiff: u32,
+    pub cutter: u32,
+    pub brute: u32,
+    pub gunship: u32,
 }
 
 pub struct World {
@@ -52,7 +64,32 @@ pub struct World {
     pub items: Vec<Item>,
     pub rocks: Vec<Rock>,
     pub wrecks: Vec<Wreck>,
+    pub jumpers: Vec<Jumper>,
+    pub crabs: Vec<Crab>,
+    /// Your cutter rounds, and rival bolts.
+    pub bullets: Vec<Bullet>,
+    pub ebullets: Vec<Bullet>,
+    /// Shared id counter for items and jumpers.
     pub next_id: u32,
+    /// The rival crews' grudge (jumpers destroyed); sets their stage.
+    pub grudge: f64,
+    pub kills: Kills,
+    /// Rival bounties paid into this shift's earnings.
+    pub bounties: f64,
+    pub shots_fired: u32,
+    /// Countdowns to the next rival arrival and field refills. A test
+    /// field starts them at infinity so nothing arrives on its own.
+    pub jumper_timer: f64,
+    pub rock_timer: f64,
+    pub wreck_timer: f64,
+    /// Seconds the UNDER ATTACK warning stays up.
+    pub under_attack_t: f64,
+    attack_alarm_at: f64,
+    /// Difficulty and belt multipliers on rival arrivals (Standard mode,
+    /// Hollis Belt: 1, 0 and 1).
+    pub diff_jumper_rate: f64,
+    pub diff_jumper_cap: f64,
+    pub belt_rivals: f64,
     pub cam: Camera,
     /// Viewport size in logical pixels; the camera's zoom depends on it.
     pub view: (f64, f64),
@@ -90,7 +127,23 @@ impl World {
             items: Vec::new(),
             rocks: Vec::new(),
             wrecks: Vec::new(),
+            jumpers: Vec::new(),
+            crabs: Vec::new(),
+            bullets: Vec::new(),
+            ebullets: Vec::new(),
             next_id: 1,
+            grudge: 0.0,
+            kills: Kills::default(),
+            bounties: 0.0,
+            shots_fired: 0,
+            jumper_timer: f64::INFINITY,
+            rock_timer: f64::INFINITY,
+            wreck_timer: f64::INFINITY,
+            under_attack_t: 0.0,
+            attack_alarm_at: -99.0,
+            diff_jumper_rate: 1.0,
+            diff_jumper_cap: 0.0,
+            belt_rivals: 1.0,
             cam: Camera {
                 x: BAY_X,
                 y: BAY_Y,
@@ -109,6 +162,9 @@ impl World {
     /// A new shift: the field is seeded and Marge opens the channel.
     pub fn new_shift(rng: Rng, view: (f64, f64)) -> World {
         let mut w = World::empty(rng, view);
+        w.jumper_timer = first_jumper_delay(w.shift_no);
+        w.rock_timer = ROCK_REFILL_TIME;
+        w.wreck_timer = WRECK_REFILL_TIME;
         w.populate();
         w.radio(Radio::Start, true, false);
         w
@@ -134,8 +190,44 @@ impl World {
         make_item(&mut self.rng, id, kind, x, y, vx, vy, self.belt_value)
     }
 
+    /// Create a rival with a fresh id at the current grudge stage
+    /// (not yet added to the field). `variant` None rolls one.
+    pub fn new_jumper(&mut self, x: f64, y: f64, variant: Option<Variant>) -> Jumper {
+        let id = self.next_id;
+        self.next_id += 1;
+        let stage = self.rival_stage();
+        make_jumper(&mut self.rng, id, x, y, variant, stage)
+    }
+
     pub fn item_index(&self, id: u32) -> Option<usize> {
         self.items.iter().position(|it| it.id == id)
+    }
+
+    pub fn jumper_index(&self, id: u32) -> Option<usize> {
+        self.jumpers.iter().position(|j| j.id == id)
+    }
+
+    /// The rivals' grudge stage index (0 Business .. 3 Vendetta).
+    pub fn rival_stage(&self) -> usize {
+        rival_stage_index(self.grudge)
+    }
+
+    /// A point just outside a random field edge, at least `min_dist`
+    /// from the tug when possible (edgePoint in 14-game-state.js).
+    pub(crate) fn edge_point(&mut self, min_dist: f64) -> (f64, f64) {
+        for _ in 0..20 {
+            let p = match self.rng.int(0, 3) {
+                0 => (self.rng.range(0.0, WORLD_W), -40.0),
+                1 => (WORLD_W + 40.0, self.rng.range(0.0, WORLD_H)),
+                2 => (self.rng.range(0.0, WORLD_W), WORLD_H + 40.0),
+                _ => (-40.0, self.rng.range(0.0, WORLD_H)),
+            };
+            let s = &self.ship.b;
+            if !self.ship.alive || js::dist(p.0, p.1, s.x, s.y) > min_dist {
+                return p;
+            }
+        }
+        (-40.0, -40.0)
     }
 
     /// True when a point is clear of the carrier's safe zone and existing bodies.
@@ -232,11 +324,20 @@ impl World {
         self.time_left -= dt;
 
         self.update_ship(input, dt);
-        // (Partner tug and magnetic scoop: milestones 5 and 3. Rivals: milestone 2.)
-        for it in &mut self.items {
+        // (Partner tug and magnetic scoop: milestones 5 and 3.)
+        for j in 0..self.jumpers.len() {
+            self.update_jumper(j, dt);
+        }
+        for i in 0..self.items.len() {
+            let it = &mut self.items[i];
             it.angle += it.spin * dt;
             it.thrown_t = (it.thrown_t - dt).max(0.0);
-            // (Reactor fuses: milestone 2, with volatile salvage from wrecks.)
+            if it.fuse > 0.0 {
+                it.fuse -= dt;
+                if it.fuse <= 0.0 {
+                    self.detonate(i);
+                }
+            }
         }
         for i in 0..self.rocks.len() {
             let r = &mut self.rocks[i];
@@ -266,12 +367,18 @@ impl World {
         self.integrate_all(dt);
         self.solve_cables(dt);
         self.resolve_collisions();
-        // (Bullets, crabs, refinery, drones, collectors, law, miners, nets,
-        // missiles and sentries update here in later milestones.)
+        self.update_bullets(dt);
+        for c in 0..self.crabs.len() {
+            self.update_crab(c, dt);
+        }
+        // (Refinery, drones, collectors, law, miners, nets, missiles and
+        // sentries update here in milestone 4.)
         self.update_bay(dt);
-        // (Tutorial, field events and spawns: milestones 5, 5 and 2.)
+        // (Tutorial and field events: milestone 5.)
+        self.update_spawns(dt);
         self.shake = (self.shake - dt * 30.0).max(0.0);
         self.screen_flash = (self.screen_flash - dt * 1.6).max(0.0);
+        self.under_attack_t = (self.under_attack_t - dt).max(0.0);
         self.sweep_dead();
         self.update_camera(dt);
 
@@ -309,7 +416,18 @@ impl World {
         let load_ratio = load / self.mods.winch_cap;
         let mods = &self.mods;
         let s = &mut self.ship;
-        // (Gun and strafe heat: milestone 2.)
+
+        // Heat sink shared by the guns and (from milestone 3) side thrusters.
+        s.heat = (s.heat - HEAT_COOL * dt).max(0.0);
+        let mut overheat = false;
+        if !s.overheated && s.heat >= 100.0 {
+            s.overheated = true;
+            s.heat = 100.0;
+            overheat = true;
+        }
+        if s.overheated && s.heat < OVERHEAT_RESUME {
+            s.overheated = false;
+        }
 
         // Max turn rate and responsiveness both drop with load, so a heavy
         // train makes the tug lazy to start and slow to stop rotating.
@@ -328,7 +446,10 @@ impl World {
             -REVERSE_THROTTLE * input.reverse
         };
         let mut force = SHIP_THRUST * mods.thrust_mul;
-        // (Crab, net, stun and afterburner modifiers: milestones 2 and 4.)
+        if self.crabs.iter().any(|c| c.state == CrabState::Latched) {
+            force *= CRAB_LATCHED_THRUST;
+        }
+        // (Net, stun and afterburner modifiers: milestone 4.)
 
         // Engines sputter under heavy loads: random short cut-outs.
         if throttle > 0.0 && load_ratio > SPUTTER_LOAD {
@@ -349,7 +470,49 @@ impl World {
         s.thrust_level = throttle.abs();
         s.throttle = throttle;
         let (level, sputtering) = (s.thrust_level, s.sputtering);
-        // (Side thrusters and firing: milestone 2.)
+        // (Side thrusters arrive with the shop parts in milestone 3.)
+
+        // The cannon. (Grinder slugs, which fire instead of cutter rounds,
+        // arrive with the grinder in milestone 3.)
+        s.fire_t -= dt;
+        let mut shots = 0;
+        if input.fire && s.fire_t <= 0.0 && mods.guns() > 0 && !s.overheated {
+            let (nx, ny) = (s.angle.cos(), s.angle.sin());
+            s.fire_t = FIRE_INTERVAL * mods.fire_mul;
+            // Every barrel fires at once, in parallel.
+            for &off in &mods.barrels {
+                let (ox, oy) = (-ny * off, nx * off);
+                self.bullets.push(Bullet {
+                    x: s.b.x + nx * MUZZLE + ox,
+                    y: s.b.y + ny * MUZZLE + oy,
+                    vx: s.b.vx + nx * BULLET_SPEED,
+                    vy: s.b.vy + ny * BULLET_SPEED,
+                    life: BULLET_LIFE,
+                    dmg: mods.cannon_dmg,
+                });
+            }
+            // Cannon levels add a fan of angled shots from the muzzle, in pairs.
+            for k in 1..=mods.cannon_spread / 2 {
+                for side in [-1.0, 1.0] {
+                    let a = s.angle + side * f64::from(k) * CANNON_SPREAD_ANGLE;
+                    self.bullets.push(Bullet {
+                        x: s.b.x + nx * MUZZLE,
+                        y: s.b.y + ny * MUZZLE,
+                        vx: s.b.vx + a.cos() * BULLET_SPEED,
+                        vy: s.b.vy + a.sin() * BULLET_SPEED,
+                        life: BULLET_LIFE,
+                        dmg: mods.cannon_dmg,
+                    });
+                }
+            }
+            // Extra barrels add heat, but less than a full shot each, so a
+            // three-barrel volley runs hot without being useless.
+            s.heat += HEAT_PER_SHOT
+                * (1.0 + 0.6 * (mods.guns() as f64 - 1.0) + 0.15 * f64::from(mods.cannon_spread))
+                * mods.heat_mul;
+            self.shots_fired += 1;
+            shots = mods.guns();
+        }
 
         let low = !s.low_warned && s.hp < 30.0;
         if low {
@@ -370,11 +533,33 @@ impl World {
             shield_up = s.shield >= mods.shield_max;
         }
 
+        // Looping alarm: low hull beeps. (The netted warble: milestone 4.)
+        s.alarm_t -= dt;
+        let mut alarm = false;
+        if s.alarm_t <= 0.0 && s.hp < mods.max_hp * 0.3 {
+            s.alarm_t = 0.9;
+            alarm = true;
+        }
+
         self.emit(Event::Thrust {
             level,
             load: load_ratio,
             sputtering,
         });
+        if overheat {
+            self.radio(Radio::Overheat, true, false);
+            self.sfx(Sfx::Deny);
+        }
+        if shots > 0 {
+            self.sfx(Sfx::Shoot(1));
+            // The double report of a double barrel.
+            if shots > 1 {
+                self.sfx(Sfx::Shoot(-1));
+            }
+        }
+        if alarm {
+            self.sfx(Sfx::Alarm);
+        }
         if low {
             self.radio(Radio::HullLow, true, false);
         }
@@ -431,7 +616,7 @@ impl World {
     }
 
     /// Wreck the tug: cargo floats free, the deductible is charged, respawn soon.
-    fn kill_ship(&mut self) {
+    pub(crate) fn kill_ship(&mut self) {
         let s = &mut self.ship;
         s.alive = false;
         s.hp = 0.0;
@@ -448,7 +633,14 @@ impl World {
             Tint::Danger,
         );
         self.sever_at(0);
-        // (Crabs, nets, the law and rogue sentries react here in later milestones.)
+        for c in 0..self.crabs.len() {
+            if self.crabs[c].state == CrabState::Latched {
+                let vx = self.rng.range(-150.0, 150.0);
+                let vy = self.rng.range(-150.0, 150.0);
+                self.fling_crab(c, vx, vy);
+            }
+        }
+        // (Nets, the law and rogue sentries react here in milestone 4.)
         self.explosion_fx(x, y, 150.0, Tint::Hazard);
         self.shake = 18.0;
         self.sfx(Sfx::Boom);
@@ -470,6 +662,21 @@ impl World {
         s.spin_meter = 0.0;
         s.shield = self.mods.shield_max;
         s.shield_delay_t = 0.0;
+        s.heat = 0.0;
+        s.overheated = false;
+    }
+
+    /// Any hostile opening fire on the tug, or landing a hit, raises the
+    /// UNDER ATTACK warning; the klaxon sounds at most every few seconds.
+    pub(crate) fn under_attack(&mut self) {
+        if !self.ship.alive {
+            return;
+        }
+        self.under_attack_t = ATTACK_HUD_HOLD;
+        if self.t - self.attack_alarm_at > ATTACK_ALARM_GAP {
+            self.attack_alarm_at = self.t;
+            self.sfx(Sfx::AttackAlarm);
+        }
     }
 
     /// The fireball's lasting effects on the screen (explosionFx); the
@@ -528,7 +735,12 @@ impl World {
             if repaired_low {
                 self.radio(Radio::Repair, false, true);
             }
-            // (Latched crabs die in the bay: milestone 2.)
+            // The bay crew pries crabs off the hull.
+            for c in 0..self.crabs.len() {
+                if self.crabs[c].state == CrabState::Latched {
+                    self.kill_crab(c);
+                }
+            }
         }
     }
 
@@ -572,10 +784,19 @@ impl World {
             },
             speed: if named { 200.0 } else { 140.0 },
         });
+        let id = self.items[i].id;
+        for c in 0..self.crabs.len() {
+            if self.crabs[c].host == Some(id) {
+                self.kill_crab(c);
+            }
+        }
         self.remove_item(i);
         self.sfx(if named { Sfx::Jackpot } else { Sfx::Bank });
-        // (Cargo-pod reveal lines arrive with wrecks in milestone 2.)
-        if rare || hidden {
+        // (The spoken pod and rare lines carry the item name and value
+        // once the radio is ported in milestone 5.)
+        if hidden {
+            self.radio(Radio::Pod, true, false);
+        } else if rare {
             self.radio(Radio::Rare, true, false);
         } else if value >= 800.0 {
             self.radio(Radio::BankBig, true, false);
@@ -589,17 +810,47 @@ impl World {
         if self.items[i].dead {
             return;
         }
+        let id = self.items[i].id;
         if self.items[i].towed {
-            let id = self.items[i].id;
             self.remove_from_chain(id);
         }
-        self.items[i].dead = true;
+        // A rival dragging it loses its hook and goes hunting again.
+        if let Some(jid) = self.items[i].hooked_by.take() {
+            if let Some(j) = self.jumper_index(jid) {
+                self.jumpers[j].hook = None;
+                self.jumpers[j].state = JumperState::Hunt;
+            }
+        }
+        let it = &mut self.items[i];
+        it.dead = true;
+        let (vx, vy) = (it.b.vx, it.b.vy);
+        // Crabs riding or crawling off it drift free.
+        for c in &mut self.crabs {
+            if c.host == Some(id) && matches!(c.state, CrabState::Ride | CrabState::Crawl) {
+                c.state = CrabState::Free;
+                c.host = None;
+                c.vx = vx;
+                c.vy = vy;
+            }
+        }
     }
 
     fn sweep_dead(&mut self) {
         self.rocks.retain(|r| !r.dead);
         self.items.retain(|i| !i.dead);
         self.wrecks.retain(|w| !w.dead);
+        // A dead rival lets go of its hook.
+        for j in 0..self.jumpers.len() {
+            if self.jumpers[j].dead {
+                if let Some(id) = self.jumpers[j].hook.take() {
+                    if let Some(i) = self.item_index(id) {
+                        self.items[i].hooked_by = None;
+                    }
+                }
+            }
+        }
+        self.jumpers.retain(|j| !j.dead);
+        self.crabs.retain(|c| !c.dead);
         let items = &self.items;
         self.chain.retain(|id| items.iter().any(|it| it.id == *id));
     }

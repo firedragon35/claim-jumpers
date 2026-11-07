@@ -30,6 +30,16 @@ pub enum Device {
 pub struct Presses {
     pub actions: Vec<Action>,
     pub pause: bool,
+    /// Toggle sound (M, or the pad's Back button).
+    pub mute: bool,
+}
+
+/// What a pad button tap does.
+#[derive(Clone, Copy)]
+enum Tap {
+    Act(Action),
+    Pause,
+    Mute,
 }
 
 pub struct Controls {
@@ -39,12 +49,14 @@ pub struct Controls {
     pub last_device: Device,
 }
 
-/// Button → one-shot, as PAD_TAPS: Y hook, B drop last, LB cut all, Start pause.
-const PAD_TAPS: [(Button, Option<Action>); 4] = [
-    (Button::North, Some(Action::Hook)),
-    (Button::East, Some(Action::Drop)),
-    (Button::LeftTrigger, Some(Action::Cut)),
-    (Button::Start, None),
+/// Button → one-shot, as PAD_TAPS: Y hook, B drop last, LB cut all,
+/// Start pause, Back mute. (X grinds once the grinder arrives in milestone 3.)
+const PAD_TAPS: [(Button, Tap); 5] = [
+    (Button::North, Tap::Act(Action::Hook)),
+    (Button::East, Tap::Act(Action::Drop)),
+    (Button::LeftTrigger, Tap::Act(Action::Cut)),
+    (Button::Start, Tap::Pause),
+    (Button::Select, Tap::Mute),
 ];
 
 impl Controls {
@@ -117,7 +129,8 @@ impl Controls {
             out.actions.push(Action::Cut);
         }
         out.pause = key(KeyCode::P) || key(KeyCode::Escape);
-        if !out.actions.is_empty() || out.pause {
+        out.mute = key(KeyCode::M);
+        if !out.actions.is_empty() || out.pause || out.mute {
             self.last_device = Device::Keyboard;
         }
 
@@ -139,8 +152,9 @@ impl Controls {
             if now.contains(&b) && !self.prev.contains(&b) {
                 self.last_device = Device::Pad;
                 match act {
-                    Some(a) => out.actions.push(a),
-                    None => out.pause = true,
+                    Tap::Act(a) => out.actions.push(a),
+                    Tap::Pause => out.pause = true,
+                    Tap::Mute => out.mute = true,
                 }
             }
         }

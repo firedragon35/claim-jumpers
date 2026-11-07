@@ -15,6 +15,10 @@ pub enum Tint {
     Ore,
     Danger,
     Text,
+    Wreck,
+    Jumper,
+    Crab,
+    Reactor,
     /// An explicit 0xRRGGBB colour (rare item grades carry their own).
     Rgb(u32),
 }
@@ -35,6 +39,18 @@ pub enum Sfx {
     ShieldDown,
     ShieldUp,
     Boom,
+    /// A cannon report; the value pans it (-1 left .. 1 right).
+    Shoot(i8),
+    /// A rival bolt fired this many pixels from the tug (quieter when far).
+    EnemyShot(u16),
+    /// A rival bolt striking the tug.
+    ZapHit,
+    /// A latched crab chewing the hull.
+    Chomp,
+    /// Low-hull alarm beep.
+    Alarm,
+    /// The under-attack klaxon.
+    AttackAlarm,
 }
 
 /// Lines Marge can say (the radio keys in src/js/04-dispatcher-radio.js).
@@ -55,6 +71,25 @@ pub enum Radio {
     Dead,
     Minute,
     TenSec,
+    Overheat,
+    Reactor,
+    Boom,
+    Pod,
+    NewWreck,
+    Crab,
+    CrabHull,
+    CrabOff,
+    Jumper,
+    Hunter,
+    Latched,
+    Severed,
+    Escaped,
+    Kill,
+    Smash,
+    Scatter,
+    RivalsAnnoyed,
+    RivalsHostile,
+    RivalsVendetta,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -87,6 +122,11 @@ pub enum Event {
         y: f64,
         size: f64,
         tint: Tint,
+    },
+    /// A round striking something: a short flash where it hit.
+    Hit {
+        x: f64,
+        y: f64,
     },
     /// Floating text in the world.
     Popup {

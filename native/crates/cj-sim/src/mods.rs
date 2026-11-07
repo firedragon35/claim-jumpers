@@ -26,6 +26,22 @@ pub struct Mods {
     pub shield_rate: f64,
     /// Seconds after a hit before the shield recharges.
     pub shield_delay: f64,
+    /// Sideways offsets of the cannon's barrels (empty with no cannon).
+    pub barrels: Vec<f64>,
+    /// Damage per cutter round.
+    pub cannon_dmg: f64,
+    /// Multipliers on the fire interval and on heat per shot.
+    pub fire_mul: f64,
+    pub heat_mul: f64,
+    /// Extra angled shots per trigger pull (in pairs).
+    pub cannon_spread: u32,
+}
+
+impl Mods {
+    /// Number of barrels firing in parallel.
+    pub fn guns(&self) -> usize {
+        self.barrels.len()
+    }
 }
 
 impl Mods {
@@ -45,6 +61,13 @@ impl Mods {
             shield_max: 40.0,
             shield_rate: 3.0,
             shield_delay: 5.0,
+            // Cannon level 1: CANNON_DAMAGE[0], CANNON_RATE[0], CANNON_HEAT[0],
+            // CANNON_SPREAD[0]; one barrel (no twin cutter).
+            barrels: vec![0.0],
+            cannon_dmg: 1.0,
+            fire_mul: 1.0,
+            heat_mul: 1.0,
+            cannon_spread: 0,
         }
     }
 }

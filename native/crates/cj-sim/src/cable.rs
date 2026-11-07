@@ -6,7 +6,7 @@
 //! and whip.
 
 use crate::consts::*;
-use crate::entities::{Body, Item};
+use crate::entities::{Body, CrabState, Item};
 use crate::events::{Radio, Sfx};
 use crate::world::World;
 
@@ -65,7 +65,7 @@ impl World {
     }
 
     /// The anchor body of chain link `link`: the tug, or the previous item.
-    fn anchor_body(&self, link: usize) -> Body {
+    pub(crate) fn anchor_body(&self, link: usize) -> Body {
         if link == 0 {
             self.ship.b
         } else {
@@ -113,8 +113,10 @@ impl World {
         }
         self.attach_to_line(i);
         self.sfx(Sfx::Hook);
-        // (The reactor warning arrives with wrecks in milestone 2.)
-        if self.items[i].kind == crate::items::ItemType::Engine {
+        let kind = self.items[i].kind;
+        if kind == crate::items::ItemType::Reactor {
+            self.radio(Radio::Reactor, true, false);
+        } else if kind == crate::items::ItemType::Engine {
             self.radio(Radio::Engine, false, false);
         } else if self.tow_mass() / self.mods.winch_cap > 0.6 {
             self.radio(Radio::Heavy, false, false);
@@ -151,7 +153,13 @@ impl World {
             let next = &mut self.items[ni];
             next.link_len = Self::min_link_len(&next.b, &a).max(next.b.dist_to(&a));
         }
-        // (Crabs crawling on the item fall off: milestone 2.)
+        // A crab walking this link is back to riding its piece.
+        for c in &mut self.crabs {
+            if c.state == CrabState::Crawl && c.host == Some(id) {
+                c.state = CrabState::Ride;
+                c.ride_t = 0.0;
+            }
+        }
     }
 
     /// Detach the link at `idx` and everything behind it (a severed line).
@@ -160,9 +168,15 @@ impl World {
             return;
         }
         let lost: Vec<u32> = self.chain.drain(idx..).collect();
-        for id in lost {
+        for &id in &lost {
             if let Some(i) = self.item_index(id) {
                 self.items[i].towed = false;
+            }
+        }
+        for c in &mut self.crabs {
+            if c.state == CrabState::Crawl && c.host.is_some_and(|h| lost.contains(&h)) {
+                c.state = CrabState::Ride;
+                c.ride_t = 0.0;
             }
         }
     }
@@ -207,21 +221,38 @@ impl World {
                 it.link_len = min.max(it.link_len - self.mods.reel * dt);
             }
         }
-        // (Rival hooks, the collector tether and the partner latch join
-        // these passes in later milestones.)
-        for _ in 0..CABLE_ITERATIONS {
-            if !self.ship.alive {
-                break;
+        // Rival lines: each jumper reels its hooked piece in to a fixed slack.
+        let mut rival_links = Vec::new();
+        for j in 0..self.jumpers.len() {
+            let Some(i) = self.jumpers[j].hook.and_then(|id| self.item_index(id)) else {
+                continue;
+            };
+            let min = self.jumpers[j].b.r + self.items[i].b.r + 60.0;
+            let jm = &mut self.jumpers[j];
+            if jm.link_len > min {
+                jm.link_len = min.max(jm.link_len - 120.0 * dt);
             }
-            for (k, &i) in links.iter().enumerate() {
-                let jerk = if k == 0 {
-                    let it = &mut self.items[i];
-                    rope_constraint(&mut self.ship.b, &mut it.b, it.link_len)
-                } else {
-                    let (a, it) = two_items(&mut self.items, links[k - 1], i);
-                    rope_constraint(&mut a.b, &mut it.b, it.link_len)
-                };
-                self.items[i].jerk += jerk;
+            rival_links.push((j, i));
+        }
+        // Multiple passes let corrections propagate down a long train.
+        // (The collector tether and the partner latch join these passes in
+        // milestones 4 and 5.)
+        for _ in 0..CABLE_ITERATIONS {
+            if self.ship.alive {
+                for (k, &i) in links.iter().enumerate() {
+                    let jerk = if k == 0 {
+                        let it = &mut self.items[i];
+                        rope_constraint(&mut self.ship.b, &mut it.b, it.link_len)
+                    } else {
+                        let (a, it) = two_items(&mut self.items, links[k - 1], i);
+                        rope_constraint(&mut a.b, &mut it.b, it.link_len)
+                    };
+                    self.items[i].jerk += jerk;
+                }
+            }
+            for &(j, i) in &rival_links {
+                let jm = &mut self.jumpers[j];
+                rope_constraint(&mut jm.b, &mut self.items[i].b, jm.link_len);
             }
         }
         // Smoothed tension drives the cable's colour; big jerks rattle the cargo.

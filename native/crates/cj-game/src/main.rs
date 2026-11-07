@@ -1,20 +1,24 @@
-//! Claim Jumpers, native Windows build. Milestone 1: the core slice —
-//! fly the tug, hook and tow salvage, collide with the field, bank cargo
-//! at the carrier's bay, against the shift clock.
+//! Claim Jumpers, native Windows build. Milestone 2: the core slice
+//! (fly the tug, hook and tow salvage, collide with the field, bank cargo
+//! at the carrier's bay against the shift clock) plus combat: the cutting
+//! cannon and its heat, wrecks cut open, reactors, crabs and rival claim
+//! jumpers, with synthesized sound.
 //!
-//! `--smoke` runs an unattended check: a scripted hook-and-tow, one
+//! `--smoke` runs an unattended check: a scripted tow and firefight, one
 //! simulation step per frame, a screenshot to
-//! %TEMP%\claim-jumpers-m1-smoke.png, and a report on stdout.
+//! %TEMP%\claim-jumpers-m2-smoke.png, and a report on stdout.
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod audio;
 mod controls;
 mod draw;
 mod fx;
 mod hud;
 mod look;
 
-use cj_sim::consts::{BAY_X, BAY_Y, MAX_FRAME_DT, MAX_STEPS_PER_FRAME, STEP};
+use cj_sim::consts::{Variant, BAY_X, BAY_Y, MAX_FRAME_DT, MAX_STEPS_PER_FRAME, STEP};
+use cj_sim::events::Event;
 use cj_sim::items::ItemType;
 use cj_sim::rng::Rng;
 use cj_sim::{Action, Input, World};
@@ -53,6 +57,11 @@ async fn main() {
     };
 
     let look = look::Look::new();
+    let mut audio = audio::Audio::start();
+    if let Some(e) = &audio.error {
+        eprintln!("sound is off: {e}");
+    }
+    let mut sfx_count: u64 = 0;
     let mut controls = controls::Controls::new();
     let mut fx_rng = seed_rng();
     let stars = draw::Stars::new(&mut fx_rng);
@@ -71,6 +80,9 @@ async fn main() {
         let (vw, vh) = view();
         world.view = (f64::from(vw), f64::from(vh));
         let presses = controls.presses();
+        if presses.mute {
+            audio.toggle_mute();
+        }
 
         if world.shift_over {
             // Placeholder until the end-of-shift report and career screens
@@ -112,6 +124,21 @@ async fn main() {
             while accumulator >= STEP && n < n_max && !world.shift_over {
                 world.step(&input, STEP);
                 fx.absorb(&world.events);
+                audio.tick(STEP);
+                for e in &world.events {
+                    match e {
+                        Event::Sfx(s) => {
+                            audio.sfx(*s);
+                            sfx_count += 1;
+                        }
+                        Event::Thrust {
+                            level,
+                            load,
+                            sputtering,
+                        } => audio.set_thrust(*level, *load, *sputtering),
+                        _ => {}
+                    }
+                }
                 world.events.clear();
                 fx.emit_ambient(&world);
                 fx.update(STEP);
@@ -145,9 +172,21 @@ async fn main() {
         } else if paused {
             hud::banner(&look, (vw, vh), "PAUSED", "Press P or Esc to resume.");
         }
+        // The engine falls silent while the shift is frozen.
+        if paused || world.shift_over {
+            audio.set_thrust(0.0, 0.0, false);
+        }
 
         if smoke && frame == SMOKE_FRAMES {
-            smoke_report(&world, &fx, frame, steps, get_time() - start);
+            smoke_report(
+                &world,
+                &fx,
+                &audio,
+                sfx_count,
+                frame,
+                steps,
+                get_time() - start,
+            );
             std::process::exit(0);
         }
         frame += 1;
@@ -155,31 +194,53 @@ async fn main() {
     }
 }
 
-/// Smoke script: put a piece of ore beside the tug, then hook it.
+/// Smoke script: put a piece of ore beside the tug and hook it, with a
+/// rival cutter and a riding crab close by so combat is on screen.
 fn smoke_script(w: &mut World, frame: u32) {
     if frame == 0 {
         // Start well clear of the bay, or the bay banks the ore at once.
         w.ship.b.x = BAY_X - 500.0;
         let it = w.new_item(ItemType::Ore, BAY_X - 500.0, BAY_Y + 110.0, 0.0, 0.0);
+        let host = it.id;
         w.items.push(it);
         w.ship.invuln = 0.0;
+        let crab = cj_sim::entities::make_crab(
+            &mut w.rng,
+            cj_sim::entities::CrabState::Ride,
+            Some(host),
+            BAY_X - 500.0,
+            BAY_Y + 110.0,
+        );
+        w.crabs.push(crab);
+        let j = w.new_jumper(BAY_X - 1100.0, BAY_Y - 200.0, Some(Variant::Cutter));
+        w.jumpers.push(j);
     }
     if frame == 2 {
         w.action(Action::Hook);
     }
 }
 
-/// Smoke flight: thrust away from the carrier, then swing the cargo round.
+/// Smoke flight: thrust away from the carrier, then swing the cargo round,
+/// firing the cannon throughout.
 fn smoke_input(frame: u32) -> Input {
     Input {
         thrust: if frame < 120 { 1.0 } else { 0.0 },
         turn: if (40..100).contains(&frame) { 1.0 } else { 0.0 },
+        fire: true,
         ..Input::default()
     }
 }
 
-fn smoke_report(w: &World, fx: &fx::Fx, frame: u32, steps: u64, secs: f64) {
-    let shot = std::env::temp_dir().join("claim-jumpers-m1-smoke.png");
+fn smoke_report(
+    w: &World,
+    fx: &fx::Fx,
+    audio: &audio::Audio,
+    sfx_count: u64,
+    frame: u32,
+    steps: u64,
+    secs: f64,
+) {
+    let shot = std::env::temp_dir().join("claim-jumpers-m2-smoke.png");
     // The framebuffer reads bottom row first and carries the alpha of the
     // last blend; flip it and make it opaque so the PNG shows the window.
     let mut img = get_screen_data();
@@ -196,7 +257,7 @@ fn smoke_report(w: &World, fx: &fx::Fx, frame: u32, steps: u64, secs: f64) {
         && w.items
             .iter()
             .all(|i| i.b.x.is_finite() && i.b.y.is_finite());
-    println!("M1 SMOKE REPORT");
+    println!("M2 SMOKE REPORT");
     println!(
         "  frames: {frame} in {secs:.2} s ({:.0} fps), sim steps: {steps}",
         f64::from(frame) / secs.max(1e-9)
@@ -231,6 +292,20 @@ fn smoke_report(w: &World, fx: &fx::Fx, frame: u32, steps: u64, secs: f64) {
         "  camera zoom {:.3}; particles {}",
         w.cam.zoom,
         fx.particles.len()
+    );
+    println!(
+        "  combat: {} shots fired, heat {:.1}, {} rounds and {} bolts in flight, {} jumpers, {} crabs, grudge {}",
+        w.shots_fired,
+        s.heat,
+        w.bullets.len(),
+        w.ebullets.len(),
+        w.jumpers.len(),
+        w.crabs.len(),
+        w.grudge
+    );
+    println!(
+        "  sound: {} ({sfx_count} effects requested)",
+        audio.error.as_deref().unwrap_or("output stream open")
     );
     println!("  positions finite: {finite}");
     println!("  screenshot: {}", shot.display());

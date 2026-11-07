@@ -2,8 +2,8 @@
 //! recorded state, step by step, for each scenario in golden/scenarios.json.
 //! Regenerate the traces with native/tools/golden/export.mjs.
 
-use cj_sim::consts::{rock_size, STEP};
-use cj_sim::entities::{Body, Rock, Wreck};
+use cj_sim::consts::{rock_size, Variant, STEP};
+use cj_sim::entities::{make_crab, Body, CrabState, JumperState, Rock, Wreck};
 use cj_sim::items::ItemType;
 use cj_sim::rng::Rng;
 use cj_sim::world::Camera;
@@ -89,6 +89,14 @@ fn build(sc: &Value, init: &Value) -> World {
         });
     }
     for wr in sc["wrecks"].as_array().unwrap() {
+        let contents: Vec<ItemType> = match wr["contents"].as_array() {
+            Some(list) => list
+                .iter()
+                .map(|k| ItemType::from_key(k.as_str().unwrap()).unwrap())
+                .collect(),
+            None => vec![ItemType::Plate, ItemType::Plate, ItemType::Scrap],
+        };
+        let hp = 24.0 + contents.len() as f64 * 3.0;
         w.wrecks.push(Wreck {
             b: Body {
                 x: num(wr, "x", 0.0),
@@ -101,16 +109,42 @@ fn build(sc: &Value, init: &Value) -> World {
             },
             angle: num(wr, "angle", PI),
             spin: num(wr, "spin", 0.0),
-            hp: 33.0,
-            max_hp: 33.0,
-            contents: Vec::new(),
-            crabs: 1,
+            hp,
+            max_hp: hp,
+            contents,
+            crabs: wr["crabs"].as_i64().unwrap_or(1) as i32,
             pts: Vec::new(),
             flash: 0.0,
             light: PI,
             dead: false,
         });
     }
+    for j in sc["jumpers"].as_array().into_iter().flatten() {
+        let variant = match j["variant"].as_str().unwrap() {
+            "skiff" => Variant::Skiff,
+            "cutter" => Variant::Cutter,
+            "brute" => Variant::Brute,
+            "gunship" => Variant::Gunship,
+            other => panic!("unknown variant {other}"),
+        };
+        let jm = w.new_jumper(num(j, "x", 0.0), num(j, "y", 0.0), Some(variant));
+        w.jumpers.push(jm);
+    }
+    for c in sc["crabs"].as_array().into_iter().flatten() {
+        let state = match c["state"].as_str().unwrap() {
+            "ride" => CrabState::Ride,
+            "crawl" => CrabState::Crawl,
+            "latched" => CrabState::Latched,
+            "free" => CrabState::Free,
+            other => panic!("unknown crab state {other}"),
+        };
+        let host = c["host"].as_u64().map(|i| &w.items[i as usize]);
+        let (hx, hy) = host.map_or((0.0, 0.0), |h| (h.b.x, h.b.y));
+        let host_id = host.map(|h| h.id);
+        let crab = make_crab(&mut w.rng, state, host_id, num(c, "x", hx), num(c, "y", hy));
+        w.crabs.push(crab);
+    }
+    w.grudge = num(sc, "grudge", 0.0);
     w.cam = Camera {
         x: w.ship.b.x,
         y: w.ship.b.y,
@@ -126,6 +160,7 @@ fn input_for(keys: &[Value]) -> Input {
         thrust: on(held("thrust")),
         reverse: on(held("brake")),
         turn: on(held("right")) - on(held("left")),
+        fire: held("fire"),
         ..Input::default()
     }
 }
@@ -164,13 +199,46 @@ fn cmp_list(what: &str, want: &Value, got: Vec<Vec<f64>>) -> Result<(), String> 
     Ok(())
 }
 
+/// Index of an item id in the items list, or -1, as the exporter records it.
+fn item_pos(w: &World, id: Option<u32>) -> f64 {
+    id.and_then(|id| w.item_index(id))
+        .map_or(-1.0, |i| i as f64)
+}
+
 fn check_step(w: &World, want: &Value) -> Result<(), String> {
     let s = &w.ship;
+    let on = |b: bool| if b { 1.0 } else { 0.0 };
     cmp_row(
         "ship",
         &want["s"],
-        &[s.b.x, s.b.y, s.b.vx, s.b.vy, s.angle, s.av, s.hp, s.shield],
+        &[
+            s.b.x,
+            s.b.y,
+            s.b.vx,
+            s.b.vy,
+            s.angle,
+            s.av,
+            s.hp,
+            s.shield,
+            s.heat,
+            on(s.overheated),
+            s.fire_t,
+            s.spin_meter,
+            on(s.alive),
+        ],
     )?;
+    let types: Vec<&str> = w.items.iter().map(|it| it.kind.key()).collect();
+    let want_types: Vec<&str> = want["types"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap())
+        .collect();
+    if types != want_types {
+        return Err(format!(
+            "item types: browser {want_types:?}, rust {types:?}"
+        ));
+    }
     cmp_list(
         "items",
         &want["items"],
@@ -184,8 +252,13 @@ fn check_step(w: &World, want: &Value) -> Result<(), String> {
                     it.b.vy,
                     it.link_len,
                     it.tension,
-                    if it.towed { 1.0 } else { 0.0 },
+                    on(it.towed),
                     it.angle,
+                    it.hp.unwrap_or(-1.0),
+                    it.fuse,
+                    it.hooked_by
+                        .and_then(|id| w.jumper_index(id))
+                        .map_or(-1.0, |j| j as f64),
                 ]
             })
             .collect(),
@@ -219,8 +292,71 @@ fn check_step(w: &World, want: &Value) -> Result<(), String> {
         &want["wrecks"],
         w.wrecks
             .iter()
-            .map(|x| vec![x.b.x, x.b.y, x.b.vx, x.b.vy, x.angle])
+            .map(|x| {
+                vec![
+                    x.b.x,
+                    x.b.y,
+                    x.b.vx,
+                    x.b.vy,
+                    x.angle,
+                    x.hp,
+                    x.contents.len() as f64,
+                    f64::from(x.crabs),
+                ]
+            })
             .collect(),
+    )?;
+    cmp_list(
+        "jumpers",
+        &want["jumpers"],
+        w.jumpers
+            .iter()
+            .map(|j| {
+                vec![
+                    j.b.x,
+                    j.b.y,
+                    j.b.vx,
+                    j.b.vy,
+                    j.hp,
+                    on(j.state == JumperState::Haul),
+                    j.link_len,
+                    j.latch_t,
+                    j.fire_t,
+                    j.angle,
+                    item_pos(w, j.hook),
+                    j.flee_t,
+                    j.cover_t,
+                ]
+            })
+            .collect(),
+    )?;
+    cmp_list(
+        "crabs",
+        &want["crabs"],
+        w.crabs
+            .iter()
+            .map(|c| {
+                let state = match c.state {
+                    CrabState::Ride => 0.0,
+                    CrabState::Crawl => 1.0,
+                    CrabState::Latched => 2.0,
+                    CrabState::Free => 3.0,
+                };
+                vec![c.x, c.y, state, c.t, item_pos(w, c.host)]
+            })
+            .collect(),
+    )?;
+    let shots = |v: &[cj_sim::entities::Bullet]| {
+        v.iter()
+            .map(|b| vec![b.x, b.y, b.vx, b.vy, b.life])
+            .collect::<Vec<_>>()
+    };
+    cmp_list("bullets", &want["bullets"], shots(&w.bullets))?;
+    cmp_list("ebullets", &want["ebullets"], shots(&w.ebullets))?;
+    cmp_row(
+        "grudge",
+        &Value::from(vec![want["grudge"].clone()]),
+        &[w.grudge],
     )?;
     cmp_row(
         "banked",
@@ -323,4 +459,28 @@ fn carrier() {
 #[test]
 fn wall() {
     run("wall");
+}
+#[test]
+fn cannon() {
+    run("cannon");
+}
+#[test]
+fn wreck() {
+    run("wreck");
+}
+#[test]
+fn rival() {
+    run("rival");
+}
+#[test]
+fn smash() {
+    run("smash");
+}
+#[test]
+fn crabs() {
+    run("crabs");
+}
+#[test]
+fn reactor() {
+    run("reactor");
 }

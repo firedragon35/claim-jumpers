@@ -242,6 +242,8 @@ impl Fx {
                     rgb: tint_rgb(*tint),
                     life: 1.4,
                 }),
+                // A round striking something: a brief hot flash.
+                Event::Hit { x, y } => self.spark(*x, *y, 0.0, 0.0, 0.15, col::HAZARD, 3.0),
                 _ => {}
             }
         }

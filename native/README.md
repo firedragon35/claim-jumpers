@@ -5,10 +5,13 @@ in the repository root (`claim-jumpers.html`, built from `src/`) is the
 reference implementation; the port must match its gameplay, rules,
 controls, balance and look unless a change is explicitly approved.
 
-**Status: Milestone 1 (core playable slice).** Fly the tug, hook and tow
+**Status: Milestone 2 (combat and sound).** Fly the tug, hook and tow
 salvage, collide with rocks, wrecks and the carrier, and bank cargo at the
-bay against the five-minute shift clock. Combat, the career and the other
-systems arrive in later milestones (see "Known differences" below).
+bay against the five-minute shift clock. Fire the cutting cannon (it
+builds heat), cut wrecks open for their salvage, mind the reactors, shake
+off scrap crabs, and fight or smash rival claim jumpers, with every sound
+synthesized as in the browser. The career and the other systems arrive in
+later milestones (see "Known differences" below).
 
 | Folder | What it is |
 |---|---|
@@ -53,16 +56,19 @@ The executable is `target\release\claim-jumpers.exe`. It is self-contained
 | Thrust | W or Up | RT or A |
 | Brake / reverse | S or Down | LT or D-pad down |
 | Turn | A D or Left Right | Left stick or D-pad |
+| Fire | Space or J | RB |
 | Hook nearest piece | E or K | Y |
 | Drop last piece | Q | B |
 | Cut all | X | LB |
 | Pause | P or Esc | Start |
+| Mute | M | Back |
 
 When the shift clock runs out, Enter starts a new shift.
 
-Unattended check: a scripted hook-and-tow, one simulation step per frame,
-a screenshot to `%TEMP%\claim-jumpers-m1-smoke.png`, and a report. The
-release build has no console window, so redirect the report to a file:
+Unattended check: a scripted hook-and-tow with the cannon firing, a rival
+and a crab nearby, one simulation step per frame, a screenshot to
+`%TEMP%\claim-jumpers-m2-smoke.png`, and a report. The release build has
+no console window, so redirect the report to a file:
 
 ```bash
 target/release/claim-jumpers.exe --smoke > smoke.txt
@@ -74,13 +80,23 @@ target/release/claim-jumpers.exe --smoke > smoke.txt
 cargo test -p cj-sim
 ```
 
-- `tests/golden.rs` replays seven scenarios (flight, towing, a three-piece
-  train, impacts and a rock breaking, banking, the carrier hull, the field
-  walls) and checks every step against numbers recorded from the browser
-  game. They agree to the last bit or two of an f64; the tolerance is 1e-7.
+- `tests/golden.rs` replays thirteen scenarios and checks every step
+  against numbers recorded from the browser game: flight, towing, a
+  three-piece train, impacts and a rock breaking, banking, the carrier
+  hull, the field walls, and for combat the cannon breaking a rock, a wreck
+  cut open (ejections, the break, its crab and pebbles), a rival stealing
+  and severing your line and escaping, a cargo smash that scatters a
+  wingmate plus a cannon kill crossing a grudge stage, crabs crawling,
+  chewing and being spun off, and a reactor blast. They agree to the last
+  bit or two of an f64; the tolerance is 1e-7.
 - `tests/rules.rs` checks hooking, winch capacity, reeling, drop and cut,
   banking and deliveries, bay repair, shields, losing the tug, the shift
-  clock and seeded field generation.
+  clock, seeded field generation, and for combat gun heat and overheating,
+  reactors priming on impact, rivals escaping with loot, arrivals and the
+  rival cap, grudge stages and bounties, the bay and banking killing crabs,
+  the under-attack alarm's rate limit and wreck contents.
+- The game crate's own tests check the sound engine's filter and
+  compressor (`cargo test -p cj-game`).
 
 To re-record the traces after changing the browser game (needs Docker; run
 from the repository root, after rebuilding `claim-jumpers.html`):
@@ -89,22 +105,31 @@ from the repository root, after rebuilding `claim-jumpers.html`):
 docker run --rm -v "$PWD:/work" -v /work/tests/node_modules -w /work/tests mcr.microsoft.com/playwright:v1.49.1-noble sh -c "npm ci --no-audit --no-fund && node /work/native/tools/golden/export.mjs"
 ```
 
-## Known differences from the browser version (Milestone 1)
+## Known differences from the browser version (Milestone 2)
 
-Not yet ported (each arrives with its milestone): the cannon, heat, wreck
-cutting, crabs, rivals and sound (M2); the end-of-shift report, economy,
-shop, saves and title screen (M3); collectors, law, miners, the refinery,
-missiles, sentries and the afterburner (M4); field events, the tutorial,
-music, Marge's radio and voice, settings, records, daily shifts and co-op
-(M5). Placeholders, clearly temporary:
+Not yet ported (each arrives with its milestone): the end-of-shift report,
+economy, shop and parts (twin cutter, side thrusters, grinder slugs and
+the rest), cannon levels, crews, faction standing, saves and title screen
+(M3); collectors, law, miners, the refinery, missiles, sentries, sealed
+holds and the afterburner with its Engine meter (M4); field events, boss
+crews, the tutorial, music, Marge's radio and voice (radio lines are
+raised but not yet shown or spoken), hit-stop, the highlight reel,
+settings, records, daily shifts and co-op (M5). Placeholders, clearly
+temporary:
 
 - Pause shows "PAUSED" instead of the pause menu.
 - When the clock runs out, "SHIFT OVER" and Enter for a new shift replace
   the end-of-shift report.
-- Salvage other than scrap and ore (which can only come out of wrecks, so
-  cannot appear yet) is drawn as a plain outlined disc.
-- The HUD shows only what exists: banked, on the line, shift, clock,
-  shield, hull and winch.
+- Mining charges, ingots, keycards and rogue cores (which only come from
+  milestone 4 systems, so cannot appear yet) are drawn as a plain
+  outlined disc.
+- The HUD shows only what exists: banked, on the line, shift, rival
+  stage, the under-attack warning, clock, shield, hull, heat and winch.
+- The rival grudge starts every shift at 0; carrying it between shifts
+  (and cooling it) arrives with the career in milestone 3.
+- Sound is mono and synthesized by a port of the browser's WebAudio
+  graph (same oscillators, filters, envelopes and compressor settings);
+  it should sound alike but has not been compared side by side.
 - Rock highlights are a soft sprite instead of a gradient clipped to the
   rock's outline.
 
@@ -122,5 +147,9 @@ cargo run -p m0-spike --release -- --smoke
   history).
 - Windows 11 Pro (build 26300): the M1 release build's `--smoke` run, from
   an unrelated folder, exits cleanly with the scripted tow in place.
-  Hands-on keyboard and gamepad play of M1 has not yet been verified.
+- Windows 11 Pro (build 26300): the M2 release build's `--smoke` run, from
+  an unrelated folder, exits cleanly with the cannon firing, a rival
+  shooting back, the sound stream open and the screenshot as expected.
+  Hands-on keyboard and gamepad play, and listening to the sound, have not
+  yet been verified.
 - **Windows 10: not yet verified.**

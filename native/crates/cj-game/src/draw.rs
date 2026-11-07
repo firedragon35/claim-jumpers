@@ -10,7 +10,7 @@ use crate::controls::Device;
 use crate::fx::{Fx, Kind};
 use crate::look::{col, rgba, text_centered, Look};
 use cj_sim::consts::*;
-use cj_sim::entities::{Item, Rock, ShapePt, Ship, Wreck};
+use cj_sim::entities::{Crab, Item, Jumper, Rock, ShapePt, Ship, Wreck};
 use cj_sim::items::ItemType;
 use cj_sim::rng::Rng;
 use cj_sim::World;
@@ -472,7 +472,28 @@ fn draw_rock(look: &Look, rk: &Rock) {
     }
 }
 
-fn draw_item(it: &Item) {
+/// Fill a convex closed path (a rectangle, a box) as a triangle fan.
+fn fill_convex(pts: &[Vec2], color: Color) {
+    let c = pts.iter().fold(Vec2::ZERO, |a, p| a + *p) / pts.len() as f32;
+    fill_fan(c, pts, color);
+}
+
+/// An axis-aligned local rectangle, as a closed outline.
+fn rect_pts(xf: &Xf, x: f32, y: f32, w: f32, h: f32) -> Vec<Vec2> {
+    xf.pts(&[(x, y), (x + w, y), (x + w, y + h), (x, y + h)])
+}
+
+/// Points along a local arc from `a0` to `a1` (radians).
+fn arc_pts(xf: &Xf, cx: f32, cy: f32, r: f32, a0: f32, a1: f32, n: usize) -> Vec<Vec2> {
+    (0..=n)
+        .map(|k| {
+            let a = a0 + (a1 - a0) * k as f32 / n as f32;
+            xf.p(cx + a.cos() * r, cy + a.sin() * r)
+        })
+        .collect()
+}
+
+fn draw_item(look: &Look, it: &Item, t: f32, scale: f32) {
     let xf = Xf::new(it.b.x, it.b.y, it.angle);
     let r = it.b.r as f32;
     match it.kind {
@@ -497,15 +518,251 @@ fn draw_item(it: &Item) {
             fill_fan(xf.o, &pts, rgba(c, 0.25));
             glow_stroke(&pts, true, c, 2.0, 1.0);
         }
-        // Placeholder: wreck salvage (plates, engines, reactors, pods and
-        // the rest) can't appear until wrecks open in milestone 2, which
-        // brings their artwork. Until then it is a plain outlined disc.
+        ItemType::Plate => {
+            let c = it.tint.unwrap_or(col::STEEL);
+            let body = rect_pts(&xf, -r, -r * 0.6, r * 2.0, r * 1.2);
+            fill_convex(&body, Color::from_hex(0x18202e));
+            if it.rare {
+                glow_stroke(&body, true, c, 2.5, 1.0);
+            } else {
+                polyline(&body, true, 2.0, Color::from_hex(c));
+            }
+            // Rivets.
+            for (x, y) in [(-0.75, -0.4), (0.75, -0.4), (-0.75, 0.4), (0.75, 0.4)] {
+                let rv = rect_pts(&xf, x * r - 1.5, y * r - 1.5, 3.0, 3.0);
+                fill_convex(&rv, Color::from_hex(c));
+            }
+            if it.grade == 0 {
+                // A dent across the cheapest grade.
+                let dent = xf.pts(&[(-r * 0.3, -r * 0.6), (0.0, 0.0), (r * 0.2, r * 0.6)]);
+                polyline(&dent, false, 1.0, Color::from_hex(c));
+            }
+        }
+        ItemType::Engine => {
+            let c = it.tint.unwrap_or(col::ENGINE);
+            let block = rect_pts(&xf, -r * 0.9, -r * 0.6, r * 1.3, r * 1.2);
+            let nozzle = xf.pts(&[
+                (r * 0.4, -r * 0.35),
+                (r, -r * 0.55),
+                (r, r * 0.55),
+                (r * 0.4, r * 0.35),
+            ]);
+            fill_convex(&block, Color::from_hex(0x121b2c));
+            fill_convex(&nozzle, Color::from_hex(0x121b2c));
+            glow_stroke(&block, true, c, 2.5, 1.0);
+            glow_stroke(&nozzle, false, c, 2.5, 1.0);
+            for i in -2..=1 {
+                let x = i as f32 * r * 0.25;
+                let fin = xf.pts(&[(x, -r * 0.6), (x, r * 0.6)]);
+                polyline(&fin, false, 1.0, rgba(c, 0.5));
+            }
+            if it.rare {
+                // Fusion core glow.
+                let p = xf.p(-r * 0.25, 0.0);
+                draw_circle(p.x, p.y, r * 0.3, rgba(c, 0.35 + (t * 4.0).sin() * 0.15));
+            }
+        }
+        ItemType::Reactor => {
+            let c = it.tint.unwrap_or(col::REACTOR);
+            // Cracked cores flicker faster.
+            let rate = if it.grade == 0 { 11.0 } else { 5.0 };
+            let pulse = 0.6 + (t * rate).sin() * 0.4;
+            draw_circle(xf.o.x, xf.o.y, r, rgba(c, 0.12 + pulse * 0.15));
+            glow_stroke(&circle_pts(xf.o, r, 32), true, c, 2.5, 1.0);
+            // Trefoil blades, turning with the item.
+            for i in 0..3 {
+                let a = i as f32 / 3.0 * TAU;
+                let mut blade = vec![xf.o];
+                blade.extend(arc_pts(&xf, 0.0, 0.0, r * 0.7, a, a + 0.7, 6));
+                fill_convex(&blade, Color::from_hex(c));
+            }
+            draw_circle(xf.o.x, xf.o.y, r * 0.18, Color::from_hex(col::VOID));
+            // A red ring once it is primed or damaged.
+            if it.fuse > 0.0 || it.hp.is_some_and(|hp| hp < 3.0) {
+                draw_circle_lines(xf.o.x, xf.o.y, r + 6.0, 2.0, Color::from_hex(col::DANGER));
+            }
+        }
+        ItemType::Blackbox => {
+            // Flight recorder: a small hazard-orange box with a beacon light.
+            let body = rect_pts(&xf, -10.0, -7.0, 20.0, 14.0);
+            fill_convex(&body, Color::from_hex(0x3a2208));
+            glow_stroke(&body, true, col::HAZARD, 2.0, 1.0);
+            for x in [-6.0, 2.0] {
+                fill_convex(
+                    &rect_pts(&xf, x, -7.0, 2.5, 14.0),
+                    Color::from_hex(col::HAZARD),
+                );
+            }
+            let beacon = xf.p(8.0, -9.0);
+            let lit = (t * 7.0).sin() > 0.3;
+            draw_circle(
+                beacon.x,
+                beacon.y,
+                2.5,
+                Color::from_hex(if lit { col::DANGER } else { 0x401510 }),
+            );
+        }
+        ItemType::Pod => {
+            // Sealed cargo pod: a capsule stencilled with an upright "?".
+            let half = std::f32::consts::FRAC_PI_2;
+            let mut capsule = arc_pts(&xf, -r * 0.45, 0.0, r * 0.55, half, 3.0 * half, 10);
+            capsule.extend(arc_pts(&xf, r * 0.45, 0.0, r * 0.55, -half, half, 10));
+            fill_convex(&capsule, Color::from_hex(0x1c1a2c));
+            glow_stroke(&capsule, true, col::COLLECTOR, 2.0, 1.0);
+            text_centered(
+                "?",
+                xf.o.x,
+                xf.o.y + 1.0,
+                16.0,
+                &look.fonts.display,
+                Color::from_hex(col::TEXT),
+                scale,
+            );
+        }
+        // Placeholder: mining charges, ingots, keycards and rogue cores
+        // only come from systems that arrive in milestone 4 (the
+        // refinery, sealed holds and rogue sentries), which bring their
+        // artwork. Until then they are a plain outlined disc.
         _ => {
             let c = it.tint.unwrap_or(col::STEEL);
             draw_circle(xf.o.x, xf.o.y, r, Color::from_hex(0x18202e));
             draw_circle_lines(xf.o.x, xf.o.y, r, 2.0, Color::from_hex(c));
         }
     }
+}
+
+/// A rival: its tow line and hull, plus the sever countdown ring while it
+/// is latched onto your cargo.
+fn draw_jumper(look: &Look, w: &World, j: &Jumper) {
+    let hooked = j.hook.and_then(|id| w.items.iter().find(|it| it.id == id));
+    if let Some(it) = hooked {
+        let pts = [v(j.b.x, j.b.y), v(it.b.x, it.b.y)];
+        dashed(
+            &pts,
+            false,
+            6.0,
+            6.0,
+            0.0,
+            1.5 * 3.5,
+            rgba(col::JUMPER, 0.22),
+        );
+        dashed(
+            &pts,
+            false,
+            6.0,
+            6.0,
+            0.0,
+            1.5,
+            Color::from_hex(col::JUMPER),
+        );
+    }
+    let xf = Xf::new(j.b.x, j.b.y, j.angle);
+    let def = j.variant.def();
+    let edge = if j.flash > 0.0 {
+        col::TEXT
+    } else {
+        def.stroke.unwrap_or(col::JUMPER)
+    };
+    let outline: &[(f32, f32)] = match j.variant {
+        // Skiff: a thin dart, all engine.
+        Variant::Skiff => &[(16.0, 0.0), (-10.0, -7.0), (-6.0, 0.0), (-10.0, 7.0)],
+        // Brute: a blunt slab with a grab-claw prow.
+        Variant::Brute => &[
+            (20.0, -6.0),
+            (24.0, 0.0),
+            (20.0, 6.0),
+            (10.0, 15.0),
+            (-16.0, 15.0),
+            (-20.0, 6.0),
+            (-20.0, -6.0),
+            (-16.0, -15.0),
+            (10.0, -15.0),
+        ],
+        // Gunship: a swept wing with gun pods on the tips.
+        Variant::Gunship => &[
+            (18.0, 0.0),
+            (0.0, -6.0),
+            (-6.0, -17.0),
+            (-14.0, -17.0),
+            (-10.0, 0.0),
+            (-14.0, 17.0),
+            (-6.0, 17.0),
+            (0.0, 6.0),
+        ],
+        Variant::Cutter => &[(18.0, 0.0), (-11.0, -12.0), (-5.0, 0.0), (-11.0, 12.0)],
+    };
+    let pts = xf.pts(outline);
+    fill_poly(&pts, Color::from_hex(def.hull));
+    glow_stroke(&pts, true, edge, 2.0, 1.0);
+    match j.variant {
+        Variant::Gunship => {
+            fill_convex(
+                &rect_pts(&xf, -8.0, -18.0, 10.0, 3.0),
+                Color::from_hex(edge),
+            );
+            fill_convex(&rect_pts(&xf, -8.0, 15.0, 10.0, 3.0), Color::from_hex(edge));
+        }
+        Variant::Brute => fill_convex(
+            &rect_pts(&xf, -12.0, -3.0, 18.0, 6.0),
+            Color::from_hex(edge),
+        ),
+        _ => {}
+    }
+    if j.hunter {
+        // Hunters wear red war paint and run hot: they are here for you.
+        let red = Color::from_hex(col::DANGER);
+        polyline(&xf.pts(&[(6.0, -4.0), (-6.0, -8.0)]), false, 2.0, red);
+        polyline(&xf.pts(&[(6.0, 4.0), (-6.0, 8.0)]), false, 2.0, red);
+        let p = xf.p(-8.0, 0.0);
+        look.additive(|| look.glow(p.x, p.y, 14.0, col::DANGER, true, 1.0));
+    }
+    // Sever countdown ring while latched to your cargo.
+    if let Some(it) = hooked.filter(|it| it.towed && j.latch_t > 0.0) {
+        let frac = (j.latch_t / (JUMPER_SEVER_TIME * def.sever)) as f32;
+        let top = -std::f32::consts::FRAC_PI_2;
+        let at = Xf::new(it.b.x, it.b.y, 0.0);
+        let ring = arc_pts(
+            &at,
+            0.0,
+            0.0,
+            it.b.r as f32 + 10.0,
+            top,
+            top + TAU * frac,
+            48,
+        );
+        polyline(&ring, false, 3.0, Color::from_hex(col::JUMPER));
+    }
+}
+
+fn draw_crab(c: &Crab) {
+    let o = v(c.x, c.y);
+    let leg = Color::from_hex(col::CRAB);
+    for i in 0..6 {
+        let a = i as f32 / 6.0 * TAU + (c.leg_t as f32 + i as f32).sin() * 0.3;
+        let e = o + vec2(a.cos(), a.sin()) * 13.0;
+        draw_line(o.x, o.y, e.x, e.y, 1.5, leg);
+    }
+    draw_ellipse(o.x, o.y, 7.0, 5.5, 0.0, leg);
+    let eye = Color::from_hex(col::VOID);
+    draw_rectangle(o.x - 3.0, o.y - 2.0, 2.0, 2.0, eye);
+    draw_rectangle(o.x + 1.0, o.y - 2.0, 2.0, 2.0, eye);
+}
+
+/// Your rounds as hot amber streaks, and rival bolts as pink glows, all
+/// in additive light.
+fn draw_shots(look: &Look, w: &World) {
+    look.additive(|| {
+        for b in &w.bullets {
+            let len = 0.018;
+            let pts = [v(b.x - b.vx * len, b.y - b.vy * len), v(b.x, b.y)];
+            glow_stroke(&pts, false, col::HAZARD, 2.2, 1.0);
+            look.glow(b.x as f32, b.y as f32, 7.0, col::HAZARD, true, 1.0);
+        }
+        // (Stun, SWAT and rogue bolts take other colours in milestone 4.)
+        for b in &w.ebullets {
+            look.glow(b.x as f32, b.y as f32, 11.0, col::JUMPER, true, 1.0);
+        }
+    });
 }
 
 /// The tow line. A taut link is straight and brightens with tension; a
@@ -541,6 +798,7 @@ fn draw_cable(w: &World) {
             vec![a, b]
         };
         let tns = it.tension as f32;
+        // (Drawn only for your own chain; rivals draw their line in draw_jumper.)
         glow_stroke(
             &pts,
             false,
@@ -576,12 +834,12 @@ fn draw_ship(look: &Look, s: &Ship, t: f32, rng: &mut Rng) {
             Color::from_hex(0xfff3d0),
         );
     }
-    // The cannon's barrel.
+    // The cannon's barrel, red while the guns are overheated.
     let barrel = xf.pts(&[(20.0, -1.5), (32.0, -1.5), (32.0, 1.5), (20.0, 1.5)]);
     fill_fan(
         (barrel[0] + barrel[2]) / 2.0,
         &barrel,
-        Color::from_hex(col::TEXT),
+        Color::from_hex(if s.overheated { col::DANGER } else { col::TEXT }),
     );
     // Hull.
     let hull = xf.pts(&[
@@ -710,7 +968,14 @@ fn draw_hook_target(look: &Look, w: &World, t: f32, device: Device, scale: f32) 
     );
 }
 
-fn draw_particles(look: &Look, fx: &Fx, visible: impl Fn(f64, f64, f64) -> bool) {
+/// Particles: smoke in normal blending, then `between` (the shots), then
+/// everything that glows in additive light, in the browser's order.
+fn draw_particles(
+    look: &Look,
+    fx: &Fx,
+    visible: impl Fn(f64, f64, f64) -> bool,
+    between: impl FnOnce(),
+) {
     // Smoke first, in normal blending, so the glowing fire draws over it.
     for p in &fx.particles {
         if p.kind != Kind::Smoke || !visible(p.x, p.y, 0.0) {
@@ -720,6 +985,7 @@ fn draw_particles(look: &Look, fx: &Fx, visible: impl Fn(f64, f64, f64) -> bool)
         let r = p.size as f32 * (1.0 + (1.0 - f) * p.grow as f32);
         draw_circle(p.x as f32, p.y as f32, r, rgba(p.rgb, 0.5 * f));
     }
+    between();
     // Everything that glows adds light, so overlaps brighten toward white.
     look.additive(|| {
         for p in &fx.particles {
@@ -882,11 +1148,21 @@ pub fn render(sc: Scene) {
     draw_cable(w);
     for it in &w.items {
         if visible(it.b.x, it.b.y, it.b.r) {
-            draw_item(it);
+            draw_item(sc.look, it, t, scale);
+        }
+    }
+    for j in &w.jumpers {
+        if visible(j.b.x, j.b.y, j.b.r) {
+            draw_jumper(sc.look, w, j);
+        }
+    }
+    for c in &w.crabs {
+        if visible(c.x, c.y, c.r) {
+            draw_crab(c);
         }
     }
     draw_ship(sc.look, &w.ship, t, sc.rng);
-    draw_particles(sc.look, sc.fx, visible);
+    draw_particles(sc.look, sc.fx, visible, || draw_shots(sc.look, w));
     for p in &sc.fx.popups {
         let c = rgba(p.rgb, p.life.min(1.0) as f32);
         text_centered(
@@ -914,6 +1190,28 @@ pub fn render(sc: Scene) {
             vw,
             vh,
             Color::new(1.0, 244.0 / 255.0, 220.0 / 255.0, w.screen_flash as f32),
+        );
+    }
+    // Under attack: a red edge pulses around the screen while the warning holds.
+    if w.under_attack_t > 0.0 && !w.shift_over {
+        let a = 0.3 * (0.5 + 0.5 * (t * 10.0).sin()) * (w.under_attack_t as f32).min(1.0);
+        draw_rectangle_lines(
+            0.0,
+            0.0,
+            vw,
+            vh,
+            12.0,
+            Color::new(1.0, 90.0 / 255.0, 60.0 / 255.0, a),
+        );
+    }
+    // A red wash for a moment after the hull takes a hit.
+    if w.ship.flash > 0.0 && !w.shift_over {
+        draw_rectangle(
+            0.0,
+            0.0,
+            vw,
+            vh,
+            Color::new(1.0, 90.0 / 255.0, 60.0 / 255.0, 0.12),
         );
     }
 }

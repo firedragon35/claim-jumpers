@@ -1,92 +1,626 @@
 {
-  "about": "Golden-trace scenarios shared by the browser exporter (native/tools/golden/export.mjs) and the Rust tests (crates/cj-sim/tests/golden.rs). Each scenario empties the field, places the bodies below, then runs fixed 1/60 s steps with the listed held keys and one-shot actions. Math.random is pinned to 0.5 in the browser and in the Rust test RNG, so spawn rolls and sputter rolls agree without depending on call order. Item grades come from that 0.5 roll. Optional body fields override what the factory produced.",
+  "about": "Golden-trace scenarios shared by the browser exporter (native/tools/golden/export.mjs) and the Rust tests (crates/cj-sim/tests/golden.rs). Each scenario empties the field, places the bodies below, then runs fixed 1/60 s steps with the listed held keys and one-shot actions. Math.random is pinned to 0.5 in the browser and in the Rust test RNG, so spawn rolls and sputter rolls agree without depending on call order. Item grades come from that 0.5 roll. Optional body fields override what the factory produced. Combat scenarios can also place jumpers (variant and position, from the real makeJumper), crabs (state, host item index and optional position, from makeCrab), wreck contents, and the rival grudge; the fire key holds the cannon trigger.",
   "scenarios": [
     {
       "name": "flight",
-      "ship": { "x": 2270, "y": 2600, "angle": 3.141592653589793 },
-      "items": [], "rocks": [], "wrecks": [],
+      "ship": {
+        "x": 2270,
+        "y": 2600,
+        "angle": 3.141592653589793
+      },
+      "items": [],
+      "rocks": [],
+      "wrecks": [],
       "inputs": [
-        { "n": 60, "keys": ["thrust"] },
-        { "n": 45, "keys": ["thrust", "right"] },
-        { "n": 60, "keys": [] },
-        { "n": 40, "keys": ["brake"] },
-        { "n": 30, "keys": ["left"] },
-        { "n": 30, "keys": ["thrust", "left"] }
+        {
+          "n": 60,
+          "keys": [
+            "thrust"
+          ]
+        },
+        {
+          "n": 45,
+          "keys": [
+            "thrust",
+            "right"
+          ]
+        },
+        {
+          "n": 60,
+          "keys": []
+        },
+        {
+          "n": 40,
+          "keys": [
+            "brake"
+          ]
+        },
+        {
+          "n": 30,
+          "keys": [
+            "left"
+          ]
+        },
+        {
+          "n": 30,
+          "keys": [
+            "thrust",
+            "left"
+          ]
+        }
       ],
       "actions": []
     },
     {
       "name": "tow",
-      "ship": { "x": 1500, "y": 1500, "angle": 0 },
-      "items": [ { "type": "engine", "x": 1360, "y": 1500 } ],
-      "rocks": [], "wrecks": [],
-      "inputs": [
-        { "n": 90, "keys": ["thrust"] },
-        { "n": 60, "keys": ["thrust", "right"] },
-        { "n": 60, "keys": [] },
-        { "n": 60, "keys": ["left"] },
-        { "n": 30, "keys": ["brake"] }
+      "ship": {
+        "x": 1500,
+        "y": 1500,
+        "angle": 0
+      },
+      "items": [
+        {
+          "type": "engine",
+          "x": 1360,
+          "y": 1500
+        }
       ],
-      "actions": [ { "at": 0, "do": "hook" }, { "at": 240, "do": "drop" } ]
+      "rocks": [],
+      "wrecks": [],
+      "inputs": [
+        {
+          "n": 90,
+          "keys": [
+            "thrust"
+          ]
+        },
+        {
+          "n": 60,
+          "keys": [
+            "thrust",
+            "right"
+          ]
+        },
+        {
+          "n": 60,
+          "keys": []
+        },
+        {
+          "n": 60,
+          "keys": [
+            "left"
+          ]
+        },
+        {
+          "n": 30,
+          "keys": [
+            "brake"
+          ]
+        }
+      ],
+      "actions": [
+        {
+          "at": 0,
+          "do": "hook"
+        },
+        {
+          "at": 240,
+          "do": "drop"
+        }
+      ]
     },
     {
       "name": "train",
-      "ship": { "x": 1500, "y": 3500, "angle": -1.5707963267948966 },
+      "ship": {
+        "x": 1500,
+        "y": 3500,
+        "angle": -1.5707963267948966
+      },
       "items": [
-        { "type": "plate", "x": 1500, "y": 3620 },
-        { "type": "engine", "x": 1380, "y": 3560 },
-        { "type": "ore", "x": 1620, "y": 3540 }
+        {
+          "type": "plate",
+          "x": 1500,
+          "y": 3620
+        },
+        {
+          "type": "engine",
+          "x": 1380,
+          "y": 3560
+        },
+        {
+          "type": "ore",
+          "x": 1620,
+          "y": 3540
+        }
       ],
-      "rocks": [], "wrecks": [],
+      "rocks": [],
+      "wrecks": [],
       "inputs": [
-        { "n": 120, "keys": ["thrust"] },
-        { "n": 90, "keys": ["thrust", "left"] },
-        { "n": 90, "keys": [] },
-        { "n": 60, "keys": ["thrust"] }
+        {
+          "n": 120,
+          "keys": [
+            "thrust"
+          ]
+        },
+        {
+          "n": 90,
+          "keys": [
+            "thrust",
+            "left"
+          ]
+        },
+        {
+          "n": 90,
+          "keys": []
+        },
+        {
+          "n": 60,
+          "keys": [
+            "thrust"
+          ]
+        }
       ],
-      "actions": [ { "at": 0, "do": "hook" }, { "at": 0, "do": "hook" }, { "at": 0, "do": "hook" }, { "at": 300, "do": "cut" } ]
+      "actions": [
+        {
+          "at": 0,
+          "do": "hook"
+        },
+        {
+          "at": 0,
+          "do": "hook"
+        },
+        {
+          "at": 0,
+          "do": "hook"
+        },
+        {
+          "at": 300,
+          "do": "cut"
+        }
+      ]
     },
     {
       "name": "impact",
-      "ship": { "x": 3800, "y": 1500, "angle": 0, "vx": 300, "invuln": 0, "shield": 10 },
-      "items": [ { "type": "ore", "x": 3000, "y": 800, "vx": 600 } ],
-      "rocks": [
-        { "size": 3, "x": 4100, "y": 1500, "vx": 0, "vy": 0, "veined": false },
-        { "size": 2, "x": 3250, "y": 800, "vx": 0, "vy": 0, "veined": false, "hp": 1 }
+      "ship": {
+        "x": 3800,
+        "y": 1500,
+        "angle": 0,
+        "vx": 300,
+        "invuln": 0,
+        "shield": 10
+      },
+      "items": [
+        {
+          "type": "ore",
+          "x": 3000,
+          "y": 800,
+          "vx": 600
+        }
       ],
-      "wrecks": [ { "x": 3600, "y": 2600, "vx": -30, "vy": 0, "angle": 0, "spin": 0 } ],
-      "inputs": [ { "n": 150, "keys": [] } ],
+      "rocks": [
+        {
+          "size": 3,
+          "x": 4100,
+          "y": 1500,
+          "vx": 0,
+          "vy": 0,
+          "veined": false
+        },
+        {
+          "size": 2,
+          "x": 3250,
+          "y": 800,
+          "vx": 0,
+          "vy": 0,
+          "veined": false,
+          "hp": 1
+        }
+      ],
+      "wrecks": [
+        {
+          "x": 3600,
+          "y": 2600,
+          "vx": -30,
+          "vy": 0,
+          "angle": 0,
+          "spin": 0
+        }
+      ],
+      "inputs": [
+        {
+          "n": 150,
+          "keys": []
+        }
+      ],
       "actions": []
     },
     {
       "name": "bank",
-      "ship": { "x": 2100, "y": 2600, "angle": 0, "hp": 50 },
+      "ship": {
+        "x": 2100,
+        "y": 2600,
+        "angle": 0,
+        "hp": 50
+      },
       "items": [
-        { "type": "scrap", "x": 1980, "y": 2600 },
-        { "type": "ore", "x": 2270, "y": 2420 }
+        {
+          "type": "scrap",
+          "x": 1980,
+          "y": 2600
+        },
+        {
+          "type": "ore",
+          "x": 2270,
+          "y": 2420
+        }
       ],
-      "rocks": [], "wrecks": [],
-      "inputs": [ { "n": 40, "keys": ["thrust"] }, { "n": 200, "keys": [] } ],
-      "actions": [ { "at": 0, "do": "hook" } ]
+      "rocks": [],
+      "wrecks": [],
+      "inputs": [
+        {
+          "n": 40,
+          "keys": [
+            "thrust"
+          ]
+        },
+        {
+          "n": 200,
+          "keys": []
+        }
+      ],
+      "actions": [
+        {
+          "at": 0,
+          "do": "hook"
+        }
+      ]
     },
     {
       "name": "carrier",
-      "ship": { "x": 2400, "y": 2480, "angle": 0 },
+      "ship": {
+        "x": 2400,
+        "y": 2480,
+        "angle": 0
+      },
       "items": [
-        { "type": "ore", "x": 2450, "y": 2560 },
-        { "type": "scrap", "x": 2620, "y": 2400, "vy": 80 }
+        {
+          "type": "ore",
+          "x": 2450,
+          "y": 2560
+        },
+        {
+          "type": "scrap",
+          "x": 2620,
+          "y": 2400,
+          "vy": 80
+        }
       ],
-      "rocks": [], "wrecks": [],
-      "inputs": [ { "n": 120, "keys": ["thrust"] } ],
-      "actions": [ { "at": 0, "do": "hook" } ]
+      "rocks": [],
+      "wrecks": [],
+      "inputs": [
+        {
+          "n": 120,
+          "keys": [
+            "thrust"
+          ]
+        }
+      ],
+      "actions": [
+        {
+          "at": 0,
+          "do": "hook"
+        }
+      ]
     },
     {
       "name": "wall",
-      "ship": { "x": 80, "y": 1000, "angle": 3.141592653589793, "vx": -200 },
-      "items": [ { "type": "scrap", "x": 5150, "y": 300, "vx": 100, "vy": -100 } ],
-      "rocks": [ { "size": 1, "x": 4000, "y": 5150, "vx": 0, "vy": 150, "veined": false } ],
+      "ship": {
+        "x": 80,
+        "y": 1000,
+        "angle": 3.141592653589793,
+        "vx": -200
+      },
+      "items": [
+        {
+          "type": "scrap",
+          "x": 5150,
+          "y": 300,
+          "vx": 100,
+          "vy": -100
+        }
+      ],
+      "rocks": [
+        {
+          "size": 1,
+          "x": 4000,
+          "y": 5150,
+          "vx": 0,
+          "vy": 150,
+          "veined": false
+        }
+      ],
       "wrecks": [],
-      "inputs": [ { "n": 120, "keys": [] } ],
+      "inputs": [
+        {
+          "n": 120,
+          "keys": []
+        }
+      ],
+      "actions": []
+    },
+    {
+      "name": "cannon",
+      "ship": {
+        "x": 1500,
+        "y": 1500,
+        "angle": 0
+      },
+      "items": [],
+      "rocks": [
+        {
+          "size": 3,
+          "x": 1800,
+          "y": 1500,
+          "vx": 0,
+          "vy": 0,
+          "veined": false
+        }
+      ],
+      "wrecks": [],
+      "inputs": [
+        {
+          "n": 150,
+          "keys": [
+            "fire"
+          ]
+        },
+        {
+          "n": 40,
+          "keys": [
+            "fire",
+            "left"
+          ]
+        },
+        {
+          "n": 60,
+          "keys": []
+        }
+      ],
+      "actions": []
+    },
+    {
+      "name": "wreck",
+      "ship": {
+        "x": 1600,
+        "y": 3450,
+        "angle": 1.5707963267948966,
+        "invuln": 0
+      },
+      "items": [],
+      "rocks": [],
+      "wrecks": [
+        {
+          "x": 1600,
+          "y": 3800,
+          "contents": [
+            "scrap",
+            "reactor",
+            "plate"
+          ],
+          "crabs": 1
+        }
+      ],
+      "inputs": [
+        {
+          "n": 330,
+          "keys": [
+            "fire"
+          ]
+        },
+        {
+          "n": 120,
+          "keys": []
+        }
+      ],
+      "actions": []
+    },
+    {
+      "name": "rival",
+      "ship": {
+        "x": 700,
+        "y": 1500,
+        "angle": 0,
+        "invuln": 0
+      },
+      "items": [
+        {
+          "type": "plate",
+          "x": 580,
+          "y": 1500
+        }
+      ],
+      "rocks": [],
+      "wrecks": [],
+      "jumpers": [
+        {
+          "variant": "cutter",
+          "x": 500,
+          "y": 1250
+        }
+      ],
+      "inputs": [
+        {
+          "n": 600,
+          "keys": []
+        }
+      ],
+      "actions": [
+        {
+          "at": 0,
+          "do": "hook"
+        }
+      ],
+      "grudge": 2
+    },
+    {
+      "name": "smash",
+      "ship": {
+        "x": 3800,
+        "y": 3800,
+        "angle": 0,
+        "invuln": 0
+      },
+      "grudge": 1.5,
+      "items": [
+        {
+          "type": "engine",
+          "x": 3300,
+          "y": 3800,
+          "vx": 450
+        }
+      ],
+      "rocks": [],
+      "wrecks": [],
+      "jumpers": [
+        {
+          "variant": "cutter",
+          "x": 3500,
+          "y": 3800
+        },
+        {
+          "variant": "skiff",
+          "x": 3500,
+          "y": 4100
+        },
+        {
+          "variant": "gunship",
+          "x": 4200,
+          "y": 3800
+        }
+      ],
+      "inputs": [
+        {
+          "n": 300,
+          "keys": [
+            "fire"
+          ]
+        }
+      ],
+      "actions": []
+    },
+    {
+      "name": "crabs",
+      "ship": {
+        "x": 3800,
+        "y": 1200,
+        "angle": 3.141592653589793,
+        "invuln": 0
+      },
+      "items": [
+        {
+          "type": "scrap",
+          "x": 3900,
+          "y": 1200
+        }
+      ],
+      "rocks": [],
+      "wrecks": [],
+      "crabs": [
+        {
+          "state": "ride",
+          "host": 0
+        },
+        {
+          "state": "free",
+          "x": 3600,
+          "y": 1250
+        }
+      ],
+      "inputs": [
+        {
+          "n": 200,
+          "keys": []
+        },
+        {
+          "n": 200,
+          "keys": [
+            "left"
+          ]
+        },
+        {
+          "n": 150,
+          "keys": []
+        }
+      ],
+      "actions": [
+        {
+          "at": 0,
+          "do": "hook"
+        }
+      ]
+    },
+    {
+      "name": "reactor",
+      "ship": {
+        "x": 3000,
+        "y": 1000,
+        "angle": 0,
+        "invuln": 0
+      },
+      "items": [
+        {
+          "type": "reactor",
+          "x": 3150,
+          "y": 1000
+        },
+        {
+          "type": "ore",
+          "x": 3150,
+          "y": 1150
+        }
+      ],
+      "rocks": [
+        {
+          "size": 2,
+          "x": 3250,
+          "y": 1100,
+          "vx": 0,
+          "vy": 0,
+          "veined": false
+        }
+      ],
+      "wrecks": [
+        {
+          "x": 3300,
+          "y": 1250
+        }
+      ],
+      "jumpers": [
+        {
+          "variant": "skiff",
+          "x": 3300,
+          "y": 950
+        }
+      ],
+      "crabs": [
+        {
+          "state": "free",
+          "x": 3100,
+          "y": 1100
+        }
+      ],
+      "inputs": [
+        {
+          "n": 40,
+          "keys": [
+            "fire"
+          ]
+        },
+        {
+          "n": 80,
+          "keys": []
+        }
+      ],
       "actions": []
     }
   ]

@@ -2,7 +2,7 @@
 //! collide, onImpact and resolveCollisions in src/js/16-simulation-step.js).
 
 use crate::consts::*;
-use crate::entities::{make_rock, Body};
+use crate::entities::{make_rock, Body, JumperState};
 use crate::events::{Event, Sfx, Tint};
 use crate::items::ItemType;
 use crate::world::World;
@@ -15,6 +15,7 @@ enum Handle {
     Rock(usize),
     Item(usize),
     Wreck(usize),
+    Jumper(usize),
     /// One of the carrier's static hull circles (index into CARRIER_HULL).
     Hull(usize),
 }
@@ -116,14 +117,19 @@ impl World {
             };
             integrate(&mut r.b, dt, damp, true);
         }
-        // (A rival-hauled item is unbounded: milestone 2.)
+        // A rival-hauled item may be dragged out of the field.
         for it in &mut self.items {
-            integrate(&mut it.b, dt, ITEM_DAMP, true);
+            let bounded = it.hooked_by.is_none();
+            integrate(&mut it.b, dt, ITEM_DAMP, bounded);
         }
         for w in &mut self.wrecks {
             integrate(&mut w.b, dt, WRECK_DAMP, true);
         }
-        // (Jumpers, drones, collectors, miners and sheriffs: later milestones.)
+        for j in &mut self.jumpers {
+            let bounded = j.state != JumperState::Haul;
+            integrate(&mut j.b, dt, JUMPER_DAMP, bounded);
+        }
+        // (Drones, collectors, miners and sheriffs: milestone 4.)
     }
 
     fn body(&self, h: Handle) -> Body {
@@ -132,6 +138,7 @@ impl World {
             Handle::Rock(i) => self.rocks[i].b,
             Handle::Item(i) => self.items[i].b,
             Handle::Wreck(i) => self.wrecks[i].b,
+            Handle::Jumper(i) => self.jumpers[i].b,
             Handle::Hull(k) => hull_body(k),
         }
     }
@@ -142,6 +149,7 @@ impl World {
             Handle::Rock(i) => self.rocks[i].b = b,
             Handle::Item(i) => self.items[i].b = b,
             Handle::Wreck(i) => self.wrecks[i].b = b,
+            Handle::Jumper(i) => self.jumpers[i].b = b,
             Handle::Hull(_) => {}
         }
     }
@@ -151,6 +159,7 @@ impl World {
             Handle::Rock(i) => self.rocks[i].dead,
             Handle::Item(i) => self.items[i].dead,
             Handle::Wreck(i) => self.wrecks[i].dead,
+            Handle::Jumper(i) => self.jumpers[i].dead,
             Handle::Ship | Handle::Hull(_) => false,
         }
     }
@@ -160,13 +169,15 @@ impl World {
     /// side, would pin it there for good. Loose cargo still bumps off.
     fn passes_carrier(&self, hull: Handle, it: Handle) -> bool {
         match (hull, it) {
-            (Handle::Hull(_), Handle::Item(i)) => self.items[i].towed,
+            (Handle::Hull(_), Handle::Item(i)) => {
+                self.items[i].towed || self.items[i].hooked_by.is_some()
+            }
             _ => false,
         }
     }
 
     /// Every pair of bodies, in the browser's order: tug, rocks, items,
-    /// wrecks, then the carrier hull. Bodies work on a copy so a pair can
+    /// wrecks, jumpers, then the carrier hull. Bodies work on a copy so a pair can
     /// be borrowed mutably; each impact syncs the pair back to the world
     /// first, because damage rules read positions (a broken rock spawns
     /// its pieces where it now is). Bodies only spawn, never vanish,
@@ -194,8 +205,14 @@ impl World {
                 .enumerate()
                 .map(|(i, w)| (Handle::Wreck(i), w.b)),
         );
-        // (Jumpers, drones, collectors, miners, sheriffs and the refinery
-        // body go between the wrecks and the hull in later milestones.)
+        bodies.extend(
+            self.jumpers
+                .iter()
+                .enumerate()
+                .map(|(i, j)| (Handle::Jumper(i), j.b)),
+        );
+        // (Drones, collectors, miners, sheriffs and the refinery body go
+        // between the jumpers and the hull in milestone 4.)
         bodies.extend((0..CARRIER_HULL.len()).map(|k| (Handle::Hull(k), hull_body(k))));
 
         for i in 0..bodies.len() {
@@ -256,16 +273,27 @@ impl World {
                 );
             }
             Handle::Item(i) => {
-                // (Volatile salvage primes on hard hits: milestone 2. No
-                // volatile items can spawn before wrecks open.)
+                // Volatile salvage primes on a hard hit instead of dealing damage.
+                if self.items[i].def().volatile && rel > VOLATILE_IMPACT {
+                    self.prime_reactor(i);
+                    return;
+                }
                 let me_b = self.items[i].b;
                 let power = rel * me_b.mass;
                 match other {
+                    // Below ~140 px/s it is a nudge, not a hit (a jumper
+                    // settling in to hook).
+                    Handle::Jumper(j) if rel > 140.0 => {
+                        self.hurt_jumper(j, power / 260.0, Some(me_b.mass));
+                    }
+                    // (Drones, collectors, the law and miners: milestone 4.)
                     Handle::Rock(r) if power > ROCK_IMPACT_POWER => {
                         self.damage_rock(r, (power / ROCK_IMPACT_POWER).floor());
                     }
-                    // (Wreck damage from cargo, rivals, drones, collectors,
-                    // law and miners: later milestones.)
+                    // (Keycards opening sealed holds: milestone 4.)
+                    Handle::Wreck(w) if power > WRECK_IMPACT_POWER => {
+                        self.damage_wreck(w, (power / WRECK_IMPACT_POWER).floor());
+                    }
                     _ => {}
                 }
                 if rel > 150.0 {
@@ -279,6 +307,11 @@ impl World {
                         tint: Tint::Steel,
                         speed: 120.0,
                     });
+                }
+            }
+            Handle::Jumper(j) => {
+                if matches!(other, Handle::Rock(_) | Handle::Wreck(_)) && rel > 220.0 {
+                    self.hurt_jumper(j, 1.0, None);
                 }
             }
             Handle::Rock(_) | Handle::Wreck(_) | Handle::Hull(_) => {}

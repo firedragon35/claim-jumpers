@@ -82,6 +82,13 @@ pub struct Ship {
     pub shield: f64,
     pub shield_delay_t: f64,
     pub shield_flash: f64,
+    /// Seconds until the cannon can fire again.
+    pub fire_t: f64,
+    /// Gun heat 0..100; at 100 the cannon locks until it cools.
+    pub heat: f64,
+    pub overheated: bool,
+    /// Seconds until the hull-alarm or under-attack loops sound again.
+    pub alarm_t: f64,
 }
 
 impl Ship {
@@ -111,6 +118,10 @@ impl Ship {
             shield: mods.shield_max,
             shield_delay_t: 0.0,
             shield_flash: 0.0,
+            fire_t: 0.0,
+            heat: 0.0,
+            overheated: false,
+            alarm_t: 0.0,
         }
     }
 
@@ -149,7 +160,10 @@ pub struct Item {
     pub tension: f64,
     /// Seconds since being thrown (dropped or cut), counting down.
     pub thrown_t: f64,
+    /// Seconds until a primed reactor blows; 0 when not primed.
     pub fuse: f64,
+    /// The rival (jumper id) dragging this item off, if any.
+    pub hooked_by: Option<u32>,
     pub shape: Vec<ShapePt>,
     pub dead: bool,
 }
@@ -228,6 +242,7 @@ pub fn make_item(
         tension: 0.0,
         thrown_t: 0.0,
         fuse: 0.0,
+        hooked_by: None,
         shape,
         dead: false,
     }
@@ -392,4 +407,171 @@ pub fn make_wreck(rng: &mut Rng, x: f64, y: f64, shift_no: i32) -> Wreck {
         light: rng.angle(),
         dead: false,
     }
+}
+
+/// What a rival claim jumper is doing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum JumperState {
+    /// Looking for cargo to steal (or circling the tug if there is none).
+    Hunt,
+    /// Latched onto a piece and dragging it out of the field.
+    Haul,
+}
+
+/// A rival claim jumper.
+#[derive(Clone, Debug)]
+pub struct Jumper {
+    pub id: u32,
+    pub variant: Variant,
+    pub b: Body,
+    pub hp: f64,
+    pub angle: f64,
+    pub state: JumperState,
+    /// Item id it is heading for.
+    pub target: Option<u32>,
+    /// Item id it has hooked.
+    pub hook: Option<u32>,
+    pub link_len: f64,
+    /// Seconds latched onto your train (it cuts the line at the sever time).
+    pub latch_t: f64,
+    pub fire_t: f64,
+    pub retarget: f64,
+    pub flash: f64,
+    /// Phase angle while circling the tug.
+    pub orbit: f64,
+    /// Hunters skip the cargo and go straight for the tug.
+    pub hunter: bool,
+    pub speed_mul: f64,
+    /// Seconds left fleeing after a wingmate was smashed.
+    pub flee_t: f64,
+    /// Seconds left giving covering fire to a latched wingmate.
+    pub cover_t: f64,
+    pub dead: bool,
+}
+
+/// Pick a hull variant, weighted by the rivals' grudge stage.
+pub fn pick_variant(rng: &mut Rng, stage: usize) -> Variant {
+    let total: f64 = VARIANTS.iter().map(|v| v.def().weights[stage]).sum();
+    let mut roll = rng.next() * total;
+    for v in VARIANTS {
+        roll -= v.def().weights[stage];
+        if roll < 0.0 {
+            return v;
+        }
+    }
+    Variant::Cutter
+}
+
+/// `makeJumper(x, y, variant)`: a rival toughened by the grudge stage.
+/// `variant` None rolls one for the stage.
+pub fn make_jumper(
+    rng: &mut Rng,
+    id: u32,
+    x: f64,
+    y: f64,
+    variant: Option<Variant>,
+    stage: usize,
+) -> Jumper {
+    let st = &RIVAL_STAGES[stage];
+    let variant = variant.unwrap_or_else(|| pick_variant(rng, stage));
+    let v = variant.def();
+    let fire_t = rng.range(1.0, 2.5);
+    let orbit = rng.angle();
+    // (Crews with good standing send half as many hunters: standing
+    // arrives with the career in milestone 3.)
+    let hunter = v.hunter || rng.next() < st.hunters;
+    Jumper {
+        id,
+        variant,
+        b: Body {
+            x,
+            y,
+            r: v.r,
+            mass: v.mass,
+            ..Body::default()
+        },
+        hp: (JUMPER_HP + st.hp + v.hp).max(2.0),
+        angle: 0.0,
+        state: JumperState::Hunt,
+        target: None,
+        hook: None,
+        link_len: 0.0,
+        latch_t: 0.0,
+        fire_t,
+        retarget: 0.0,
+        flash: 0.0,
+        orbit,
+        hunter,
+        speed_mul: st.speed * v.speed,
+        flee_t: 0.0,
+        cover_t: 0.0,
+        dead: false,
+    }
+}
+
+/// What a scrap crab is doing (see updateCrab).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CrabState {
+    /// Sitting on a salvage piece; starts crawling once it is towed.
+    Ride,
+    /// Walking a cable link toward the tug, hopping link to link.
+    Crawl,
+    /// On the tug's hull, chewing it until spun off or repaired at the bay.
+    Latched,
+    /// Drifting; homes in on the tug or nearby cargo.
+    Free,
+}
+
+#[derive(Clone, Debug)]
+pub struct Crab {
+    pub state: CrabState,
+    /// Item id it rides or crawls from.
+    pub host: Option<u32>,
+    pub x: f64,
+    pub y: f64,
+    pub vx: f64,
+    pub vy: f64,
+    pub r: f64,
+    /// Progress 0..1 along the current cable link.
+    pub t: f64,
+    pub ride_t: f64,
+    pub stun_t: f64,
+    /// Angle offset of its perch on the host or hull.
+    pub off_a: f64,
+    /// Leg animation phase.
+    pub leg_t: f64,
+    pub chomp_t: f64,
+    pub dead: bool,
+}
+
+pub fn make_crab(rng: &mut Rng, state: CrabState, host: Option<u32>, x: f64, y: f64) -> Crab {
+    let off_a = rng.angle();
+    let leg_t = rng.angle();
+    Crab {
+        state,
+        host,
+        x,
+        y,
+        vx: 0.0,
+        vy: 0.0,
+        r: CRAB_RADIUS,
+        t: 0.0,
+        ride_t: 0.0,
+        stun_t: 0.0,
+        off_a,
+        leg_t,
+        chomp_t: 0.0,
+        dead: false,
+    }
+}
+
+/// A cannon round (yours) or a bolt (theirs).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Bullet {
+    pub x: f64,
+    pub y: f64,
+    pub vx: f64,
+    pub vy: f64,
+    pub life: f64,
+    pub dmg: f64,
 }

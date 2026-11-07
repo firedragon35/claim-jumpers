@@ -12,6 +12,9 @@ path = "src/main.rs"
 
 [dependencies]
 cj-sim = { path = "../cj-sim" }
-# Audio is handled with cpal from milestone 2, so macroquad's own audio is off.
+# Default features off: macroquad would open its own audio device, and
+# the game synthesizes its sound through cpal instead.
 macroquad = { version = "0.4.16", default-features = false }
 gilrs = "0.11.2"
+# Audio output (WASAPI on Windows) for the procedural synthesizer.
+cpal = "0.18.2"

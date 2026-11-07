@@ -23,6 +23,12 @@ pub mod col {
     pub const WRECK_FILL: u32 = 0x0d1a1c;
     pub const SHIELD: u32 = 0x8fd8ff;
     pub const JUMPER: u32 = 0xff4fa3;
+    pub const REACTOR: u32 = 0xb8ff3b;
+    pub const ENGINE: u32 = 0x6fa8ff;
+    pub const CRAB: u32 = 0xff7a3c;
+    pub const COLLECTOR: u32 = 0xa98bff;
+    /// The cost line on upgrades; also the heat meter.
+    pub const TRADEOFF: u32 = 0xf2a493;
     pub const PANEL_EDGE: u32 = 0x2a3550;
 }
 
@@ -43,6 +49,10 @@ pub fn tint_rgb(t: cj_sim::events::Tint) -> u32 {
         Ore => col::ORE,
         Danger => col::DANGER,
         Text => col::TEXT,
+        Wreck => col::WRECK,
+        Jumper => col::JUMPER,
+        Crab => col::CRAB,
+        Reactor => col::REACTOR,
         Rgb(c) => c,
     }
 }

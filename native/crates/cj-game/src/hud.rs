@@ -7,6 +7,7 @@
 
 use crate::controls::Device;
 use crate::look::{col, rgba, text_left, text_width, Look};
+use cj_sim::consts::RIVAL_STAGES;
 use cj_sim::world::fmt_credits;
 use cj_sim::World;
 use macroquad::prelude::*;
@@ -81,6 +82,37 @@ pub fn draw(look: &Look, w: &World, view: (f32, f32), device: Device) {
         top,
         Color::from_hex(col::MUTED),
     );
+    // The rivals' mood once they hold a grudge, and the under-attack
+    // warning, stack between the shift label and the clock. (The wanted
+    // stars join this column with the law in milestone 4.)
+    let mut cy = top + 16.0;
+    let stage = w.rival_stage();
+    if stage > 0 {
+        let txt = format!("RIVALS · {}", RIVAL_STAGES[stage].name.to_uppercase());
+        let tw = text_width(&txt, 11.0, &look.fonts.mono);
+        text_left(
+            &txt,
+            (vw - tw) / 2.0,
+            cy,
+            11.0,
+            &look.fonts.mono,
+            Color::from_hex(col::JUMPER),
+        );
+        cy += 15.0;
+    }
+    if w.under_attack_t > 0.0 {
+        let txt = "⚠ UNDER ATTACK";
+        let tw = text_width(txt, 13.0, &look.fonts.mono);
+        text_left(
+            txt,
+            (vw - tw) / 2.0,
+            cy,
+            13.0,
+            &look.fonts.mono,
+            Color::from_hex(col::DANGER),
+        );
+        cy += 17.0;
+    }
     let secs = w.time_left.ceil().max(0.0) as i64;
     let clock = format!("{}:{:02}", secs / 60, secs % 60);
     let cw = text_width(&clock, 34.0, &look.fonts.display);
@@ -88,7 +120,7 @@ pub fn draw(look: &Look, w: &World, view: (f32, f32), device: Device) {
     text_left(
         &clock,
         (vw - cw) / 2.0,
-        top + 16.0,
+        cy,
         34.0,
         &look.fonts.display,
         Color::from_hex(cc),
@@ -122,13 +154,27 @@ pub fn draw(look: &Look, w: &World, view: (f32, f32), device: Device) {
         (s.hp / m.max_hp) as f32,
         hull_c,
     );
+    meter(
+        look,
+        "Heat",
+        mx,
+        top + 40.0,
+        mw,
+        (s.heat.clamp(0.0, 100.0) / 100.0) as f32,
+        if s.overheated {
+            col::DANGER
+        } else {
+            col::TRADEOFF
+        },
+    );
+    // (The afterburner's Engine meter goes here in milestone 4.)
     let load = w.tow_mass();
     let frac = (load / m.winch_cap) as f32;
     meter(
         look,
         "Winch",
         mx,
-        top + 40.0,
+        top + 60.0,
         mw,
         frac,
         if frac > 0.85 { col::JUMPER } else { col::CABLE },
@@ -143,7 +189,7 @@ pub fn draw(look: &Look, w: &World, view: (f32, f32), device: Device) {
     text_left(
         &lt,
         vw - pad - tw,
-        top + 54.0,
+        top + 74.0,
         11.0,
         &look.fonts.mono_light,
         Color::from_hex(col::MUTED),
@@ -152,11 +198,11 @@ pub fn draw(look: &Look, w: &World, view: (f32, f32), device: Device) {
     // Bottom right: the controls hint for the device in use.
     let lines: &[&str] = match device {
         Device::Keyboard => &[
-            "W thrust · A D turn · S brake",
+            "W thrust · A D turn · S brake · Space fire",
             "E hook · Q drop last · X cut all · P pause",
         ],
         Device::Pad => &[
-            "L-stick turn · RT thrust · LT brake",
+            "L-stick turn · RT thrust · LT brake · RB fire",
             "Y hook · B drop last · LB cut all · Start pause",
         ],
     };
