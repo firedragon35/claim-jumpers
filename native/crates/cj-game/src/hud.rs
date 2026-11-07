@@ -98,7 +98,29 @@ pub fn draw(look: &Look, w: &World, career: Option<&Career>, view: (f32, f32), d
         };
         online(&s, ly, colr);
     }
-    // (The contract line joins with contracts in milestone 5.)
+    // The accepted contract and its progress; cable once it is met.
+    if let Some(k) = &w.contract {
+        ly += 18.0;
+        let prog = k.n.min(w.contract_progress(k));
+        let money = matches!(
+            k.kind,
+            cj_sim::field::ContractKind::Bank | cj_sim::field::ContractKind::Clean
+        );
+        let amount = if money {
+            format!("{} / {}", fmt_credits(prog), fmt_credits(k.n))
+        } else {
+            format!("{prog} / {}", k.n)
+        };
+        let failed = k.kind == cj_sim::field::ContractKind::Clean && w.stats.deaths > 0;
+        let (s, colr) = if failed {
+            (format!("Contract failed · {}", k.text()), col::HAZARD)
+        } else if prog >= k.n {
+            (format!("Contract · {} · {amount}", k.text()), col::CABLE)
+        } else {
+            (format!("Contract · {} · {amount}", k.text()), col::HAZARD)
+        };
+        online(&s, ly, colr);
+    }
     if w.mods.grinder || w.ship.slugs > 0 {
         ly += 18.0;
         online(&format!("Slugs {}", w.ship.slugs), ly, col::TEXT);
@@ -137,7 +159,12 @@ pub fn draw(look: &Look, w: &World, career: Option<&Career>, view: (f32, f32), d
     }
 
     // Centre: shift and clock (red in the last 30 seconds).
-    let shift = format!("Shift {} · Hollis Belt", w.shift_no);
+    let cond = if w.cond == cj_sim::field::Condition::Normal {
+        String::new()
+    } else {
+        format!(" · {}", w.cond.def().name)
+    };
+    let shift = format!("Shift {} · {}{cond}", w.shift_no, w.belt.def().name);
     label(
         look,
         &shift,

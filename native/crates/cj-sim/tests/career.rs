@@ -5,6 +5,8 @@
 //! Plus save round-trips and the shop's rules.
 
 use cj_sim::career::{installment_for, Career, Mode, Outcome};
+use cj_sim::field::{chain_contract, Belt, Chain, Condition, Contract, ContractKind, Crew};
+use cj_sim::items::ItemType;
 use cj_sim::mods::compute_mods;
 use cj_sim::parts::*;
 use cj_sim::rng::Rng;
@@ -158,6 +160,60 @@ fn check_career(c: &Career, want: &Value, ctx: &str) {
     );
 }
 
+/// The shift's contract as the exporter gave it: a chain step, or a
+/// plain contract object.
+fn contract_input(input: &Value) -> Option<Contract> {
+    if let Some(step) = input["chainStep"].as_array() {
+        let ch = Chain::from_key(step[0].as_str().unwrap()).expect("chain");
+        return Some(chain_contract(ch, step[1].as_u64().unwrap() as usize));
+    }
+    let k = input.get("contract")?;
+    Some(Contract {
+        kind: ContractKind::from_key(k["kind"].as_str().unwrap()).expect("kind"),
+        n: k["n"].as_f64().unwrap(),
+        cargo: k["type"].as_str().and_then(ItemType::from_key),
+        reward: k["reward"].as_f64().unwrap(),
+        chain: None,
+    })
+}
+
+/// Crew, cores, chains and the unique parts a finished chain awards.
+fn check_field_state(c: &Career, want: &Value, ctx: &str) {
+    assert_eq!(
+        c.crew.map(|x| x.def().key),
+        want["crew"].as_str(),
+        "crew {ctx}"
+    );
+    close(
+        f64::from(c.cores),
+        want["cores"].as_f64().unwrap_or(0.0),
+        &format!("cores {ctx}"),
+    );
+    let chain = want["chain"]["id"].as_str().map(|id| {
+        let step = want["chain"]["step"].as_u64().unwrap() as usize;
+        (Chain::from_key(id).expect("chain"), step)
+    });
+    assert_eq!(c.chain, chain, "chain {ctx}");
+    let done: Vec<Chain> = want["chainsDone"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().and_then(Chain::from_key))
+                .collect()
+        })
+        .unwrap_or_default();
+    assert_eq!(c.chains_done, done, "chainsDone {ctx}");
+    let owned: Vec<&str> = c.owned.iter().map(|p| p.def().key).collect();
+    let want_owned: Vec<&str> = want["owned"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(Value::as_str)
+        .collect();
+    assert_eq!(owned, want_owned, "owned {ctx}");
+    assert!(c.contract.is_none(), "the contract is spent {ctx}");
+}
+
 #[test]
 fn malformed_saves_are_repaired_like_the_browser() {
     for l in golden()["loads"].as_array().unwrap() {
@@ -224,7 +280,23 @@ fn shift_settlements_match_end_shift() {
             c.rep.law = r["law"].as_f64().unwrap();
             c.rep.rivals = r["rivals"].as_f64().unwrap();
         }
+        // Phase 6 and 7 inputs: the crew, an open chain, stored cores.
+        c.crew = k["crew"].as_str().and_then(Crew::from_key);
+        c.cores = k["cores"].as_u64().unwrap_or(0) as u32;
+        c.chain = k["chain"]["id"]
+            .as_str()
+            .and_then(Chain::from_key)
+            .map(|ch| (ch, k["chain"]["step"].as_u64().unwrap() as usize));
         let mut w = World::for_career(Rng::Constant(0.5), (1280.0, 720.0), &c);
+        w.contract = contract_input(input);
+        if let Some(d) = input["delivered"].as_object() {
+            for (t, n) in d {
+                let t = ItemType::from_key(t).expect("item type");
+                w.delivered.push((t, n.as_u64().unwrap() as u32));
+            }
+        }
+        w.stats.deaths = input["deaths"].as_u64().unwrap_or(0) as u32;
+        w.cores_banked = input["coresBanked"].as_u64().unwrap_or(0) as u32;
         w.banked = input["banked"].as_f64().unwrap();
         w.grudge = input["grudge"].as_f64().unwrap();
         w.stats.jumpers = input["jumpers"].as_u64().unwrap() as u32;
@@ -232,7 +304,11 @@ fn shift_settlements_match_end_shift() {
         let st = c.settle(&w);
         let title = s["title"].as_str().unwrap();
         let ctx = format!("{input} -> {title}");
-        check_career(&c, &s["career"], &ctx);
+        let want = &s["career"];
+        check_career(&c, want, &ctx);
+        if want.is_object() {
+            check_field_state(&c, want, &ctx);
+        }
         let want_outcome = if title == "Repossessed" {
             "repo"
         } else if title.starts_with("Traded up") {
@@ -267,8 +343,34 @@ fn save_round_trips_and_keeps_unported_fields() {
     c.mounted[3] = Some(Part::Winch);
     c.levels.set(System::Shield, 3);
     c.rep.bank = 42.0;
-    c.extra.insert("belt".into(), Value::from("kessler"));
-    c.extra.insert("crew".into(), Value::from("broker"));
+    // Phase 6 and 7 fields round-trip as fields (a Kessler permit needs a
+    // Mk II tug, or the load would fall back to Hollis).
+    c.tug_class = 1;
+    c.belt = Belt::Kessler;
+    c.crew = Some(Crew::Broker);
+    c.contract = Some(Contract {
+        kind: ContractKind::Deliver,
+        n: 3.0,
+        cargo: Some(cj_sim::items::ItemType::Plate),
+        reward: 1500.0,
+        chain: None,
+    });
+    c.contract_shift = 6;
+    c.chain = Some((Chain::SaltyDog, 1));
+    c.chains_done.push(Chain::HollisFreight);
+    c.conditions = Some((
+        6,
+        [
+            Condition::Normal,
+            Condition::OreBoom,
+            Condition::Night,
+            Condition::IonFront,
+            Condition::SalvageGlut,
+        ],
+    ));
+    c.cores = 2;
+    // A save key for a system still to come is kept verbatim.
+    c.extra.insert("records".into(), Value::from("kept"));
     let back = Career::from_json(&c.to_json()).expect("loads");
     assert_eq!(back, c);
     assert!(Career::from_json("not json").is_none());

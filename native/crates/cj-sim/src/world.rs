@@ -46,6 +46,7 @@ pub struct Kills {
     pub drone: u32,
     pub rogue: u32,
     pub jaws: u32,
+    pub boss: u32,
 }
 
 pub struct World {
@@ -133,6 +134,27 @@ pub struct World {
     pub fine_from_cargo: f64,
     pub seized: f64,
     pub arrests: u32,
+    /// The belt being worked and its condition this shift.
+    pub belt: crate::field::Belt,
+    pub cond: crate::field::Condition,
+    /// The co-pilot aboard and the accepted contract.
+    pub crew: Option<crate::field::Crew>,
+    pub contract: Option<crate::field::Contract>,
+    /// Banked pieces by type (for delivery contracts).
+    pub delivered: Vec<(ItemType, u32)>,
+    /// The field event: when it fires, whether it has, and the ion storm.
+    pub event_t: f64,
+    pub event_done: bool,
+    pub ion_t: f64,
+    /// An escort contract's hauler arrives at this time.
+    pub escort_at: Option<f64>,
+    pub hauler: Option<crate::field::Hauler>,
+    pub escort_done: bool,
+    pub escort_failed: bool,
+    pub cores_banked: u32,
+    pub hold_opened: bool,
+    /// The boss crew taken down this shift, if any.
+    pub boss_down: Option<&'static str>,
     /// Standing changes earned this shift, applied when it ends.
     pub rep_delta: Rep,
     /// Rival crews respect you: half as many hunters come.
@@ -222,6 +244,21 @@ impl World {
             fine_from_cargo: 0.0,
             seized: 0.0,
             arrests: 0,
+            belt: crate::field::Belt::Hollis,
+            cond: crate::field::Condition::Normal,
+            crew: None,
+            contract: None,
+            delivered: Vec::new(),
+            event_t: f64::INFINITY,
+            event_done: true,
+            ion_t: 0.0,
+            escort_at: None,
+            hauler: None,
+            escort_done: false,
+            escort_failed: false,
+            cores_banked: 0,
+            hold_opened: false,
+            boss_down: None,
             cam: Camera {
                 x: BAY_X,
                 y: BAY_Y,
@@ -265,8 +302,10 @@ impl World {
         w.grudge = c.grudge + if bad { 2.0 } else { 0.0 };
         w.rivals_good = tier(c.rep.rivals) == Tier::Good;
         w.career = Some(c.clone());
+        w.setup_career_field(c);
         w.setup_opposition();
         w.start_shift();
+        w.setup_after_populate();
         w.setup_miners();
         w
     }
@@ -298,7 +337,8 @@ impl World {
     pub fn new_item(&mut self, kind: ItemType, x: f64, y: f64, vx: f64, vy: f64) -> Item {
         let id = self.next_id;
         self.next_id += 1;
-        make_item(&mut self.rng, id, kind, x, y, vx, vy, self.belt_value)
+        let cond = self.cond.value_for(kind);
+        make_item(&mut self.rng, id, kind, x, y, vx, vy, self.belt_value, cond)
     }
 
     /// Create a rival with a fresh id at the current grudge stage
@@ -343,7 +383,7 @@ impl World {
     }
 
     /// True when a point is clear of the carrier's safe zone and existing bodies.
-    fn clear_spot(&self, x: f64, y: f64, r: f64, safe: f64) -> bool {
+    pub(crate) fn clear_spot(&self, x: f64, y: f64, r: f64, safe: f64) -> bool {
         if js::dist(x, y, CARRIER_X, CARRIER_Y) < safe {
             return false;
         }
@@ -508,7 +548,8 @@ impl World {
             return;
         }
         self.update_bay(dt);
-        // (Tutorial and field events: milestone 5.)
+        // (The guided tutorial updates here in milestone 5 part 2.)
+        self.update_events(dt);
         self.update_opposition_spawns(dt);
         self.update_spawns(dt);
         self.shake = (self.shake - dt * 30.0).max(0.0);
@@ -795,7 +836,8 @@ impl World {
         s.shield_flash = (s.shield_flash - dt).max(0.0);
         s.shield_delay_t = (s.shield_delay_t - dt).max(0.0);
         let mut shield_up = false;
-        if s.shield_delay_t <= 0.0 && s.shield < mods.shield_max {
+        // An ion storm holds the shield at zero (see update_events).
+        if s.shield_delay_t <= 0.0 && s.shield < mods.shield_max && self.ion_t <= 0.0 {
             let in_bay = js::dist(s.b.x, s.b.y, BAY_X, BAY_Y) < BAY_REPAIR_RANGE;
             let boost = if in_bay { SHIELD_BAY_BOOST } else { 1.0 };
             s.shield = mods
@@ -921,7 +963,7 @@ impl World {
         let (x, y) = (s.b.x, s.b.y);
         self.stats.deaths += 1;
         // (The broker crew's fee multiplier joins with crews in milestone 3.)
-        let deductible = js::round(DEDUCTIBLE * self.diff_fees);
+        let deductible = js::round(DEDUCTIBLE * self.diff_fees * self.crew_fee_mul());
         self.banked = (self.banked - deductible).max(0.0);
         self.popup(
             x,
@@ -1068,7 +1110,22 @@ impl World {
 
     /// Credit an item. Bankings within two seconds of each other count as
     /// one "delivery", which the end screen reports as the best delivery.
-    fn bank_item(&mut self, i: usize) {
+    pub fn bank_item(&mut self, i: usize) {
+        // Rogue cores are stored for the shop, not sold here.
+        if self.items[i].kind == ItemType::Core {
+            self.store_core(i);
+            return;
+        }
+        // The broker gets a better price; the popup shows what was paid.
+        if self.crew == Some(crate::field::Crew::Broker) {
+            let it = &mut self.items[i];
+            it.value = js::round(it.value * crate::field::BROKER_RATE);
+        }
+        let kind = self.items[i].kind;
+        match self.delivered.iter_mut().find(|d| d.0 == kind) {
+            Some(d) => d.1 += 1,
+            None => self.delivered.push((kind, 1)),
+        }
         let it = &self.items[i];
         let (x, y, value, rare, hidden) = (it.b.x, it.b.y, it.value, it.rare, it.hidden);
         let tint = it.tint;

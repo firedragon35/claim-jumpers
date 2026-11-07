@@ -182,16 +182,6 @@ impl Part {
     pub fn from_key(key: &str) -> Option<Part> {
         PARTS.into_iter().find(|p| p.def().key == key)
     }
-
-    /// Parts whose effect needs a system that arrives in a later
-    /// milestone of the port. The shop lists them but will not sell or
-    /// mount them yet, so nobody pays for a part that does nothing.
-    pub fn pending(self) -> Option<&'static str> {
-        match self {
-            Part::HullSeal => Some("milestone 5"),
-            _ => None,
-        }
-    }
 }
 
 /// A hardpoint on the tug (SLOTS).

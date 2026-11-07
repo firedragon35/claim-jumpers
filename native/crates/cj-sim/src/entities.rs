@@ -196,6 +196,8 @@ pub struct Item {
     pub fuse: f64,
     /// The rival (jumper id) dragging this item off, if any.
     pub hooked_by: Option<u32>,
+    /// Seconds until a towed rogue core next tries to zap the tug.
+    pub zap_t: f64,
     pub shape: Vec<ShapePt>,
     pub dead: bool,
 }
@@ -221,7 +223,11 @@ pub fn roll_grade(rng: &mut Rng, def: &ItemDef) -> usize {
 
 /// Create a salvage item, rolling its grade. A ranged value is skewed
 /// toward the low end (power 1.6) so a big pod is an occasional jackpot.
-/// `belt_value` is the belt's price multiplier (1 in the starting belt).
+/// `belt_value` is the belt's price multiplier (1 in the starting belt);
+/// `cond_value` is the belt condition's multiplier for this item type.
+// Mirrors the browser's makeItem, which reads the belt and condition from
+// global state; here they are passed in, so the argument list is long.
+#[allow(clippy::too_many_arguments)]
 pub fn make_item(
     rng: &mut Rng,
     id: u32,
@@ -231,6 +237,7 @@ pub fn make_item(
     vx: f64,
     vy: f64,
     belt_value: f64,
+    cond_value: f64,
 ) -> Item {
     let def = kind.def();
     let gi = roll_grade(rng, def);
@@ -240,7 +247,8 @@ pub fn make_item(
         Value::Range(lo, hi) => lo + (hi - lo) * rng.next().powf(1.6),
     };
     let value = if base != 0.0 {
-        js::round(base * belt_value / 10.0) * 10.0
+        // Richer belts and belt conditions move prices.
+        js::round(base * belt_value * cond_value / 10.0) * 10.0
     } else {
         0.0
     };
@@ -275,6 +283,7 @@ pub fn make_item(
         thrown_t: 0.0,
         fuse: 0.0,
         hooked_by: None,
+        zap_t: 1.0,
         shape,
         dead: false,
     }
@@ -371,6 +380,10 @@ pub fn make_rock_drifting(rng: &mut Rng, size: u8, x: f64, y: f64) -> Rock {
 #[derive(Clone, Debug)]
 pub struct Wreck {
     pub b: Body,
+    /// A sealed hold: only its keycard opens it.
+    pub locked: bool,
+    /// The derelict freighter of a field event.
+    pub freighter: bool,
     pub angle: f64,
     pub spin: f64,
     pub hp: f64,
@@ -431,6 +444,8 @@ pub fn make_wreck(rng: &mut Rng, x: f64, y: f64, shift_no: i32) -> Wreck {
     let spin = rng.range(-0.06, 0.06);
     let crabs = (rng.int(1, 2) + (shift_no - 1) / 2).min(4);
     Wreck {
+        locked: false,
+        freighter: false,
         b: Body {
             x,
             y,
@@ -467,6 +482,8 @@ pub enum JumperState {
 pub struct Jumper {
     pub id: u32,
     pub variant: Variant,
+    /// A named boss crew and the bounty on it.
+    pub boss: Option<Boss>,
     pub b: Body,
     pub hp: f64,
     pub angle: f64,
@@ -527,6 +544,7 @@ pub fn make_jumper(
     Jumper {
         id,
         variant,
+        boss: None,
         b: Body {
             x,
             y,
@@ -628,4 +646,11 @@ pub struct Bullet {
     /// A rogue sentry's bolt, and which sentry fired it.
     pub rogue: bool,
     pub owner: Option<u32>,
+}
+
+/// A named rival boss crew (a field event).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Boss {
+    pub name: &'static str,
+    pub bounty: f64,
 }

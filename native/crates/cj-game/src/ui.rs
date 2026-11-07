@@ -50,6 +50,10 @@ pub enum Style {
     Slot {
         filled: bool,
     },
+    /// A belt card on the sector map (.belt): a solid edge, cable when picked.
+    Belt {
+        picked: bool,
+    },
 }
 
 struct Btn {
@@ -289,7 +293,7 @@ fn button_metrics(style: Style) -> (Which, f32, f32, f32, bool) {
         Style::Act | Style::Buy => (Which::Mono, 12.0, 12.0, 8.0, true),
         Style::Mode { .. } => (Which::Mono, 13.0, 12.0, 10.0, true),
         Style::Tab { .. } => (Which::Mono, 12.0, 14.0, 9.0, true),
-        Style::Slot { .. } => (Which::Body, 15.0, 10.0, 8.0, false),
+        Style::Slot { .. } | Style::Belt { .. } => (Which::Body, 15.0, 10.0, 8.0, false),
     }
 }
 
@@ -371,6 +375,15 @@ fn draw_button(
             None,
             Color::from_hex(col::MUTED),
         ),
+        Style::Belt { picked } => (
+            Some(Color::from_hex(0x0c1220)),
+            Some(if picked {
+                Color::from_hex(col::CABLE)
+            } else {
+                edge
+            }),
+            Color::from_hex(col::TEXT),
+        ),
     };
     if let Some(f) = fill {
         draw_rectangle(r.x, r.y, r.w, r.h, f);
@@ -393,7 +406,7 @@ fn draw_button(
     let spacing = letter_spacing(style, size);
     let tw = text_w(look, &text, size, which) + text.chars().count() as f32 * spacing;
     let tx = match style {
-        Style::Slot { .. } => r.x + px,
+        Style::Slot { .. } | Style::Belt { .. } => r.x + px,
         _ => r.x + (r.w - tw) / 2.0,
     };
     let ty = r.y + (r.h - size * 1.25) / 2.0 + size * 0.1;

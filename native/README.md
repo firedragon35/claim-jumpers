@@ -5,19 +5,31 @@ in the repository root (`claim-jumpers.html`, built from `src/`) is the
 reference implementation; the port must match its gameplay, rules,
 controls, balance and look unless a change is explicitly approved.
 
-**Status: Milestone 4 (the opposition).** A career of five-minute shifts:
-fly the tug, tow and fight for salvage, and bank it at the carrier, against
-rival crews, debt collectors who net and tow the tug (or confiscate a fat
-load, or impound it), the law (wanted stars, patrols, shakedowns, pursuit,
-stun bolts, arrests and fines, up to Galactic SWAT), mining drones that cut
-the field into debris storms, and the Kessler refinery (charges, the vault,
-security drones and the jaws). The afterburner, auto-defense missiles and
-torpedoes, and sentry drones (which go rogue if the tug is wrecked) are all
-in. After each shift the report settles the loan installment, and the
-machine shop sells parts and system levels; paying a loan off trades the
-tug up a class. Title, pause, report and shop work with keyboard, mouse or
-gamepad. The remaining systems arrive in milestone 5 (see "Known
-differences" below).
+**Status: Milestone 5, part 1 (the career's field systems).** A career of
+five-minute shifts: fly the tug, tow and fight for salvage, and bank it at
+the carrier, against rival crews, debt collectors who net and tow the tug
+(or confiscate a fat load, or impound it), the law (wanted stars, patrols,
+shakedowns, pursuit, stun bolts, arrests and fines, up to Galactic SWAT),
+mining drones that cut the field into debris storms, and the Kessler
+refinery (charges, the vault, security drones and the jaws). The
+afterburner, auto-defense missiles and torpedoes, and sentry drones (which
+go rogue if the tug is wrecked) are all in.
+
+Each shift is worked on a belt picked from the sector map (five belts, from
+the Quiet Drift to the lawless Frontier, each needing a tug class), under
+that shift's belt condition (ore boom, patrol sweep, salvage glut, rival
+surge, ion front or night). Somewhere in the shift a field event strikes:
+an ion storm that drops the shields, a derelict freighter drifting in, a
+named boss crew with a bounty, or a hauler to escort home. Sealed holds
+open only with their keycard, and rogue sentries leave cores to store,
+sell or reprogram. The machine shop now has all four tabs: the tug, parts,
+jobs and crew (three contract offers a shift, contract chains that award
+unique parts, and four co-pilots with a wage and a perk), and the map and
+standing (bank, law and rivals, and a truce with the crews). The report
+settles the contract and the wage with the installment. The HUD shows the
+contract, the belt and its condition, and the radar minimap and off-screen
+arrows are in. Title, pause, report and shop work with keyboard, mouse or
+gamepad. The rest of milestone 5 follows (see "Known differences" below).
 
 | Folder | What it is |
 |---|---|
@@ -84,10 +96,12 @@ is repaired on load the way the browser repairs one. Set
 
 Unattended check: a scripted shift with a tow, the cannon, a rival, a
 crab, missiles and sentries, the refinery waking its drones, a debt
-collector, a mining crew and two wanted stars, then the pause card, the
-shift report, a purchase in the shop, the shop's Parts tab and the title,
-with a screenshot of each in `%TEMP%\claim-jumpers-m4-<screen>.png` and a
-report. It uses (and then
+collector, a mining crew, two wanted stars, an ion storm, a boss crew, an
+escorted hauler, a sealed hold and its keycard and a contract, then the
+pause card, the shift report, a purchase in the shop, the shop's Parts
+tab, accepting a contract and hiring a co-pilot on Jobs & crew, buying a
+truce on Map & standing, and the title, with a screenshot of each in
+`%TEMP%\claim-jumpers-m5-<screen>.png` and a report. It uses (and then
 deletes) its own temporary save folder, never the player's. The release
 build has no console window, so redirect the report to a file:
 
@@ -130,9 +144,20 @@ cargo test
 - `tests/career.rs` checks the career against answers recorded from the
   browser (`golden/career.json`): the loadout numbers for nine loadouts,
   108 installments and the bank's rate, five malformed saves repaired on
-  load, and seven end-of-shift settlements (continuing, overdrawn,
-  repossessed, two trade-ups, the fleet paid off, standing changes). It
-  also checks save round-trips, the shop's rules and sentry purchases.
+  load, and thirteen end-of-shift settlements (continuing, overdrawn,
+  repossessed, two trade-ups, the fleet paid off, standing changes, and
+  contracts met and missed, crew wages, a chain finished, a chain broken by
+  a wrecked tug, a chain advancing, and stored cores at the cap). It also
+  checks save round-trips (with contracts, chains, crew, belt, conditions
+  and cores), the shop's rules and sentry purchases.
+- `tests/field.rs` ports the browser's own tests for the career's field
+  systems (tests/specs/phases-6-9.spec.js): bank standing moves the
+  installment and a truce drops the grudge a stage; a contract chain's last
+  step awards its unique part; an ore boom raises ore prices by half; an
+  escorted hauler reaching the bay meets the escort contract; a sealed hold
+  ignores damage and opens with its keycard; and a rogue sentry's core is
+  stored and reprogrammed into a sentry. It also checks that the awarded
+  self-sealing hull mounts and repairs the hull.
 - `tests/rules.rs` checks hooking, winch capacity, reeling, drop and cut,
   banking and deliveries, bay repair, shields, losing the tug, the shift
   clock, seeded field generation, and for combat gun heat and overheating,
@@ -150,32 +175,29 @@ To re-record the traces and career answers after changing the browser game
 docker run --rm -v "$PWD:/work" -v /work/tests/node_modules -w /work/tests mcr.microsoft.com/playwright:v1.49.1-noble sh -c "npm ci --no-audit --no-fund && node /work/native/tools/golden/export.mjs && node /work/native/tools/golden/career.mjs"
 ```
 
-## Known differences from the browser version (Milestone 4)
+## Known differences from the browser version (Milestone 5, part 1)
 
-Not yet ported (all in milestone 5): sealed holds and their keycards,
-escorted haulers, contracts, crews and wages, the sector map and belts
-(including the lawless Frontier), belt conditions, the standing screen,
-contract chains (and the unique parts they award), field events, boss
-crews, the tutorial, music, Marge's radio and voice (radio lines are
-raised but not yet shown or spoken), her shop commentary, paint jobs,
-hit-stop, the highlight reel, settings and key rebinding, records and
-achievements, the leaderboard and pilot name, the sound test, daily
-shifts and co-op. Placeholders, clearly temporary:
+Not yet ported (the rest of milestone 5): the tutorial, music, Marge's
+radio and voice (radio lines are raised but not yet shown or spoken), her
+shop commentary, paint jobs, hit-stop, the highlight reel, settings and
+key rebinding, records and achievements, the leaderboard and pilot name,
+the sound test, daily shifts and co-op. Placeholders, clearly temporary:
 
-- The unique chain parts are listed as locked, as in the browser; the
-  self-sealing hull's effect arrives with them.
-- The shop has its Tug and Parts tabs; Jobs & crew and Map & standing
-  arrive in milestone 5. The title screen leaves out the leaderboard,
-  sound test, daily challenge, training, records and settings buttons
-  until their screens exist.
-- The report's contract and crew-wage rows read "None" until contracts
-  and crews exist. Standing changes are tracked and saved (they move the
-  bank's installment rate and the rivals' grudge, as in the browser), but
-  only the events that already exist can move them.
-- The HUD shows what exists: banked, on the line (a sealed pod's value
-  shows as "+ ?"), wallet, slugs, missiles, sentries, shift, wanted
-  stars, rival stage, the under-attack warning, clock, shield, hull,
-  heat, engine and winch (the contract line arrives with contracts).
+- The title screen leaves out the leaderboard, sound test, daily
+  challenge, training, records and settings buttons until their screens
+  exist.
+
+Deliberate differences:
+
+- Contract offers are drawn with a Fisher-Yates shuffle. The browser
+  shuffles with `sort(() => Math.random() - 0.5)`, whose bias depends on
+  V8's sort; the offers come from the same pool with the same chances
+  otherwise.
+- Boss hulls are drawn 1.4 times the size, as in the browser, but keep
+  their normal line width (the browser's canvas scale thickens the
+  outline too).
+- The night shift's darkness is a vertex-coloured ring rather than a
+  canvas radial gradient; the radii and colours are the browser's.
 - None of the game's fonts has the ★ and ☆ glyphs (the browser falls back
   to a system font), so wanted stars are drawn as star shapes.
 - Added for the desktop: a Quit button on the title screen, and arrow
@@ -211,7 +233,12 @@ cargo run -p m0-spike --release -- --smoke
 - Windows 11 Pro (build 26300): the M4 release build's `--smoke` tour, from
   an unrelated folder, exits cleanly with the law pursuing, a collector,
   the refinery's drones, a mining crew, missiles and sentries all live,
-  and all six screenshots look as expected. Hands-on keyboard, mouse and
-  gamepad play, gamepad menu navigation, and listening to the sound have
-  not yet been verified.
+  and all six screenshots look as expected.
+- Windows 11 Pro (build 26300): the M5 part 1 release build's `--smoke`
+  tour, from an unrelated folder, exits cleanly with an ion storm, a boss
+  crew, an escorted hauler, a sealed hold and its keycard and a contract
+  live; the report settles the missed contract; the shop accepts a
+  contract, hires a co-pilot and buys a truce; and all eight screenshots
+  look as expected. Hands-on keyboard, mouse and gamepad play, gamepad
+  menu navigation, and listening to the sound have not yet been verified.
 - **Windows 10: not yet verified.**

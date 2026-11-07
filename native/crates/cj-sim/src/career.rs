@@ -9,9 +9,11 @@
 //! crews, belts and the rest) are kept exactly as they were read, so a
 //! save round-trips through this build without losing them.
 
+use crate::field::*;
 use crate::js;
 use crate::mods::{compute_mods, Mods};
 use crate::parts::*;
+use crate::rng::Rng;
 use crate::world::World;
 use serde_json::{json, Map, Value};
 
@@ -125,6 +127,9 @@ pub const REP_EXTRA_PAYMENT_BANK: f64 = 2.0;
 pub const REP_CLEAN_LAW: f64 = 3.0;
 pub const REP_CLEAN_RIVALS: f64 = 2.0;
 pub const REP_RIVAL_KILL: f64 = -3.0;
+pub const REP_TRUCE_RIVALS: f64 = 10.0;
+pub const REP_BOSS_KILL_RIVALS: f64 = -5.0;
+pub const REP_ESCORT_DONE_BANK: f64 = 6.0;
 pub const REP_NAMES: [&str; 3] = ["Kessler Mutual", "Belt law", "Rival crews"];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -195,13 +200,41 @@ pub struct Career {
     /// Shift the current loan started on (installments count from it).
     pub loan_start: i32,
     pub rep: Rep,
+    /// The hired co-pilot.
+    pub crew: Option<Crew>,
+    /// The belt worked next shift (the sector map).
+    pub belt: Belt,
+    /// The accepted contract, and the shift it's for.
+    pub contract: Option<Contract>,
+    pub contract_shift: i32,
+    /// This shift's three offers and the shift they were drawn for (kept
+    /// in memory; a loaded career draws fresh ones, as the browser does).
+    pub offers: Vec<Contract>,
+    pub offers_shift: i32,
+    /// An open contract chain (its next step), and the chains finished.
+    pub chain: Option<(Chain, usize)>,
+    pub chains_done: Vec<Chain>,
+    /// Belt conditions rolled for a shift, one per belt in BELTS order.
+    pub conditions: Option<(i32, [Condition; 5])>,
+    /// Rogue cores stored in the shop.
+    pub cores: u32,
     /// Save fields for systems not yet ported, kept verbatim.
     pub extra: Map<String, Value>,
 }
 
 /// Fields this build reads and writes itself; everything else in a save
 /// is carried through untouched.
-const OWN_KEYS: [&str; 15] = [
+const OWN_KEYS: [&str; 25] = [
+    "crew",
+    "belt",
+    "contract",
+    "contractShift",
+    "offers",
+    "offersShift",
+    "chain",
+    "chainsDone",
+    "conditions",
+    "cores",
     "shift",
     "wallet",
     "loan",
@@ -249,6 +282,12 @@ pub enum Outcome {
 pub struct Settlement {
     pub earned: f64,
     pub due: f64,
+    /// The accepted contract and whether it was met.
+    pub contract: Option<(Contract, bool)>,
+    /// The co-pilot's wage, charged even on an overdrawn shift.
+    pub wage: f64,
+    /// What happened to an open contract chain (a sentence, or empty).
+    pub chain_note: String,
     /// Standing change this shift, as [bank, law, rivals].
     pub rep_delta: [f64; 3],
     pub outcome: Outcome,
@@ -276,6 +315,16 @@ impl Career {
             tug_class: 0,
             loan_start: 1,
             rep: Rep::default(),
+            crew: None,
+            belt: Belt::Hollis,
+            contract: None,
+            contract_shift: 0,
+            offers: Vec::new(),
+            offers_shift: 0,
+            chain: None,
+            chains_done: Vec::new(),
+            conditions: None,
+            cores: 0,
             extra: Map::new(),
         }
     }
@@ -337,9 +386,6 @@ impl Career {
         if d.unique {
             return Err("Contract chain reward.".to_owned());
         }
-        if let Some(when) = p.pending() {
-            return Err(format!("{} arrives with {when} of the port.", d.name));
-        }
         if self.owns(p) {
             return Err(format!("{} is already yours.", d.name));
         }
@@ -368,7 +414,7 @@ impl Career {
 
     pub fn mount(&mut self, p: Part) -> ShopResult {
         let d = p.def();
-        if !self.owns(p) || self.is_mounted(p) || p.pending().is_some() {
+        if !self.owns(p) || self.is_mounted(p) {
             return Err(format!("{} can't be mounted.", d.name));
         }
         let Some(i) = self.free_slot(d.slot) else {
@@ -497,11 +543,9 @@ impl Career {
     }
 
     /// Close out a shift (endShift): credit the haul, cool the grudge,
-    /// charge the installment, update standing, and decide whether the
-    /// career continues, is repossessed, or trades up.
-    ///
-    /// (Contract rewards, crew wages, chains and stored rogue cores join
-    /// this settlement with their systems in milestone 5.)
+    /// charge the installment, pay the contract and the crew, update
+    /// standing, and decide whether the career continues, is repossessed,
+    /// or trades up.
     pub fn settle(&mut self, w: &World) -> Settlement {
         let earned = js::round(w.banked);
         // Collectors that confiscated a fat load credited it to the loan
@@ -514,6 +558,8 @@ impl Career {
             GRUDGE_COOLING
         };
         self.grudge = (w.grudge * keep).floor();
+        let job = w.contract.clone();
+        let job_done = job.as_ref().is_some_and(|k| w.contract_progress(k) >= k.n);
         // Sentries that survived go back in the bay; destroyed or rogue
         // ones are gone for good.
         if w.mods.drone_bay {
@@ -525,9 +571,18 @@ impl Career {
         let due = self.due(0);
         self.wallet += earned;
         self.total_banked += earned;
-        self.extra.insert("contract".to_owned(), Value::Null);
+        // The contract bonus (if the accepted job was met) and the co-pilot's wage.
+        if job_done {
+            self.wallet += job.as_ref().expect("met").reward;
+        }
+        let wage = self.crew.map_or(0.0, |c| c.def().wage);
+        self.wallet -= wage;
+        self.contract = None;
         self.wallet -= due;
         self.loan -= due;
+        self.cores = (self.cores + w.cores_banked).min(CORES_MAX);
+        // Contract chains advance (or end) with the contract.
+        let chain_note = self.settle_chain(job.as_ref(), job_done);
 
         // Standing: this shift's events plus end-of-shift standing.
         let mut d = w.rep_delta;
@@ -554,7 +609,9 @@ impl Career {
             "lastShift".to_owned(),
             json!({
                 "earned": earned, "deaths": w.stats.deaths, "kills": w.stats.jumpers, "arrests": w.arrests,
-                "wallet": self.wallet, "contract": null, "boss": null, "hold": false, "escort": false,
+                "wallet": self.wallet,
+                "contract": job.as_ref().map(|_| if job_done { "done" } else { "missed" }),
+                "boss": w.boss_down, "hold": w.hold_opened, "escort": w.escort_done,
             }),
         );
 
@@ -572,6 +629,9 @@ impl Career {
         Settlement {
             earned,
             due,
+            contract: job.map(|k| (k, job_done)),
+            wage,
+            chain_note,
             rep_delta: [d.bank, d.law, d.rivals],
             outcome,
         }
@@ -610,6 +670,23 @@ impl Career {
             "tugClass": self.tug_class,
             "loanStart": self.loan_start,
             "rep": { "bank": self.rep.bank, "law": self.rep.law, "rivals": self.rep.rivals },
+            "crew": self.crew.map(|c| c.def().key),
+            "belt": self.belt.def().key,
+            "contract": self.contract.as_ref().map(contract_json),
+            "contractShift": self.contract_shift,
+            "offers": self.offers.iter().map(contract_json).collect::<Vec<_>>(),
+            "offersShift": self.offers_shift,
+            "chain": self.chain.map(|(c, step)| json!({ "id": c.def().key, "step": step })),
+            "chainsDone": self.chains_done.iter().map(|c| c.def().key).collect::<Vec<_>>(),
+            "conditions": self.conditions.map(|(shift, map)| {
+                let m: Map<String, Value> = BELTS
+                    .iter()
+                    .zip(map)
+                    .map(|(b, c)| (b.def().key.to_owned(), Value::from(c.def().key)))
+                    .collect();
+                json!({ "shift": shift, "map": m })
+            }),
+            "cores": self.cores,
         });
         if let Value::Object(o) = own {
             m.extend(o);
@@ -749,6 +826,94 @@ impl Career {
                 }),
             );
         }
+        // Phase 6 and 7 fields, repaired as loadCareer repairs them.
+        c.crew = raw
+            .get("crew")
+            .and_then(Value::as_str)
+            .and_then(Crew::from_key);
+        // A belt is kept only if it exists and the tug class holds its permit.
+        c.belt = raw
+            .get("belt")
+            .and_then(Value::as_str)
+            .and_then(Belt::from_key)
+            .filter(|b| b.def().unlock <= c.tug_class)
+            .unwrap_or(Belt::Hollis);
+        let chain_step = |v: Option<&Value>, step: Option<&Value>| -> Option<(Chain, usize)> {
+            let ch = v.and_then(Value::as_str).and_then(Chain::from_key)?;
+            let s = step
+                .and_then(Value::as_f64)
+                .filter(|s| s.fract() == 0.0 && *s >= 0.0)? as usize;
+            (s < ch.def().steps.len()).then_some((ch, s))
+        };
+        // Contracts are rebuilt rather than trusted, and kept only if
+        // well-formed and still for the upcoming shift.
+        let shift_ok = raw.get("contractShift").and_then(Value::as_f64) == Some(f64::from(c.shift));
+        if let Some(k) = raw.get("contract").filter(|_| shift_ok) {
+            if let Some((ch, s)) = chain_step(k.get("chain"), k.get("step")) {
+                c.contract = Some(chain_contract(ch, s));
+                c.contract_shift = c.shift;
+            } else if let Some(kind) = k
+                .get("kind")
+                .and_then(Value::as_str)
+                .and_then(ContractKind::from_key)
+            {
+                let n = k.get("n").and_then(Value::as_f64).filter(|v| v.is_finite());
+                let reward = k
+                    .get("reward")
+                    .and_then(Value::as_f64)
+                    .filter(|v| v.is_finite());
+                let cargo = k
+                    .get("type")
+                    .and_then(Value::as_str)
+                    .and_then(crate::items::ItemType::from_key)
+                    .filter(|t| DELIVER_COUNTS.iter().any(|d| d.0 == *t));
+                if let (Some(n), Some(reward)) = (n, reward) {
+                    if kind != ContractKind::Deliver || cargo.is_some() {
+                        c.contract = Some(Contract {
+                            kind,
+                            n,
+                            cargo,
+                            reward: reward.min(20000.0),
+                            chain: None,
+                        });
+                        c.contract_shift = c.shift;
+                    }
+                }
+            }
+        }
+        if let Some(ch) = raw.get("chain") {
+            c.chain = chain_step(ch.get("id"), ch.get("step"));
+        }
+        c.cores = (num("cores", 0.0, 0.0).floor() as u32).min(CORES_MAX);
+        if let Some(Value::Array(done)) = raw.get("chainsDone") {
+            for ch in done
+                .iter()
+                .filter_map(Value::as_str)
+                .filter_map(Chain::from_key)
+            {
+                if !c.chains_done.contains(&ch) {
+                    c.chains_done.push(ch);
+                }
+            }
+        }
+        // Conditions are kept only for the upcoming shift and only if
+        // every belt's entry is known.
+        if let Some(cm) = raw.get("conditions") {
+            if cm.get("shift").and_then(Value::as_f64) == Some(f64::from(c.shift)) {
+                let map: Option<Vec<Condition>> = BELTS
+                    .iter()
+                    .map(|b| {
+                        cm["map"]
+                            .get(b.def().key)
+                            .and_then(Value::as_str)
+                            .and_then(Condition::from_key)
+                    })
+                    .collect();
+                if let Some(m) = map {
+                    c.conditions = Some((c.shift, [m[0], m[1], m[2], m[3], m[4]]));
+                }
+            }
+        }
         // Everything else is for systems still to come: kept as it was.
         for (k, v) in raw {
             if !OWN_KEYS.contains(&k.as_str()) {
@@ -756,5 +921,225 @@ impl Career {
             }
         }
         Some(c)
+    }
+}
+
+/// A contract as the browser stores it.
+fn contract_json(k: &Contract) -> Value {
+    let mut v = json!({ "kind": k.kind.key(), "n": k.n, "reward": k.reward });
+    if let Some(t) = k.cargo {
+        v["type"] = Value::from(t.key());
+    }
+    if let Some((ch, step)) = k.chain {
+        v["chain"] = Value::from(ch.def().key);
+        v["step"] = Value::from(step);
+        v["client"] = Value::from(ch.def().client);
+    }
+    v
+}
+
+impl Career {
+    /// Contract pay scales smoothly with the bank's opinion of you (±25%).
+    pub fn contract_pay_mul(&self) -> f64 {
+        1.0 + self.rep.bank / 400.0
+    }
+
+    /// Three distinct offers for the next shift (ensureOffers), kept
+    /// until that shift is played. An open chain's next step takes the
+    /// first slot; otherwise, now and then, a fresh chain is offered.
+    ///
+    /// The browser shuffles the kinds with sort(() => Math.random() - 0.5),
+    /// whose exact bias depends on V8's sort; a Fisher-Yates shuffle draws
+    /// the same three-of-six choice without that bias.
+    pub fn ensure_offers(&mut self, rng: &mut Rng) {
+        if self.offers_shift == self.shift && !self.offers.is_empty() {
+            return;
+        }
+        let mut kinds = CONTRACT_KINDS;
+        for i in (1..kinds.len()).rev() {
+            let j = rng.int(0, i as i32) as usize;
+            kinds.swap(i, j);
+        }
+        let mul = self.contract_pay_mul();
+        self.offers = kinds[..3]
+            .iter()
+            .map(|&k| {
+                let mut c = make_contract(rng, k, self.shift);
+                c.reward = js::round(c.reward * mul / 50.0) * 50.0;
+                c
+            })
+            .collect();
+        let fresh: Vec<Chain> = CHAINS
+            .into_iter()
+            .filter(|c| !self.chains_done.contains(c))
+            .collect();
+        if let Some((ch, step)) = self.chain {
+            self.offers[0] = chain_contract(ch, step);
+        } else if self.shift >= CHAIN_FROM_SHIFT
+            && !fresh.is_empty()
+            && rng.next() < CHAIN_OFFER_CHANCE
+        {
+            let ch = fresh[rng.index(fresh.len())];
+            self.offers[0] = chain_contract(ch, 0);
+        }
+        self.offers_shift = self.shift;
+        if self.contract.is_some() && self.contract_shift != self.shift {
+            self.contract = None;
+        }
+    }
+
+    /// Is offer `i` the accepted contract?
+    pub fn offer_taken(&self, i: usize) -> bool {
+        let (Some(c), Some(o)) = (&self.contract, self.offers.get(i)) else {
+            return false;
+        };
+        self.contract_shift == self.shift && c.kind == o.kind && c.n == o.n && c.cargo == o.cargo
+    }
+
+    /// Accept offer `i`, or drop it if it's already accepted.
+    pub fn toggle_offer(&mut self, i: usize) -> String {
+        if self.offer_taken(i) {
+            self.contract = None;
+            return "Contract dropped.".to_owned();
+        }
+        let k = self.offers[i].clone();
+        let msg = format!("Contract accepted: {}.", k.text());
+        self.contract = Some(k);
+        self.contract_shift = self.shift;
+        msg
+    }
+
+    /// Hire a co-pilot, or let the current one go.
+    pub fn toggle_crew(&mut self, c: Crew) -> String {
+        let d = c.def();
+        if self.crew == Some(c) {
+            self.crew = None;
+            format!("{} is off the tug.", d.name)
+        } else {
+            self.crew = Some(c);
+            format!(
+                "{} signs on. Wage: {} cr a shift.",
+                d.name,
+                crate::world::fmt_credits(d.wage)
+            )
+        }
+    }
+
+    /// Pick next shift's belt (the tug class must hold its permit).
+    pub fn pick_belt(&mut self, b: Belt) -> ShopResult {
+        if b.def().unlock > self.tug_class {
+            return Err(format!(
+                "Permit needs a {} tug.",
+                TUG_CLASSES[b.def().unlock].mk
+            ));
+        }
+        self.belt = b;
+        Ok(format!("Next shift: {}.", b.def().name))
+    }
+
+    /// This shift's condition on every belt, rolled once per shift.
+    pub fn ensure_conditions(&mut self, rng: &mut Rng) -> [Condition; 5] {
+        match self.conditions {
+            Some((s, map)) if s == self.shift => map,
+            _ => {
+                let map = roll_conditions(rng, self.shift);
+                self.conditions = Some((self.shift, map));
+                map
+            }
+        }
+    }
+
+    /// The condition on the chosen belt this shift.
+    pub fn condition(&mut self, rng: &mut Rng) -> Condition {
+        let map = self.ensure_conditions(rng);
+        let i = BELTS.iter().position(|b| *b == self.belt).expect("listed");
+        map[i]
+    }
+
+    /// The fixer's truce price (a hired fixer halves it).
+    pub fn truce_price(&self) -> f64 {
+        truce_price(self.grudge, self.crew == Some(Crew::Fixer))
+    }
+
+    /// Pay the rival crews to drop their grudge one stage.
+    pub fn buy_truce(&mut self) -> ShopResult {
+        let stage = truce_stage(self.grudge);
+        let price = self.truce_price();
+        if stage == 0 {
+            return Err("No grudge to settle.".to_owned());
+        }
+        if self.wallet < price {
+            return Err(format!(
+                "Need {} cr more.",
+                crate::world::fmt_credits(price - self.wallet)
+            ));
+        }
+        self.wallet -= price;
+        self.grudge = crate::consts::RIVAL_STAGES[stage - 1].at;
+        self.rep.rivals = (self.rep.rivals + REP_TRUCE_RIVALS).clamp(-REP_LIMIT, REP_LIMIT);
+        Ok(format!(
+            "Truce bought for {} cr. The crews are back to \"{}\".",
+            crate::world::fmt_credits(price),
+            crate::consts::RIVAL_STAGES[stage - 1].name
+        ))
+    }
+
+    pub fn sell_core(&mut self) -> ShopResult {
+        if self.cores == 0 {
+            return Err("No cores stored.".to_owned());
+        }
+        self.cores -= 1;
+        self.wallet += CORE_SELL;
+        Ok(format!(
+            "Rogue core sold for {} cr.",
+            crate::world::fmt_credits(CORE_SELL)
+        ))
+    }
+
+    /// Reprogram a stored core into a sentry (needs a mounted drone bay with room).
+    pub fn reprogram_core(&mut self) -> ShopResult {
+        if self.cores == 0 || !self.is_mounted(Part::DroneBay) || self.sentries >= SENTRY_MAX {
+            return Err("Needs a stored core and a mounted drone bay with room.".to_owned());
+        }
+        self.cores -= 1;
+        self.sentries += 1;
+        Ok(format!(
+            "Core reprogrammed. {} of {SENTRY_MAX} sentries in the bay, and this one is on your side. Probably.",
+            self.sentries
+        ))
+    }
+
+    /// Advance or break the chain after a shift's contract settles; the
+    /// last step unlocks the client's part (settleChain).
+    fn settle_chain(&mut self, job: Option<&Contract>, met: bool) -> String {
+        let Some((ch, step)) = job.and_then(|k| k.chain) else {
+            return String::new();
+        };
+        let d = ch.def();
+        if !met {
+            self.chain = None;
+            return format!(" {} walked: the chain is over.", d.client);
+        }
+        if step + 1 < d.steps.len() {
+            self.chain = Some((ch, step + 1));
+            return format!(
+                " {}: step {} of {} is waiting in the shop.",
+                d.client,
+                step + 2,
+                d.steps.len()
+            );
+        }
+        self.chain = None;
+        if !self.chains_done.contains(&ch) {
+            self.chains_done.push(ch);
+        }
+        if !self.owns(d.part) {
+            self.owned.push(d.part);
+        }
+        format!(
+            " {} is so pleased they gave you their {}. It's in the shop.",
+            d.client,
+            d.part.def().name
+        )
     }
 }

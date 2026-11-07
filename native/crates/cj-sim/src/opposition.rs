@@ -1406,7 +1406,9 @@ impl World {
     /// The collector got the tug off the field: impound fee, shift over.
     fn impound(&mut self, c: usize) {
         self.sfx(Sfx::SadTrombone);
-        let fee = self.banked.min(js::round(IMPOUND_FEE * self.diff_fees));
+        let fee = self.banked.min(js::round(
+            IMPOUND_FEE * self.diff_fees * self.crew_fee_mul(),
+        ));
         self.banked -= fee;
         self.impounded = true;
         self.rep_delta.bank += REP_IMPOUNDED_BANK;
@@ -1442,7 +1444,7 @@ impl World {
     /// Patrols come round more often when the law dislikes you.
     fn next_patrol_delay(&mut self) -> f64 {
         let bad = self.standing_law() == Tier::Bad;
-        self.rng.range(90.0, 150.0) * if bad { 0.7 } else { 1.0 }
+        self.rng.range(90.0, 150.0) * self.cond.def().patrol * if bad { 0.7 } else { 1.0 }
     }
 
     /// Spawn a law unit; `responding` units come straight for you.
@@ -1581,7 +1583,7 @@ impl World {
                     Tier::Bad => 2.0,
                     Tier::Neutral => 1.0,
                 };
-                if self.rng.next() < SHAKEDOWN_CHANCE * law {
+                if self.rng.next() < SHAKEDOWN_CHANCE * law * self.cond.def().shakedown {
                     self.sheriffs[k].shakedown = true;
                     self.start_pursuit(k);
                 }
@@ -2658,7 +2660,8 @@ impl World {
         let waves = if shift < d.collector_from {
             0
         } else {
-            (d.collector_waves.min(shift - d.collector_from + 1)).max(0)
+            (d.collector_waves.min(shift - d.collector_from + 1) + self.belt.def().collectors)
+                .max(0)
         };
         let first = if shift == 1 {
             self.rng.range(150.0, 200.0)
@@ -2668,7 +2671,7 @@ impl World {
         self.collector_queue = (0..waves).map(|i| first + f64::from(i) * 60.0).collect();
         // Shift 1 lets the player learn towing before the refinery shows up.
         self.refinery_t = if shift == 1 { 75.0 } else { REFINERY_ARRIVE_AT };
-        self.patrol_t = self.rng.range(60.0, 140.0);
+        self.patrol_t = self.rng.range(60.0, 140.0) * self.cond.def().patrol;
         self.miner_announce_t = 8.0;
         self.collector_from = d.collector_from;
         self.net_tear = d.net_tear;
@@ -2711,7 +2714,9 @@ impl World {
 
         // The law. Wanted: units are dispatched until the response for your
         // star level is out. Clean: one random patrol at a time.
-        match law_tier(self.wanted) {
+        // Lawless belts have no law at all: stars pile up, but nobody comes.
+        let lawless = self.belt.def().lawless;
+        match law_tier(self.wanted).filter(|_| !lawless) {
             Some(t) if self.ship.alive => {
                 let r = self.reinforce_t.unwrap_or(0.0) - dt;
                 self.reinforce_t = Some(r);
@@ -2721,7 +2726,7 @@ impl World {
                 }
             }
             _ => {
-                if self.sheriffs.is_empty() && self.ship.alive {
+                if !lawless && self.sheriffs.is_empty() && self.ship.alive {
                     self.patrol_t -= dt;
                     if self.patrol_t <= 0.0 {
                         self.spawn_sheriff(false);

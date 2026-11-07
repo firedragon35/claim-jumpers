@@ -1,9 +1,11 @@
-//! Claim Jumpers, native Windows build. Milestone 4: the opposition. Fly
-//! the tug, tow and fight through five-minute shifts against rival crews,
-//! debt collectors, the law, mining drones and the Kessler refinery;
-//! after each, the shift report settles the loan installment, and the
-//! machine shop sells parts and system levels. The career is saved in
-//! %APPDATA%\ClaimJumpers.
+//! Claim Jumpers, native Windows build. Milestone 5: the career's field
+//! systems. Fly the tug, tow and fight through five-minute shifts against
+//! rival crews, debt collectors, the law, mining drones and the Kessler
+//! refinery, on the belt you chose and under its conditions, with field
+//! events, boss crews, escorts and sealed holds; after each, the shift
+//! report settles the loan installment, the contract and the crew's wage,
+//! and the machine shop sells parts, system levels, contracts, crew,
+//! permits and truces. The career is saved in %APPDATA%\ClaimJumpers.
 //!
 //! The app moves between the browser's screens (appState in
 //! src/js/14-game-state.js): title, play, paused, the shift report and the
@@ -11,8 +13,8 @@
 //!
 //! `--smoke` runs an unattended check through every screen: a scripted
 //! shift (tow and firefight, one simulation step per frame), the pause
-//! card, the report, a purchase in the shop, and the title, saving a
-//! screenshot of each to %TEMP%\claim-jumpers-m4-<screen>.png and printing
+//! card, the report, a purchase in the shop, each shop tab, and the title,
+//! saving a screenshot of each to %TEMP%\claim-jumpers-m5-<screen>.png and printing
 //! a report. It uses a temporary save folder, never the player's.
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
@@ -24,6 +26,7 @@ mod foes;
 mod fx;
 mod hud;
 mod look;
+mod radar;
 mod save;
 mod screens;
 mod tug;
@@ -116,6 +119,13 @@ impl App {
         if s == Screen::Title {
             self.saved = self.store.load_career();
         }
+        if s == Screen::Shop {
+            let mut rng = self.rng();
+            if let Some(c) = self.career.as_mut() {
+                c.ensure_offers(&mut rng);
+                c.ensure_conditions(&mut rng);
+            }
+        }
     }
 
     /// startShift: a new world for the career's next shift.
@@ -172,6 +182,9 @@ impl App {
                 Settlement {
                     earned: 0.0,
                     due: 0.0,
+                    contract: None,
+                    wage: 0.0,
+                    chain_note: String::new(),
                     rep_delta: [0.0; 3],
                     outcome: Outcome::Continue,
                 },
@@ -294,6 +307,36 @@ impl App {
             Act::Level(s) => {
                 let c = self.career.as_mut().expect("a career");
                 let res = c.buy_level(s);
+                self.finish_shop(res, Sfx::Bank, audio);
+            }
+            Act::Offer(i) => {
+                let c = self.career.as_mut().expect("a career");
+                let res = Ok(c.toggle_offer(i));
+                self.finish_shop(res, Sfx::Hook, audio);
+            }
+            Act::Crew(m) => {
+                let c = self.career.as_mut().expect("a career");
+                let res = Ok(c.toggle_crew(m));
+                self.finish_shop(res, Sfx::Hook, audio);
+            }
+            Act::Belt(b) => {
+                let c = self.career.as_mut().expect("a career");
+                let res = c.pick_belt(b);
+                self.finish_shop(res, Sfx::Hook, audio);
+            }
+            Act::Truce => {
+                let c = self.career.as_mut().expect("a career");
+                let res = c.buy_truce();
+                self.finish_shop(res, Sfx::Bank, audio);
+            }
+            Act::SellCore => {
+                let c = self.career.as_mut().expect("a career");
+                let res = c.sell_core();
+                self.finish_shop(res, Sfx::Bank, audio);
+            }
+            Act::ReprogramCore => {
+                let c = self.career.as_mut().expect("a career");
+                let res = c.reprogram_core();
                 self.finish_shop(res, Sfx::Bank, audio);
             }
         }
@@ -428,6 +471,8 @@ async fn main() {
             playing: app.screen == Screen::Play,
         });
         if matches!(app.screen, Screen::Play | Screen::Paused) {
+            radar::indicators(&look, &app.world, (vw, vh), dpi);
+            radar::radar(&app.world, (vw, vh));
             hud::draw(
                 &look,
                 &app.world,
@@ -591,8 +636,10 @@ impl Smoke {
             Screen::Paused if leave => Some(Act::EndShiftNow),
             Screen::Report if leave => {
                 if let Some(c) = app.career.as_mut() {
-                    // Enough in the wallet to show a purchase.
+                    // Enough in the wallet to show a purchase, and a
+                    // grudge for the truce on the standing tab.
                     c.wallet += 5000.0;
+                    c.grudge = 6.0;
                 }
                 Some(Act::ReportNext)
             }
@@ -613,6 +660,28 @@ impl Smoke {
                     c.wallet,
                     c.is_mounted(Part::Thrusters)
                 ));
+                app.shop_tab = 2;
+                Some(Act::Offer(0))
+            }
+            Screen::Shop if self.on_screen == 8 => Some(Act::Crew(cj_sim::field::Crew::Broker)),
+            Screen::Shop if self.on_screen == 11 => {
+                let c = app.career.as_ref().expect("a career");
+                self.lines.push(format!(
+                    "  jobs: {} offers; contract {:?}; crew {:?}; {}",
+                    c.offers.len(),
+                    c.contract.as_ref().map(|k| k.text()),
+                    c.crew.map(|m| m.def().name),
+                    app.shop_msg
+                ));
+                app.shop_tab = 3;
+                Some(Act::Truce)
+            }
+            Screen::Shop if self.on_screen == 14 => {
+                let c = app.career.as_ref().expect("a career");
+                self.lines.push(format!(
+                    "  map: grudge {} rivals standing {}; {}",
+                    c.grudge, c.rep.rivals, app.shop_msg
+                ));
                 Some(Act::ToMenu)
             }
             _ => None,
@@ -628,10 +697,12 @@ impl Smoke {
             Screen::Report if self.on_screen == 3 => "report",
             Screen::Shop if self.on_screen == 3 => "shop",
             Screen::Shop if self.on_screen == 6 => "parts",
-            Screen::Title if self.on_screen == 3 && self.shots.len() == 5 => "title",
+            Screen::Shop if self.on_screen == 10 => "jobs",
+            Screen::Shop if self.on_screen == 13 => "map",
+            Screen::Title if self.on_screen == 3 && self.shots.len() == 7 => "title",
             _ => return false,
         };
-        let path = std::env::temp_dir().join(format!("claim-jumpers-m4-{name}.png"));
+        let path = std::env::temp_dir().join(format!("claim-jumpers-m5-{name}.png"));
         // The framebuffer reads bottom row first and carries the alpha of
         // the last blend; flip it and make it opaque.
         let mut img = get_screen_data();
@@ -655,6 +726,16 @@ impl Smoke {
                 w.wanted, w.sheriffs.len(), w.collectors.len(), w.nets.len(), w.miners.len(),
                 w.refinery.as_ref().map(|r| r.state), w.drones.len(), w.missiles.len(), s.missiles, w.sentries.len()
             ));
+            self.lines.push(format!(
+                "  field: {} under {}; ion storm {:.1} s; boss {:?}; hauler {:?} hp; sealed holds {}; keycards {}; contract {:?} at {}",
+                w.belt.def().name, w.cond.def().name, w.ion_t,
+                w.jumpers.iter().find_map(|j| j.boss.as_ref().map(|b| b.name)),
+                w.hauler.as_ref().map(|h| h.hp),
+                w.wrecks.iter().filter(|x| x.locked).count(),
+                w.items.iter().filter(|i| i.kind == ItemType::Keycard).count(),
+                w.contract.as_ref().map(|k| k.text()),
+                w.contract.as_ref().map_or(0.0, |k| w.contract_progress(k))
+            ));
         }
         if name == "report" {
             let r = app.report.as_ref().expect("a report");
@@ -669,7 +750,7 @@ impl Smoke {
     }
 
     fn finish(&self, app: &App, audio: &audio::Audio, secs: f64) {
-        println!("M4 SMOKE REPORT");
+        println!("M5 SMOKE REPORT");
         println!(
             "  view: {:.0} x {:.0} logical px, dpi scale {:.2}",
             app.world.view.0,
@@ -765,6 +846,38 @@ fn smoke_script(w: &mut World, frame: u32) {
         let (x, y) = (w.ship.b.x, w.ship.b.y);
         w.add_wanted(2, x, y);
         w.reinforce_t = Some(0.0);
+        // The field systems: a named belt and condition, a contract on the
+        // HUD, an ion storm, a boss crew and an escorted hauler close by,
+        // and a sealed hold with its keycard.
+        w.belt = cj_sim::field::Belt::Kessler;
+        w.cond = cj_sim::field::Condition::IonFront;
+        w.contract = Some(cj_sim::field::make_contract(
+            &mut w.rng,
+            cj_sim::field::ContractKind::Bank,
+            2,
+        ));
+        w.start_event(cj_sim::field::Event::Ion);
+        w.start_event(cj_sim::field::Event::Boss);
+        if let Some(j) = w.jumpers.last_mut() {
+            j.b.x = BAY_X - 800.0;
+            j.b.y = BAY_Y + 500.0;
+        }
+        w.start_event(cj_sim::field::Event::Convoy);
+        if let Some(h) = w.hauler.as_mut() {
+            h.b.x = BAY_X - 1250.0;
+            h.b.y = BAY_Y + 80.0;
+        }
+        w.setup_locked_hold();
+        if let Some(wr) = w.wrecks.iter_mut().find(|x| x.locked) {
+            wr.b.x = BAY_X - 1500.0;
+            wr.b.y = BAY_Y - 450.0;
+            wr.b.vx = 0.0;
+            wr.b.vy = 0.0;
+        }
+        if let Some(k) = w.items.iter_mut().find(|i| i.kind == ItemType::Keycard) {
+            k.b.x = BAY_X - 700.0;
+            k.b.y = BAY_Y - 300.0;
+        }
     }
     if frame == 3 {
         w.action(Action::Hook);

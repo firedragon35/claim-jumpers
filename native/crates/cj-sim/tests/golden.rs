@@ -123,6 +123,8 @@ fn build(sc: &Value, init: &Value) -> World {
         };
         let hp = 24.0 + contents.len() as f64 * 3.0;
         w.wrecks.push(Wreck {
+            locked: false,
+            freighter: false,
             b: Body {
                 x: num(wr, "x", 0.0),
                 y: num(wr, "y", 0.0),

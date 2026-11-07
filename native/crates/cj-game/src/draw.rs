@@ -30,17 +30,24 @@ pub(crate) struct Xf {
     pub(crate) o: Vec2,
     c: f32,
     s: f32,
+    /// Uniform scale of the local frame (1 except for boss hulls).
+    k: f32,
 }
 
 impl Xf {
     pub(crate) fn new(x: f64, y: f64, angle: f64) -> Xf {
+        Xf::scaled(x, y, angle, 1.0)
+    }
+    pub(crate) fn scaled(x: f64, y: f64, angle: f64, k: f32) -> Xf {
         Xf {
             o: v(x, y),
             c: angle.cos() as f32,
             s: angle.sin() as f32,
+            k,
         }
     }
     pub(crate) fn p(&self, x: f32, y: f32) -> Vec2 {
+        let (x, y) = (x * self.k, y * self.k);
         self.o + vec2(x * self.c - y * self.s, x * self.s + y * self.c)
     }
     pub(crate) fn pts(&self, local: &[(f32, f32)]) -> Vec<Vec2> {
@@ -722,7 +729,8 @@ fn draw_jumper(look: &Look, w: &World, j: &Jumper) {
             Color::from_hex(col::JUMPER),
         );
     }
-    let xf = Xf::new(j.b.x, j.b.y, j.angle);
+    let k = if j.boss.is_some() { 1.4 } else { 1.0 };
+    let xf = Xf::scaled(j.b.x, j.b.y, j.angle, k);
     let def = j.variant.def();
     let edge = if j.flash > 0.0 {
         col::TEXT
@@ -1115,6 +1123,9 @@ pub fn render(sc: Scene) {
     let (vw, vh) = sc.view;
     clear_background(Color::from_hex(col::VOID));
     screen_camera(sc.view);
+    if let Some((rgb, a)) = w.belt.def().tint {
+        draw_rectangle(0.0, 0.0, vw, vh, rgba(rgb, a));
+    }
     sc.stars.draw(sc.look, v(w.cam.x, w.cam.y), t, vw, vh);
 
     // World camera, with screen shake.
@@ -1155,6 +1166,13 @@ pub fn render(sc: Scene) {
     for wr in &w.wrecks {
         if visible(wr.b.x, wr.b.y, wr.b.r) {
             draw_wreck(wr, t);
+            let (x, y) = (wr.b.x as f32, (wr.b.y - wr.b.r * 0.8 - 14.0) as f32);
+            if wr.freighter {
+                crate::foes::tag(sc.look, x, y, "DERELICT FREIGHTER", col::ORE, scale);
+            } else if wr.locked {
+                let s = "SEALED HOLD · NEEDS KEYCARD";
+                crate::foes::tag(sc.look, x, y, s, col::CABLE, scale);
+            }
         }
     }
     for rk in &w.rocks {
@@ -1168,11 +1186,25 @@ pub fn render(sc: Scene) {
     for it in &w.items {
         if visible(it.b.x, it.b.y, it.b.r) {
             draw_item(sc.look, it, t, scale);
+            if it.kind == ItemType::Keycard && !it.towed {
+                let (x, y) = (it.b.x as f32, it.b.y as f32 - 22.0);
+                crate::foes::tag(sc.look, x, y, "KEYCARD", col::CABLE, scale);
+            }
         }
     }
     for j in &w.jumpers {
         if visible(j.b.x, j.b.y, j.b.r) {
             draw_jumper(sc.look, w, j);
+            if let Some(b) = &j.boss {
+                let name = b.name.to_uppercase();
+                let (x, y) = (j.b.x as f32, j.b.y as f32 - 38.0);
+                crate::foes::tag(sc.look, x, y, &name, col::HAZARD, scale);
+            }
+        }
+    }
+    if let Some(h) = w.hauler.as_ref().filter(|h| !h.dead) {
+        if visible(h.b.x, h.b.y, h.b.r) {
+            crate::foes::hauler(sc.look, h, t, scale);
         }
     }
     crate::foes::draw_all(sc.look, w, t, sc.rng, scale, &visible);
@@ -1205,6 +1237,9 @@ pub fn render(sc: Scene) {
 
     // Screen-space overlays.
     screen_camera(sc.view);
+    if w.cond.def().night && sc.playing {
+        draw_night(w, sc.view);
+    }
     sc.vignette.draw(vw, vh);
     // Big nearby explosions wash the screen with light for a moment.
     if w.screen_flash > 0.0 {
@@ -1215,6 +1250,23 @@ pub fn render(sc: Scene) {
             vh,
             Color::new(1.0, 244.0 / 255.0, 220.0 / 255.0, w.screen_flash as f32),
         );
+    }
+    // The ion storm: a flickering violet wash and static streaks.
+    if w.ion_t > 0.0 && sc.playing && !w.shift_over {
+        let a = 0.07 + 0.04 * (t * 7.0).sin();
+        draw_rectangle(
+            0.0,
+            0.0,
+            vw,
+            vh,
+            Color::new(150.0 / 255.0, 90.0 / 255.0, 1.0, a),
+        );
+        let streak = Color::new(200.0 / 255.0, 170.0 / 255.0, 1.0, 0.35);
+        for _ in 0..4 {
+            let y = sc.rng.range(0.0, f64::from(vh)) as f32;
+            let dy = sc.rng.range(-20.0, 20.0) as f32;
+            draw_line(0.0, y, vw, y + dy, 1.0, streak);
+        }
     }
     // Under attack: a red edge pulses around the screen while the warning holds.
     if w.under_attack_t > 0.0 && sc.playing && !w.shift_over {
@@ -1238,4 +1290,50 @@ pub fn render(sc: Scene) {
             Color::new(1.0, 90.0 / 255.0, 60.0 / 255.0, 0.12),
         );
     }
+}
+
+/// drawNight: everything past the tug's lamp fades to near-black, as a
+/// radial gradient from NIGHT_LIGHT (clear) to NIGHT_FADE (90% dark). The
+/// gradient is a vertex-coloured ring mesh; beyond it a second ring out to
+/// the screen corners stays fully dark.
+fn draw_night(w: &World, view: (f32, f32)) {
+    use cj_sim::field::{NIGHT_FADE, NIGHT_LIGHT};
+    let (vw, vh) = view;
+    let z = w.cam.zoom as f32;
+    let (sx, sy) = if w.ship.alive {
+        (w.ship.b.x, w.ship.b.y)
+    } else {
+        (BAY_X, BAY_Y)
+    };
+    let cx = vw / 2.0 + (sx - w.cam.x) as f32 * z;
+    let cy = vh / 2.0 + (sy - w.cam.y) as f32 * z;
+    let (r0, r1) = (NIGHT_LIGHT as f32 * z, NIGHT_FADE as f32 * z);
+    // Far enough to cover the view from any lamp position on screen.
+    let r2 = r1 + vw.hypot(vh) * 2.0;
+    let clear = Color::new(2.0 / 255.0, 3.0 / 255.0, 8.0 / 255.0, 0.0);
+    let dark = Color::new(2.0 / 255.0, 3.0 / 255.0, 8.0 / 255.0, 0.9);
+    ring_mesh(cx, cy, r0, r1, clear, dark);
+    ring_mesh(cx, cy, r1, r2, dark, dark);
+}
+
+/// A filled annulus with `inner` colour at radius `a` blending to `outer`
+/// at radius `b`.
+fn ring_mesh(cx: f32, cy: f32, a: f32, b: f32, inner: Color, outer: Color) {
+    const N: usize = 64;
+    let mut vertices = Vec::with_capacity(N * 2);
+    let mut indices = Vec::with_capacity(N * 6);
+    for i in 0..N {
+        let ang = i as f32 / N as f32 * TAU;
+        let (s, c) = ang.sin_cos();
+        vertices.push(Vertex::new(cx + c * a, cy + s * a, 0.0, 0.0, 0.0, inner));
+        vertices.push(Vertex::new(cx + c * b, cy + s * b, 0.0, 0.0, 0.0, outer));
+        let (i0, i1) = ((i * 2) as u16, (i * 2 + 1) as u16);
+        let (j0, j1) = ((((i + 1) % N) * 2) as u16, (((i + 1) % N) * 2 + 1) as u16);
+        indices.extend_from_slice(&[i0, i1, j1, i0, j1, j0]);
+    }
+    draw_mesh(&Mesh {
+        vertices,
+        indices,
+        texture: None,
+    });
 }

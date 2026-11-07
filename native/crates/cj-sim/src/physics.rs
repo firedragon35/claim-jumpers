@@ -370,7 +370,11 @@ impl World {
                     Handle::Rock(r) if power > ROCK_IMPACT_POWER => {
                         self.damage_rock(r, (power / ROCK_IMPACT_POWER).floor());
                     }
-                    // (Keycards opening sealed holds: milestone 4.)
+                    Handle::Wreck(w)
+                        if self.wrecks[w].locked && self.items[i].kind == ItemType::Keycard =>
+                    {
+                        self.unlock_hold(w, i);
+                    }
                     Handle::Wreck(w) if power > WRECK_IMPACT_POWER => {
                         self.damage_wreck(w, (power / WRECK_IMPACT_POWER).floor());
                     }

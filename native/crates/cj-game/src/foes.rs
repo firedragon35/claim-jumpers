@@ -665,3 +665,48 @@ pub fn draw_all(
         }
     }
 }
+
+/// drawHauler: a container freighter with three cargo pods, its health as
+/// a tag above it (red once below 40%).
+pub fn hauler(look: &Look, h: &cj_sim::field::Hauler, t: f32, scale: f32) {
+    let xf = Xf::new(h.b.x, h.b.y, h.angle);
+    let flash = h.flash > 0.0;
+    let hull = c(if flash { 0x2a3442 } else { 0x18202c });
+    fill_convex(&rect_pts(&xf, -46.0, -16.0, 70.0, 32.0), hull);
+    for x in [-40.0, -22.0, -4.0] {
+        fill_convex(&rect_pts(&xf, x, -22.0, 14.0, 44.0), c(0x2b3a4f));
+    }
+    let nose = xf.pts(&[(24.0, -14.0), (40.0, 0.0), (24.0, 14.0)]);
+    fill_convex(&nose, c(0x18202c));
+    glow_stroke(
+        &nose,
+        true,
+        if flash { col::DANGER } else { col::STEEL },
+        1.5,
+        1.0,
+    );
+    let p = xf.p(-50.0, 0.0);
+    look.additive(|| {
+        look.glow(
+            p.x,
+            p.y,
+            12.0 + (t * 9.0).sin() * 2.0,
+            col::ENGINE,
+            true,
+            1.0,
+        )
+    });
+    let pct = js_round_pct(h.hp / h.max_hp);
+    let rgb = if h.hp < h.max_hp * 0.4 {
+        col::DANGER
+    } else {
+        col::STEEL
+    };
+    let s = format!("HAULER · {pct}%");
+    tag(look, h.b.x as f32, h.b.y as f32 - 40.0, &s, rgb, scale);
+}
+
+/// Math.max(0, Math.round(frac * 100)).
+fn js_round_pct(frac: f64) -> i64 {
+    (cj_sim::js::round(frac * 100.0) as i64).max(0)
+}

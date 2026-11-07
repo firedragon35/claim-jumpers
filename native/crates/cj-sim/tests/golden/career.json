@@ -2145,6 +2145,535 @@
    },
    "title": "New personal best",
    "saved": true
+  },
+  {
+   "input": {
+    "career": {
+     "shift": 4,
+     "wallet": 300,
+     "crew": "fixer"
+    },
+    "banked": 2500,
+    "grudge": 1,
+    "jumpers": 0,
+    "rivalsDelta": 0,
+    "contract": {
+     "kind": "bank",
+     "n": 2000,
+     "reward": 1500
+    }
+   },
+   "career": {
+    "shift": 5,
+    "wallet": 2250,
+    "loan": 38300,
+    "owned": [
+     "cannon"
+    ],
+    "mounted": {
+     "w1": "cannon",
+     "w2": null,
+     "mod": null,
+     "u1": null,
+     "u2": null
+    },
+    "totalBanked": 2500,
+    "difficulty": "standard",
+    "grudge": 0,
+    "wanted": 0,
+    "levels": {
+     "shield": 1,
+     "thrust": 1,
+     "armor": 1,
+     "cannon": 1,
+     "missiles": 1,
+     "drones": 1
+    },
+    "sentries": 0,
+    "tugClass": 0,
+    "loanStart": 1,
+    "crew": "fixer",
+    "contract": null,
+    "contractShift": 0,
+    "offers": null,
+    "offersShift": 0,
+    "belt": "hollis",
+    "rep": {
+     "bank": 4,
+     "law": 3,
+     "rivals": 2
+    },
+    "chain": null,
+    "chainsDone": [],
+    "conditions": {
+     "shift": 4,
+     "map": {
+      "quiet": "oreBoom",
+      "hollis": "oreBoom",
+      "kessler": "oreBoom",
+      "cinder": "oreBoom",
+      "frontier": "oreBoom"
+     }
+    },
+    "cores": 0,
+    "lastShift": {
+     "earned": 2500,
+     "deaths": 0,
+     "kills": 0,
+     "arrests": 0,
+     "wallet": 2250,
+     "contract": "done",
+     "boss": null,
+     "hold": false,
+     "escort": false
+    }
+   },
+   "title": "Shift 4 complete",
+   "saved": true
+  },
+  {
+   "input": {
+    "career": {
+     "shift": 5,
+     "wallet": 0,
+     "crew": "rigger"
+    },
+    "banked": 900,
+    "grudge": 4,
+    "jumpers": 1,
+    "rivalsDelta": -3,
+    "contract": {
+     "kind": "rivals",
+     "n": 3,
+     "reward": 1200
+    }
+   },
+   "career": {
+    "shift": 6,
+    "wallet": -1400,
+    "loan": 38000,
+    "owned": [
+     "cannon"
+    ],
+    "mounted": {
+     "w1": "cannon",
+     "w2": null,
+     "mod": null,
+     "u1": null,
+     "u2": null
+    },
+    "totalBanked": 900,
+    "difficulty": "standard",
+    "grudge": 2,
+    "wanted": 0,
+    "levels": {
+     "shield": 1,
+     "thrust": 1,
+     "armor": 1,
+     "cannon": 1,
+     "missiles": 1,
+     "drones": 1
+    },
+    "sentries": 0,
+    "tugClass": 0,
+    "loanStart": 1,
+    "crew": "rigger",
+    "contract": null,
+    "contractShift": 0,
+    "offers": null,
+    "offersShift": 0,
+    "belt": "hollis",
+    "rep": {
+     "bank": -8,
+     "law": 3,
+     "rivals": -3
+    },
+    "chain": null,
+    "chainsDone": [],
+    "conditions": {
+     "shift": 5,
+     "map": {
+      "quiet": "oreBoom",
+      "hollis": "oreBoom",
+      "kessler": "oreBoom",
+      "cinder": "oreBoom",
+      "frontier": "oreBoom"
+     }
+    },
+    "cores": 0,
+    "lastShift": {
+     "earned": 900,
+     "deaths": 0,
+     "kills": 1,
+     "arrests": 0,
+     "wallet": -1400,
+     "contract": "missed",
+     "boss": null,
+     "hold": false,
+     "escort": false
+    }
+   },
+   "title": "Shift 5 complete",
+   "saved": true
+  },
+  {
+   "input": {
+    "career": {
+     "shift": 3,
+     "wallet": 0,
+     "crew": "broker",
+     "cores": 8
+    },
+    "banked": 1800,
+    "grudge": 0,
+    "jumpers": 0,
+    "rivalsDelta": 0,
+    "contract": {
+     "kind": "deliver",
+     "type": "plate",
+     "n": 4,
+     "reward": 1100
+    },
+    "delivered": {
+     "plate": 5
+    },
+    "coresBanked": 3
+   },
+   "career": {
+    "shift": 4,
+    "wallet": 1100,
+    "loan": 38600,
+    "owned": [
+     "cannon"
+    ],
+    "mounted": {
+     "w1": "cannon",
+     "w2": null,
+     "mod": null,
+     "u1": null,
+     "u2": null
+    },
+    "totalBanked": 1800,
+    "difficulty": "standard",
+    "grudge": 0,
+    "wanted": 0,
+    "levels": {
+     "shield": 1,
+     "thrust": 1,
+     "armor": 1,
+     "cannon": 1,
+     "missiles": 1,
+     "drones": 1
+    },
+    "sentries": 0,
+    "tugClass": 0,
+    "loanStart": 1,
+    "crew": "broker",
+    "contract": null,
+    "contractShift": 0,
+    "offers": null,
+    "offersShift": 0,
+    "belt": "hollis",
+    "rep": {
+     "bank": 4,
+     "law": 3,
+     "rivals": 2
+    },
+    "chain": null,
+    "chainsDone": [],
+    "conditions": {
+     "shift": 3,
+     "map": {
+      "quiet": "oreBoom",
+      "hollis": "oreBoom",
+      "kessler": "oreBoom",
+      "cinder": "oreBoom",
+      "frontier": "oreBoom"
+     }
+    },
+    "cores": 9,
+    "lastShift": {
+     "earned": 1800,
+     "deaths": 0,
+     "kills": 0,
+     "arrests": 0,
+     "wallet": 1100,
+     "contract": "done",
+     "boss": null,
+     "hold": false,
+     "escort": false
+    }
+   },
+   "title": "Shift 3 complete",
+   "saved": true
+  },
+  {
+   "input": {
+    "career": {
+     "shift": 6,
+     "wallet": 1000,
+     "chain": {
+      "id": "saltyDog",
+      "step": 2
+     }
+    },
+    "banked": 9000,
+    "grudge": 2,
+    "jumpers": 0,
+    "rivalsDelta": 0,
+    "chainStep": [
+     "saltyDog",
+     2
+    ]
+   },
+   "career": {
+    "shift": 7,
+    "wallet": 10700,
+    "loan": 37700,
+    "owned": [
+     "cannon",
+     "grapple"
+    ],
+    "mounted": {
+     "w1": "cannon",
+     "w2": null,
+     "mod": null,
+     "u1": null,
+     "u2": null
+    },
+    "totalBanked": 9000,
+    "difficulty": "standard",
+    "grudge": 1,
+    "wanted": 0,
+    "levels": {
+     "shield": 1,
+     "thrust": 1,
+     "armor": 1,
+     "cannon": 1,
+     "missiles": 1,
+     "drones": 1
+    },
+    "sentries": 0,
+    "tugClass": 0,
+    "loanStart": 1,
+    "crew": null,
+    "contract": null,
+    "contractShift": 0,
+    "offers": null,
+    "offersShift": 0,
+    "belt": "hollis",
+    "rep": {
+     "bank": 4,
+     "law": 3,
+     "rivals": 2
+    },
+    "chain": null,
+    "chainsDone": [
+     "saltyDog"
+    ],
+    "conditions": {
+     "shift": 6,
+     "map": {
+      "quiet": "oreBoom",
+      "hollis": "oreBoom",
+      "kessler": "oreBoom",
+      "cinder": "oreBoom",
+      "frontier": "oreBoom"
+     }
+    },
+    "cores": 0,
+    "lastShift": {
+     "earned": 9000,
+     "deaths": 0,
+     "kills": 0,
+     "arrests": 0,
+     "wallet": 10700,
+     "contract": "done",
+     "boss": null,
+     "hold": false,
+     "escort": false
+    }
+   },
+   "title": "New personal best",
+   "saved": true
+  },
+  {
+   "input": {
+    "career": {
+     "shift": 6,
+     "wallet": 1000,
+     "chain": {
+      "id": "saltyDog",
+      "step": 2
+     }
+    },
+    "banked": 9000,
+    "grudge": 2,
+    "jumpers": 0,
+    "rivalsDelta": 0,
+    "deaths": 1,
+    "chainStep": [
+     "saltyDog",
+     2
+    ]
+   },
+   "career": {
+    "shift": 7,
+    "wallet": 7700,
+    "loan": 37700,
+    "owned": [
+     "cannon"
+    ],
+    "mounted": {
+     "w1": "cannon",
+     "w2": null,
+     "mod": null,
+     "u1": null,
+     "u2": null
+    },
+    "totalBanked": 9000,
+    "difficulty": "standard",
+    "grudge": 1,
+    "wanted": 0,
+    "levels": {
+     "shield": 1,
+     "thrust": 1,
+     "armor": 1,
+     "cannon": 1,
+     "missiles": 1,
+     "drones": 1
+    },
+    "sentries": 0,
+    "tugClass": 0,
+    "loanStart": 1,
+    "crew": null,
+    "contract": null,
+    "contractShift": 0,
+    "offers": null,
+    "offersShift": 0,
+    "belt": "hollis",
+    "rep": {
+     "bank": 4,
+     "law": 3,
+     "rivals": 2
+    },
+    "chain": null,
+    "chainsDone": [],
+    "conditions": {
+     "shift": 6,
+     "map": {
+      "quiet": "oreBoom",
+      "hollis": "oreBoom",
+      "kessler": "oreBoom",
+      "cinder": "oreBoom",
+      "frontier": "oreBoom"
+     }
+    },
+    "cores": 0,
+    "lastShift": {
+     "earned": 9000,
+     "deaths": 1,
+     "kills": 0,
+     "arrests": 0,
+     "wallet": 7700,
+     "contract": "missed",
+     "boss": null,
+     "hold": false,
+     "escort": false
+    }
+   },
+   "title": "Shift 6 complete",
+   "saved": true
+  },
+  {
+   "input": {
+    "career": {
+     "shift": 7,
+     "wallet": 1000,
+     "chain": {
+      "id": "hollisFreight",
+      "step": 0
+     }
+    },
+    "banked": 3000,
+    "grudge": 2,
+    "jumpers": 0,
+    "rivalsDelta": 0,
+    "delivered": {
+     "plate": 9
+    },
+    "chainStep": [
+     "hollisFreight",
+     0
+    ]
+   },
+   "career": {
+    "shift": 8,
+    "wallet": 1400,
+    "loan": 37400,
+    "owned": [
+     "cannon"
+    ],
+    "mounted": {
+     "w1": "cannon",
+     "w2": null,
+     "mod": null,
+     "u1": null,
+     "u2": null
+    },
+    "totalBanked": 3000,
+    "difficulty": "standard",
+    "grudge": 1,
+    "wanted": 0,
+    "levels": {
+     "shield": 1,
+     "thrust": 1,
+     "armor": 1,
+     "cannon": 1,
+     "missiles": 1,
+     "drones": 1
+    },
+    "sentries": 0,
+    "tugClass": 0,
+    "loanStart": 1,
+    "crew": null,
+    "contract": null,
+    "contractShift": 0,
+    "offers": null,
+    "offersShift": 0,
+    "belt": "hollis",
+    "rep": {
+     "bank": 4,
+     "law": 3,
+     "rivals": 2
+    },
+    "chain": null,
+    "chainsDone": [],
+    "conditions": {
+     "shift": 7,
+     "map": {
+      "quiet": "oreBoom",
+      "hollis": "oreBoom",
+      "kessler": "oreBoom",
+      "cinder": "oreBoom",
+      "frontier": "oreBoom"
+     }
+    },
+    "cores": 0,
+    "lastShift": {
+     "earned": 3000,
+     "deaths": 0,
+     "kills": 0,
+     "arrests": 0,
+     "wallet": 1400,
+     "contract": "missed",
+     "boss": null,
+     "hold": false,
+     "escort": false
+    }
+   },
+   "title": "Shift 7 complete",
+   "saved": true
   }
  ]
 }

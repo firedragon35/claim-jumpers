@@ -173,6 +173,18 @@ pub enum Radio {
     MinerAngry,
     MinerKill,
     Storm,
+    Boss,
+    BossDown,
+    IonStorm,
+    IonClear,
+    Derelict,
+    Escort,
+    EscortDone,
+    EscortLow,
+    EscortLost,
+    HoldOpen,
+    HoldSealed,
+    CoreZap,
 }
 
 #[derive(Clone, Debug, PartialEq)]

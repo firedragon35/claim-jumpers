@@ -8,7 +8,8 @@ use crate::tug::{self, Frame, TugState};
 use crate::ui::{
     self, card, label, paragraph, paragraph_h, text, text_w, MenuInput, Style, Ui, Which,
 };
-use cj_sim::career::{rank_for, Career, Mode, Outcome, Settlement, MODES, REP_NAMES};
+use cj_sim::career::{rank_for, tier, Career, Mode, Outcome, Settlement, Tier, MODES, REP_NAMES};
+use cj_sim::field::{truce_stage, Belt, Condition, Crew, BELTS, CORE_SELL, CREWS};
 use cj_sim::parts::*;
 use cj_sim::rng::Rng;
 use cj_sim::world::{fmt_credits, World};
@@ -33,6 +34,13 @@ pub enum Act {
     Unmount(Part),
     Level(System),
     BuySentry,
+    /// Accept or drop contract offer i.
+    Offer(usize),
+    Crew(Crew),
+    Belt(Belt),
+    Truce,
+    SellCore,
+    ReprogramCore,
 }
 
 fn c(rgb: u32) -> Color {
@@ -405,7 +413,7 @@ pub struct Report {
     pub bounties: f64,
     /// Kills by kind (KILL_KINDS): count, plural and singular; the
     /// first four are rival crews.
-    pub kills: [(u32, &'static str, &'static str); 10],
+    pub kills: [(u32, &'static str, &'static str); 11],
     /// The money side of the opposition (impound, confiscation, arrests).
     pub impounded: bool,
     pub impound_fee: f64,
@@ -439,6 +447,7 @@ impl Report {
                 (k.cutter, "cutters", "cutter"),
                 (k.brute, "brutes", "brute"),
                 (k.gunship, "gunships", "gunship"),
+                (k.boss, "boss crews", "boss crew"),
                 (k.collector, "debt collectors", "debt collector"),
                 (k.law, "law units", "law unit"),
                 (k.miner, "mining drones", "mining drone"),
@@ -513,9 +522,9 @@ impl Report {
                 } else {
                     String::new()
                 };
-                // (Contract chain notes join with chains in milestone 5.)
+                let chain = &self.settlement.chain_note;
                 let next = format!(
-                    "Next installment is {}, due after shift {}.{overdraft}{seized}{law}{heat}",
+                    "Next installment is {}, due after shift {}.{overdraft}{seized}{law}{heat}{chain}",
                     cr(c.due(0)),
                     c.shift
                 );
@@ -733,10 +742,24 @@ pub fn report(
             },
             col::TEXT,
         ),
-        // (Contracts and crew wages arrive in milestone 5.)
-        ("Contract", "None".to_owned(), col::TEXT),
+        match &st.contract {
+            None => ("Contract", "None".to_owned(), col::TEXT),
+            Some((k, true)) => (
+                "Contract",
+                format!("+{} · {}", cr(k.reward), k.text()),
+                col::TEXT,
+            ),
+            Some((k, false)) => ("Contract", format!("Missed · {}", k.text()), col::DANGER),
+        },
         ("Standing", standing, col::TEXT),
-        ("Crew wages", "None".to_owned(), col::TEXT),
+        match c.crew.filter(|_| st.wage > 0.0) {
+            Some(m) => (
+                "Crew wages",
+                format!("{} · {}", neg(st.wage), m.def().name),
+                col::DANGER,
+            ),
+            None => ("Crew wages", "None".to_owned(), col::TEXT),
+        },
         ("Loan installment", neg(st.due), col::DANGER),
         (
             "Wallet",
@@ -815,13 +838,13 @@ pub fn report(
 
 pub struct ShopView<'a> {
     pub career: &'a Career,
-    /// 0 = Tug, 1 = Parts.
+    /// 0 = Tug, 1 = Parts, 2 = Jobs & crew, 3 = Map & standing.
     pub tab: &'a mut usize,
     pub msg: &'a str,
     pub t: f32,
 }
 
-const SHOP_TABS: [&str; 2] = ["Tug", "Parts"];
+const SHOP_TABS: [&str; 4] = ["Tug", "Parts", "Jobs & crew", "Map & standing"];
 
 pub fn shop(
     look: &Look,
@@ -897,7 +920,7 @@ pub fn shop(
     };
     ui::ledger(look, u, r.x + r.w - 24.0 - lw, y0 + 14.0, &rows);
 
-    // Tabs. (Jobs & crew and Map & standing arrive in milestone 5.)
+    // Tabs.
     let ty = y0 + 96.0;
     let mut tx = x;
     for (i, name) in SHOP_TABS.iter().enumerate() {
@@ -919,10 +942,11 @@ pub fn shop(
     let body_y = ty + 33.0;
     draw_line(x, body_y, r.x + r.w - 24.0, body_y, 1.0, c(col::PANEL_EDGE));
     let body = Rect::new(x, body_y + 12.0, r.w - 48.0, 470.0);
-    let picked = if *v.tab == 0 {
-        tug_tab(look, u, career, body, v.t, rng)
-    } else {
-        parts_tab(look, u, career, body)
+    let picked = match *v.tab {
+        0 => tug_tab(look, u, career, body, v.t, rng),
+        1 => parts_tab(look, u, career, body),
+        2 => jobs_tab(look, u, career, body),
+        _ => map_tab(look, u, career, body),
     };
     act = act.or(picked);
 
@@ -1114,6 +1138,9 @@ fn tug_tab(
         }
     }
     if let Some(a) = sentry_row(look, u, career, x2, &mut y2, cw) {
+        act = Some(a);
+    }
+    if let Some(a) = cores_row(look, u, career, x2, &mut y2, cw) {
         act = Some(a);
     }
     act
@@ -1398,15 +1425,6 @@ fn part_card(look: &Look, u: &mut Ui, career: &Career, p: Part, r: Rect) -> Opti
             false,
             None,
         )
-    } else if !owned && p.pending().is_some() {
-        (
-            format!("In {}", p.pending().unwrap_or_default()),
-            col::MUTED,
-            "Not yet",
-            Style::Act,
-            false,
-            None,
-        )
     } else if !owned {
         let can = career.wallet >= d.price;
         (
@@ -1427,7 +1445,7 @@ fn part_card(look: &Look, u: &mut Ui, career: &Career, p: Part, r: Rect) -> Opti
             Some(Act::Unmount(p)),
         )
     } else {
-        let free = career.free_slot(d.slot).is_some() && p.pending().is_none();
+        let free = career.free_slot(d.slot).is_some();
         let s = if free {
             "Owned".to_owned()
         } else {
@@ -1459,4 +1477,426 @@ fn part_card(look: &Look, u: &mut Ui, career: &Career, p: Part, r: Rect) -> Opti
         return act;
     }
     None
+}
+
+/* ------------------------ Jobs & crew, Map & standing ------------------------ */
+
+/// One shop row (.sys) with a name, a line of detail, a status on the
+/// right and one button under it. `picked` draws the cable border of an
+/// accepted contract or a hired co-pilot. Returns whether it was pressed.
+#[allow(clippy::too_many_arguments)]
+fn offer_row(
+    look: &Look,
+    u: &mut Ui,
+    id: &str,
+    name: &str,
+    detail: &str,
+    status_s: (&str, u32),
+    button: (&str, Style, bool),
+    picked: bool,
+    x: f32,
+    y: &mut f32,
+    w: f32,
+) -> bool {
+    let tw = w - 24.0 - 130.0;
+    // Long contract names shrink a step rather than run under the button.
+    let size = if text_w(look, name, 20.0, Which::Display) > tw {
+        16.0
+    } else {
+        20.0
+    };
+    let h = (36.0 + paragraph_h(look, detail, tw, 14.0, Which::Body, 1.3) + 10.0).max(70.0);
+    let r = Rect::new(x, *y, w, h);
+    draw_rectangle(r.x, r.y, r.w, r.h, c(0x0b101c));
+    let edge = if picked { col::CABLE } else { col::PANEL_EDGE };
+    draw_rectangle_lines(r.x, r.y, r.w, r.h, 1.0, c(edge));
+    text(
+        look,
+        u,
+        name,
+        r.x + 12.0,
+        r.y + 8.0,
+        size,
+        Which::Display,
+        c(col::TEXT),
+    );
+    paragraph(
+        look,
+        u,
+        detail,
+        r.x + 12.0,
+        r.y + 36.0,
+        tw,
+        14.0,
+        Which::Body,
+        c(col::MUTED),
+        1.3,
+    );
+    let right = r.x + r.w - 12.0;
+    status(look, u, status_s.0, right, r.y + 12.0, status_s.1);
+    let (lbl, style, enabled) = button;
+    let br = ui::button_rect(look, 0.0, 0.0, style, lbl);
+    let br = Rect::new(right - br.w, r.y + 34.0, br.w, br.h);
+    let pressed = u.button(look, id, br, style, lbl, enabled);
+    *y += h + 6.0;
+    pressed
+}
+
+/// The Jobs & crew tab (renderJobs): this shift's contract offers on the
+/// left, the four co-pilots for hire on the right.
+fn jobs_tab(look: &Look, u: &mut Ui, career: &Career, r: Rect) -> Option<Act> {
+    let mut act = None;
+    let cw = (r.w - 28.0) / 2.0;
+    let (x1, x2) = (r.x, r.x + cw + 28.0);
+    let (mut y1, mut y2) = (r.y, r.y);
+    section(
+        look,
+        u,
+        &format!("Contracts for shift {}", career.shift),
+        x1,
+        &mut y1,
+    );
+    for (i, k) in career.offers.iter().enumerate() {
+        let picked = career.offer_taken(i);
+        let detail = format!("Bonus {} if met by the end of the shift.", cr(k.reward));
+        let st = if picked {
+            ("Accepted".to_owned(), col::CABLE)
+        } else {
+            (format!("+{}", cr(k.reward)), col::HAZARD)
+        };
+        let lbl = if picked { "Drop" } else { "Accept" };
+        if offer_row(
+            look,
+            u,
+            &format!("job-{i}"),
+            &k.text(),
+            &detail,
+            (&st.0, st.1),
+            (lbl, Style::Buy, true),
+            picked,
+            x1,
+            &mut y1,
+            cw,
+        ) {
+            act = Some(Act::Offer(i));
+        }
+    }
+    section(look, u, "Crew", x2, &mut y2);
+    for m in CREWS {
+        let d = m.def();
+        let hired = career.crew == Some(m);
+        let st = if hired {
+            ("Aboard".to_owned(), col::CABLE)
+        } else {
+            (format!("{} / shift", cr(d.wage)), col::HAZARD)
+        };
+        let lbl = if hired {
+            "Let go"
+        } else if career.crew.is_some() {
+            "Swap in"
+        } else {
+            "Hire"
+        };
+        if offer_row(
+            look,
+            u,
+            &format!("crew-{}", d.key),
+            &format!("{} · {}", d.name, d.role),
+            d.perk,
+            (&st.0, st.1),
+            (lbl, Style::Buy, true),
+            hired,
+            x2,
+            &mut y2,
+            cw,
+        ) {
+            act = Some(Act::Crew(m));
+        }
+    }
+    act
+}
+
+/// What a standing tier means in play (repEffects).
+fn rep_effects(i: usize, v: f64) -> &'static str {
+    let t = tier(v);
+    match (i, t) {
+        (0, Tier::Good) => "Installments 10% lower. Collectors give you until late in the shift.",
+        (0, Tier::Bad) => "Installments 15% higher. Collectors move early and get greedy.",
+        (0, _) => "Standard terms.",
+        (1, Tier::Good) => "No shakedowns. Fines 30% lower.",
+        (1, Tier::Bad) => "Shakedowns twice as likely, fines 30% higher, patrols more often.",
+        (1, _) => "Routine patrols.",
+        (_, Tier::Good) => "Fewer crews come hunting; grudges cool faster.",
+        (_, Tier::Bad) => "Crews start every shift annoyed with you.",
+        _ => "Business as usual.",
+    }
+}
+
+/// The Map & standing tab: the sector map's belt cards (renderBelts) and
+/// the three standings with the truce (renderStanding).
+fn map_tab(look: &Look, u: &mut Ui, career: &Career, r: Rect) -> Option<Act> {
+    let mut act = None;
+    let cw = (r.w - 28.0) / 2.0;
+    let (x1, x2) = (r.x, r.x + cw + 28.0);
+    let (mut y1, mut y2) = (r.y, r.y);
+    section(look, u, "Sector map", x1, &mut y1);
+    // repeat(auto-fill, minmax(150px, 1fr)) with an 8 px gap; each grid
+    // row is as tall as its tallest card.
+    let gap = 8.0;
+    let cols = ((cw + gap) / (150.0 + gap)).floor().max(1.0) as usize;
+    let bw = (cw - gap * (cols as f32 - 1.0)) / cols as f32;
+    let iw = bw - 20.0;
+    let conds = career
+        .conditions
+        .filter(|cs| cs.0 == career.shift)
+        .map(|cs| cs.1);
+    let cards: Vec<(Belt, bool, String, Option<String>)> = BELTS
+        .iter()
+        .enumerate()
+        .map(|(i, &b)| {
+            let d = b.def();
+            let locked = d.unlock > career.tug_class;
+            let blurb = if locked {
+                format!("Permit needs a {} tug.", TUG_CLASSES[d.unlock].mk)
+            } else {
+                d.blurb.to_owned()
+            };
+            let cond = conds
+                .map(|m| m[i])
+                .filter(|cd| !locked && *cd != Condition::Normal)
+                .map(|cd| format!("This shift: {}. {}", cd.def().name, cd.def().text));
+            (b, locked, blurb, cond)
+        })
+        .collect();
+    let card_h = |c: &(Belt, bool, String, Option<String>)| {
+        let mut h = 16.0 + 18.0 + 2.0 * 17.0;
+        h += paragraph_h(look, &c.2, iw, 12.0, Which::Body, 1.3) + 3.0;
+        if let Some(t) = &c.3 {
+            h += paragraph_h(look, t, iw, 12.0, Which::Body, 1.3) + 3.0;
+        }
+        h
+    };
+    let mut gy = y1;
+    for row in cards.chunks(cols) {
+        let rh = row.iter().map(card_h).fold(0.0, f32::max);
+        for (j, card) in row.iter().enumerate() {
+            let (b, locked, blurb, cond) = card;
+            let d = b.def();
+            let bx = x1 + j as f32 * (bw + gap);
+            let br = Rect::new(bx, gy, bw, rh);
+            let picked = career.belt == *b;
+            if u.button(
+                look,
+                &format!("belt-{}", d.key),
+                br,
+                Style::Belt { picked },
+                "",
+                !locked,
+            ) {
+                act = Some(Act::Belt(*b));
+            }
+            if picked {
+                // .belt.picked: an inset 1 px ring inside the border.
+                draw_rectangle_lines(
+                    br.x + 1.0,
+                    br.y + 1.0,
+                    br.w - 2.0,
+                    br.h - 2.0,
+                    1.0,
+                    c(col::CABLE),
+                );
+            }
+            // .belt:disabled fades the whole card.
+            let a = if *locked { 0.45 } else { 1.0 };
+            let (ix, mut iy) = (bx + 10.0, gy + 8.0);
+            text(
+                look,
+                u,
+                d.name,
+                ix,
+                iy,
+                15.0,
+                Which::Body,
+                rgba(col::TEXT, a),
+            );
+            iy += 21.0;
+            for (lbl, n) in [("Salvage", d.salvage), ("Danger ", d.danger)] {
+                let lw = text(
+                    look,
+                    u,
+                    lbl,
+                    ix,
+                    iy,
+                    11.0,
+                    Which::MonoLight,
+                    rgba(col::MUTED, a),
+                );
+                ui::pips(
+                    ix + lw + 7.0,
+                    iy + 7.0,
+                    usize::from(n),
+                    5,
+                    11.0,
+                    rgba(col::MUTED, a),
+                );
+                iy += 17.0;
+            }
+            iy += 3.0;
+            iy += paragraph(
+                look,
+                u,
+                blurb,
+                ix,
+                iy,
+                iw,
+                12.0,
+                Which::Body,
+                rgba(col::MUTED, a),
+                1.3,
+            ) + 3.0;
+            if let Some(t) = cond {
+                paragraph(
+                    look,
+                    u,
+                    t,
+                    ix,
+                    iy,
+                    iw,
+                    12.0,
+                    Which::Body,
+                    c(col::HAZARD),
+                    1.3,
+                );
+            }
+        }
+        gy += rh + gap;
+    }
+
+    section(look, u, "Standing", x2, &mut y2);
+    let vals = [career.rep.bank, career.rep.law, career.rep.rivals];
+    for (i, v) in vals.into_iter().enumerate() {
+        let t = tier(v);
+        let detail = format!(
+            "{}{} · {}",
+            if v > 0.0 { "+" } else { "" },
+            v,
+            rep_effects(i, v)
+        );
+        let tw = cw - 24.0 - 130.0;
+        let h = (36.0 + paragraph_h(look, &detail, tw, 14.0, Which::Body, 1.3) + 10.0).max(70.0);
+        let rr = Rect::new(x2, y2, cw, h);
+        draw_rectangle(rr.x, rr.y, rr.w, rr.h, c(0x0b101c));
+        draw_rectangle_lines(rr.x, rr.y, rr.w, rr.h, 1.0, c(col::PANEL_EDGE));
+        let nw = text(
+            look,
+            u,
+            REP_NAMES[i],
+            rr.x + 12.0,
+            rr.y + 8.0,
+            20.0,
+            Which::Display,
+            c(col::TEXT),
+        );
+        // .repbar: 120 x 6 with a centre tick; the fill grows from the
+        // centre, left for bad standing and right for good.
+        let (bx, by) = (rr.x + 12.0 + nw + 10.0, rr.y + 16.0);
+        draw_rectangle(bx, by, 120.0, 6.0, c(0x0b101c));
+        draw_rectangle_lines(bx, by, 120.0, 6.0, 1.0, c(col::PANEL_EDGE));
+        let fill = match t {
+            Tier::Good => col::CABLE,
+            Tier::Bad => col::DANGER,
+            Tier::Neutral => col::MUTED,
+        };
+        let left = 50.0 + v.min(0.0) as f32 / 2.0;
+        draw_rectangle(
+            bx + 1.2 * left,
+            by,
+            1.2 * v.abs() as f32 / 2.0,
+            6.0,
+            c(fill),
+        );
+        draw_line(bx + 60.0, by - 2.0, bx + 60.0, by + 8.0, 1.0, c(col::MUTED));
+        paragraph(
+            look,
+            u,
+            &detail,
+            rr.x + 12.0,
+            rr.y + 36.0,
+            tw,
+            14.0,
+            Which::Body,
+            c(col::MUTED),
+            1.3,
+        );
+        if i == 2 {
+            let right = rr.x + rr.w - 12.0;
+            if truce_stage(career.grudge) > 0 {
+                let price = career.truce_price();
+                status(look, u, &cr(price), right, rr.y + 12.0, col::HAZARD);
+                let lbl = "Buy truce";
+                let br = ui::button_rect(look, 0.0, 0.0, Style::Buy, lbl);
+                let br = Rect::new(right - br.w, rr.y + 34.0, br.w, br.h);
+                if u.button(look, "truce", br, Style::Buy, lbl, career.wallet >= price) {
+                    act = Some(Act::Truce);
+                }
+            } else {
+                status(look, u, "No grudge", right, rr.y + 12.0, col::CABLE);
+            }
+        }
+        y2 += h + 6.0;
+    }
+    act
+}
+
+/// Stored rogue cores (renderCores): sell one, or reprogram it into a sentry.
+fn cores_row(look: &Look, u: &mut Ui, career: &Career, x: f32, y: &mut f32, w: f32) -> Option<Act> {
+    if career.cores == 0 {
+        return None;
+    }
+    let detail =
+        "Sell one, or reprogram it into a sentry drone (needs a mounted drone bay with room).";
+    let tw = w - 24.0 - 200.0;
+    let h = (36.0 + paragraph_h(look, detail, tw, 14.0, Which::Body, 1.3) + 10.0).max(70.0);
+    let r = Rect::new(x, *y, w, h);
+    draw_rectangle(r.x, r.y, r.w, r.h, c(0x0b101c));
+    draw_rectangle_lines(r.x, r.y, r.w, r.h, 1.0, c(col::PANEL_EDGE));
+    let name = format!("Rogue cores · {} stored", career.cores);
+    text(
+        look,
+        u,
+        &name,
+        r.x + 12.0,
+        r.y + 8.0,
+        20.0,
+        Which::Display,
+        c(col::TEXT),
+    );
+    paragraph(
+        look,
+        u,
+        detail,
+        r.x + 12.0,
+        r.y + 36.0,
+        tw,
+        14.0,
+        Which::Body,
+        c(col::MUTED),
+        1.3,
+    );
+    let mut act = None;
+    let right = r.x + r.w - 12.0;
+    let prog = ui::button_rect(look, 0.0, 0.0, Style::Buy, "Reprogram");
+    let prog = Rect::new(right - prog.w, r.y + 34.0, prog.w, prog.h);
+    let can = career.is_mounted(Part::DroneBay) && career.sentries < SENTRY_MAX;
+    if u.button(look, "core-prog", prog, Style::Buy, "Reprogram", can) {
+        act = Some(Act::ReprogramCore);
+    }
+    let sell_l = format!("Sell {}", cr(CORE_SELL));
+    let sell = ui::button_rect(look, 0.0, 0.0, Style::Act, &sell_l);
+    let sell = Rect::new(prog.x - 6.0 - sell.w, prog.y, sell.w, sell.h);
+    if u.button(look, "core-sell", sell, Style::Act, &sell_l, true) {
+        act = Some(Act::SellCore);
+    }
+    *y += h + 6.0;
+    act
 }

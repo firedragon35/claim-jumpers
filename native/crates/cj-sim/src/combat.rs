@@ -92,7 +92,25 @@ impl World {
                     self.burst(b.x, b.y, 5, Tint::Cable, 100.0);
                 }
             }
-            // (Escorted haulers: milestone 5.)
+            // Enemy fire that reaches an escorted hauler damages it.
+            if b.life > 0.0 {
+                let hit = self
+                    .hauler
+                    .as_ref()
+                    .is_some_and(|h| !h.dead && js::dist(b.x, b.y, h.b.x, h.b.y) < h.b.r + 3.0);
+                if hit {
+                    // Sheriff and rogue bolts carry their damage; rival
+                    // and drone bolts do 4 to a hauler (5 to the tug).
+                    let n = if b.stun || b.swat || b.rogue {
+                        b.dmg
+                    } else {
+                        4.0
+                    };
+                    self.hurt_hauler(n);
+                    b.life = 0.0;
+                    self.burst(b.x, b.y, 5, Tint::Steel, 100.0);
+                }
+            }
             // Enemy fire can set off volatile cargo, towed or not.
             if b.life > 0.0 {
                 for i in 0..self.items.len() {
@@ -271,7 +289,11 @@ impl World {
         if w.dead {
             return;
         }
-        // (Sealed holds that only a keycard opens: milestone 4.)
+        // Only its keycard opens a sealed hold.
+        if w.locked {
+            self.sealed_hold_hit(i);
+            return;
+        }
         let before = w.hp;
         w.hp -= n;
         w.flash = 0.08;
@@ -316,7 +338,7 @@ impl World {
 
     /// The hull gives way: everything left spills out, its crabs scatter,
     /// and the wreck leaves a few pebbles behind.
-    fn break_wreck(&mut self, i: usize) {
+    pub(crate) fn break_wreck(&mut self, i: usize) {
         while !self.wrecks[i].contents.is_empty() {
             self.eject_from_wreck(i);
         }
@@ -361,6 +383,7 @@ impl World {
         let (x, y, vx, vy) = (jm.b.x, jm.b.y, jm.b.vx, jm.b.vy);
         let variant = jm.variant;
         let hook = jm.hook.take();
+        let boss = jm.boss.clone();
         // Every rival you scrap deepens the crews' grudge; a new stage is
         // announced. (A rogue sentry's kills, which are not yours, and the
         // fixer crew's half-grudge arrive in milestones 4 and 3.)
@@ -370,17 +393,27 @@ impl World {
         if !self.no_blame {
             self.stats.jumpers += 1;
             self.rep_delta.rivals += crate::career::REP_RIVAL_KILL;
-            self.grudge += 1.0;
+            // The fixer smooths things over: half the grudge per kill.
+            self.grudge += if self.crew == Some(crate::field::Crew::Fixer) {
+                0.5
+            } else {
+                1.0
+            };
             let k = &mut self.kills;
             match variant {
+                _ if boss.is_some() => {}
                 Variant::Skiff => k.skiff += 1,
                 Variant::Cutter => k.cutter += 1,
                 Variant::Brute => k.brute += 1,
                 Variant::Gunship => k.gunship += 1,
             }
             // Rival bounty by hull type, paid into this shift's earnings.
-            // (Boss crews pay their own, bigger bounty: milestone 5.)
-            let bounty = variant.def().bounty;
+            // Boss crews pay their own, bigger bounty below instead.
+            let bounty = if boss.is_some() {
+                0.0
+            } else {
+                variant.def().bounty
+            };
             if bounty > 0.0 {
                 self.banked += bounty;
                 self.bounties += bounty;
@@ -413,6 +446,24 @@ impl World {
         }
         let smashed = by_item.is_some_and(|m| m >= 3.0);
         // Smashing one with cargo scares off its wingmates for a moment.
+        // A boss crew pays its bounty straight into this shift's earnings,
+        // and its fall scares the other crews back a stage.
+        if let Some(b) = boss.as_ref().filter(|_| !self.no_blame) {
+            self.banked += b.bounty;
+            self.bounties += b.bounty;
+            self.kills.boss += 1;
+            self.popup(
+                x,
+                y - 60.0,
+                format!("BOUNTY +{} CR", fmt_credits(b.bounty)),
+                Tint::Hazard,
+            );
+            self.sfx(Sfx::Jackpot);
+            self.grudge = crate::field::grudge_one_stage_down(self.grudge);
+            self.rep_delta.rivals += crate::career::REP_BOSS_KILL_RIVALS;
+            self.boss_down = Some(b.name);
+            self.radio(Radio::BossDown, true, false);
+        }
         if smashed && !self.no_blame {
             self.scatter_rivals(j);
         }

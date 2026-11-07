@@ -15,6 +15,7 @@ pub mod consts;
 pub mod crabs;
 pub mod entities;
 pub mod events;
+pub mod field;
 pub mod input;
 pub mod items;
 pub mod js;

@@ -63,15 +63,24 @@ impl World {
         best
     }
 
-    /// Fire a volley at the tug if it is in range and the gun is ready,
-    /// leading the shot toward where the tug is heading. (Escorted haulers
-    /// as an alternative target: milestone 5.)
+    /// Fire a volley at the nearer of the tug and an escorted hauler
+    /// (rivalAim), leading the shot toward where it's heading.
     fn jumper_fire_at_ship(&mut self, j: usize) {
-        let s = &self.ship;
-        if !s.alive {
-            return;
-        }
-        let tgt = s.b;
+        let jb = self.jumpers[j].b;
+        let ship = self.ship.alive.then_some(self.ship.b);
+        let hauler = self.hauler.as_ref().filter(|h| !h.dead).map(|h| h.b);
+        let (tgt, at_ship) = match (ship, hauler) {
+            (None, None) => return,
+            (Some(s), None) => (s, true),
+            (None, Some(h)) => (h, false),
+            (Some(s), Some(h)) => {
+                if jb.dist_to(&h) < jb.dist_to(&s) {
+                    (h, false)
+                } else {
+                    (s, true)
+                }
+            }
+        };
         let jm = &self.jumpers[j];
         let d = jm.b.dist_to(&tgt);
         if jm.fire_t > 0.0 || d > JUMPER_FIRE_RANGE {
@@ -100,7 +109,9 @@ impl World {
             });
         }
         self.sfx(Sfx::EnemyShot(d.min(f64::from(u16::MAX)) as u16));
-        self.under_attack();
+        if at_ship {
+            self.under_attack();
+        }
     }
 
     pub(crate) fn update_jumper(&mut self, j: usize, dt: f64) {
@@ -264,8 +275,9 @@ impl World {
         let db = self.jumpers[dead].b;
         let mut fled = 0;
         for o in 0..self.jumpers.len() {
-            // (Boss crews never scatter: milestone 5.)
-            if o == dead || self.jumpers[o].dead || self.jumpers[o].b.dist_to(&db) > SCATTER_RANGE {
+            // Boss crews never scatter.
+            let om = &self.jumpers[o];
+            if o == dead || om.dead || om.boss.is_some() || om.b.dist_to(&db) > SCATTER_RANGE {
                 continue;
             }
             self.jumpers[o].flee_t = SCATTER_TIME;
