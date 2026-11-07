@@ -61,6 +61,10 @@ pub struct TugState {
     pub overheated: bool,
     /// Sentries aboard (shown on the drone bay in the shop).
     pub sentries: u32,
+    /// The afterburner is firing (a long blue flame).
+    pub burn: bool,
+    /// Missiles in the rack (None shows a full rack, as in the shop).
+    pub missiles: Option<u32>,
 }
 
 fn fill_rect(f: &Frame, x: f32, y: f32, w: f32, h: f32, c: Color) {
@@ -107,17 +111,18 @@ pub fn draw_tug(look: &Look, f: &Frame, m: &Mods, st: &TugState, rng: &mut Rng) 
             }
         }
     }
-    // Exhaust flame, choked while sputtering. (The afterburner's long blue
-    // flame arrives with the afterburner in milestone 4.)
+    // Exhaust flame, choked while sputtering; the afterburner throws a
+    // long, blue-hot flame.
     if st.thrust > 0.0 && !st.sputtering {
-        let len = rng.range(14.0, 26.0) as f32;
+        let len = rng.range(14.0, 26.0) as f32 * if st.burn { 2.0 } else { 1.0 };
+        let flame = if st.burn { col::CABLE } else { col::HAZARD };
         let g = f.p(-24.0, 0.0);
-        look.additive(|| look.glow(g.x, g.y, (16.0 + len * 0.4) * k, col::HAZARD, true, 1.0));
+        look.additive(|| look.glow(g.x, g.y, (16.0 + len * 0.4) * k, flame, true, 1.0));
         draw_triangle(
             f.p(-20.0, -6.0),
             f.p(-20.0 - len, 0.0),
             f.p(-20.0, 6.0),
-            rgba(col::HAZARD, 0.85),
+            rgba(flame, 0.85),
         );
         draw_triangle(
             f.p(-20.0, -3.0),
@@ -239,22 +244,20 @@ pub fn draw_tug(look: &Look, f: &Frame, m: &Mods, st: &TugState, rng: &mut Rng) 
             fill_rect(f, -13.0, -4.0 + i as f32 * 3.2, 5.0, 2.0, c);
         }
     }
-    // Missile pods: two racks on the flanks. (Loaded rounds track the rack
-    // once missiles fly in milestone 4; until then the rack shows full.)
+    // Missile pods: two racks on the flanks; the four tubes show how full
+    // the rack is, whatever its size.
     if m.missiles {
+        let rack = m.missile_rack.max(1);
+        let full = f64::from(st.missiles.unwrap_or(rack)) / f64::from(rack);
+        let loaded = cj_sim::js::round(full * 4.0) as u32;
         for side in [-1.0f32, 1.0] {
             let pod = f.rect(-2.0, side * 9.0 - 2.5, 12.0, 5.0);
             fill_fan((pod[0] + pod[2]) / 2.0, &pod, Color::from_hex(0x2b2f38));
             polyline(&pod, true, 1.2 * k, amber);
-            for i in 0..2 {
-                fill_rect(
-                    f,
-                    1.0 + i as f32 * 5.0,
-                    side * 9.0 - 1.2,
-                    3.0,
-                    2.4,
-                    Color::from_hex(col::DANGER),
-                );
+            for i in 0..2u32 {
+                let slot = if side < 0.0 { 0 } else { 2 } + i;
+                let c = Color::from_hex(if slot < loaded { col::DANGER } else { 0x14161c });
+                fill_rect(f, 1.0 + i as f32 * 5.0, side * 9.0 - 1.2, 3.0, 2.4, c);
             }
         }
     }

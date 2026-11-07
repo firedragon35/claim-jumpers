@@ -19,6 +19,7 @@ pub mod input;
 pub mod items;
 pub mod js;
 pub mod mods;
+pub mod opposition;
 pub mod parts;
 pub mod physics;
 pub mod rivals;

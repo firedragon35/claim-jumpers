@@ -287,6 +287,42 @@ impl Fx {
                 );
             }
         }
+        // Stunned by a sheriff bolt: blue crackle round the hull.
+        if s.alive && s.stun_t > 0.0 && self.rng.chance(0.5) {
+            let x = s.b.x + self.rng.range(-18.0, 18.0);
+            let y = s.b.y + self.rng.range(-18.0, 18.0);
+            let (vx, vy) = (self.rng.range(-40.0, 40.0), self.rng.range(-40.0, 40.0));
+            self.spark(x, y, vx, vy, 0.25, col::LAW, 2.0);
+        }
+        // A cooked engine smokes while it cools.
+        if s.alive && s.engine_over_t > 0.0 && self.rng.chance(0.5) {
+            let x = s.b.x + self.rng.range(-12.0, 12.0);
+            let y = s.b.y + self.rng.range(-12.0, 12.0);
+            let (vx, vy) = (self.rng.range(-30.0, 30.0), self.rng.range(-30.0, 30.0));
+            self.spark(x, y, vx, vy, 0.6, col::MUTED, 3.0);
+        }
+        // Missile exhaust trails.
+        for m in &w.missiles {
+            if m.life > 0.0 && self.rng.chance(0.8) {
+                let vx = -m.vx * 0.1 + self.rng.range(-20.0, 20.0);
+                let vy = -m.vy * 0.1 + self.rng.range(-20.0, 20.0);
+                self.spark(m.x, m.y, vx, vy, 0.35, col::MUTED, 2.0);
+            }
+        }
+        // Smoke from the refinery's broken jaws.
+        if let Some(r) = w
+            .refinery
+            .as_ref()
+            .filter(|r| r.state == cj_sim::opposition::RefineryState::Wrecked)
+        {
+            if self.rng.chance(0.4) {
+                let (mx, my) = r.maw();
+                let x = mx + self.rng.range(-40.0, 40.0);
+                let y = my + self.rng.range(-40.0, 40.0);
+                let (vx, vy) = (self.rng.range(-20.0, 20.0), self.rng.range(-40.0, -10.0));
+                self.spark(x, y, vx, vy, 1.0, col::MUTED, 3.0);
+            }
+        }
         for i in 0..w.items.len() {
             let it = &w.items[i];
             // Rare grades glint now and then so they stand out across the field.

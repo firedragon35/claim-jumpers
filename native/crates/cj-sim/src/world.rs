@@ -40,6 +40,12 @@ pub struct Kills {
     pub cutter: u32,
     pub brute: u32,
     pub gunship: u32,
+    pub collector: u32,
+    pub law: u32,
+    pub miner: u32,
+    pub drone: u32,
+    pub rogue: u32,
+    pub jaws: u32,
 }
 
 pub struct World {
@@ -91,6 +97,42 @@ pub struct World {
     pub diff_jumper_rate: f64,
     pub diff_jumper_cap: f64,
     pub belt_rivals: f64,
+    /// The career being played, as it stood when the shift began (plus any
+    /// loan credit from confiscations). Collectors and the law read it.
+    pub career: Option<Career>,
+    pub drones: Vec<crate::opposition::Drone>,
+    pub collectors: Vec<crate::opposition::Collector>,
+    pub nets: Vec<crate::opposition::Net>,
+    pub sheriffs: Vec<crate::opposition::Sheriff>,
+    pub miners: Vec<crate::opposition::Miner>,
+    pub missiles: Vec<crate::opposition::Missile>,
+    pub sentries: Vec<crate::opposition::Sentry>,
+    pub refinery: Option<crate::opposition::Refinery>,
+    /// Wanted stars (0..=5), and the countdown to the next law unit.
+    pub wanted: u32,
+    pub reinforce_t: Option<f64>,
+    pub patrol_t: f64,
+    /// Seconds into the shift when collectors arrive.
+    pub collector_queue: Vec<f64>,
+    pub low_wallet_checked: bool,
+    pub fat_cable_ready_at: f64,
+    pub refinery_t: f64,
+    pub miner_announce_t: f64,
+    /// The mode's first collector shift and net-tearing multiplier.
+    pub collector_from: i32,
+    pub net_tear: f64,
+    /// Damage done now is not the player's (a rogue sentry's shot).
+    pub no_blame: bool,
+    pub vault_opened: bool,
+    /// The money side of the opposition, settled at the end of the shift.
+    pub impounded: bool,
+    pub impound_fee: f64,
+    pub confiscated: f64,
+    pub loan_credit: f64,
+    pub fines: f64,
+    pub fine_from_cargo: f64,
+    pub seized: f64,
+    pub arrests: u32,
     /// Standing changes earned this shift, applied when it ends.
     pub rep_delta: Rep,
     /// Rival crews respect you: half as many hunters come.
@@ -151,6 +193,35 @@ impl World {
             belt_rivals: 1.0,
             rep_delta: Rep::default(),
             rivals_good: false,
+            career: None,
+            drones: Vec::new(),
+            collectors: Vec::new(),
+            nets: Vec::new(),
+            sheriffs: Vec::new(),
+            miners: Vec::new(),
+            missiles: Vec::new(),
+            sentries: Vec::new(),
+            refinery: None,
+            wanted: 0,
+            reinforce_t: None,
+            patrol_t: f64::INFINITY,
+            collector_queue: Vec::new(),
+            low_wallet_checked: false,
+            fat_cable_ready_at: 0.0,
+            refinery_t: f64::INFINITY,
+            miner_announce_t: 0.0,
+            collector_from: 2,
+            net_tear: 1.0,
+            no_blame: false,
+            vault_opened: false,
+            impounded: false,
+            impound_fee: 0.0,
+            confiscated: 0.0,
+            loan_credit: 0.0,
+            fines: 0.0,
+            fine_from_cargo: 0.0,
+            seized: 0.0,
+            arrests: 0,
             cam: Camera {
                 x: BAY_X,
                 y: BAY_Y,
@@ -169,7 +240,9 @@ impl World {
     /// A new shift: the field is seeded and Marge opens the channel.
     pub fn new_shift(rng: Rng, view: (f64, f64)) -> World {
         let mut w = World::empty(rng, view);
+        w.setup_opposition();
         w.start_shift();
+        w.setup_miners();
         w
     }
 
@@ -191,7 +264,10 @@ impl World {
         let bad = tier(c.rep.rivals) == Tier::Bad;
         w.grudge = c.grudge + if bad { 2.0 } else { 0.0 };
         w.rivals_good = tier(c.rep.rivals) == Tier::Good;
+        w.career = Some(c.clone());
+        w.setup_opposition();
         w.start_shift();
+        w.setup_miners();
         w
     }
 
@@ -409,10 +485,31 @@ impl World {
         for c in 0..self.crabs.len() {
             self.update_crab(c, dt);
         }
-        // (Refinery, drones, collectors, law, miners, nets, missiles and
-        // sentries update here in milestone 4.)
+        self.update_refinery(dt);
+        for i in 0..self.drones.len() {
+            self.update_drone(i, dt);
+        }
+        for i in 0..self.collectors.len() {
+            self.update_collector(i, dt);
+        }
+        for i in 0..self.sheriffs.len() {
+            self.update_sheriff(i, dt);
+        }
+        for i in 0..self.miners.len() {
+            self.update_miner(i, dt);
+        }
+        self.update_nets(dt);
+        self.update_missiles(dt);
+        for i in 0..self.sentries.len() {
+            self.update_sentry(i, dt);
+        }
+        // An impound ends the shift mid-step.
+        if self.shift_over {
+            return;
+        }
         self.update_bay(dt);
         // (Tutorial and field events: milestone 5.)
+        self.update_opposition_spawns(dt);
         self.update_spawns(dt);
         self.shake = (self.shake - dt * 30.0).max(0.0);
         self.screen_flash = (self.screen_flash - dt * 1.6).max(0.0);
@@ -502,12 +599,37 @@ impl World {
         let turn_max = SHIP_TURN * mods.turn_mul / (1.0 + turn_load / 7.0);
         let turn_resp = 9.0 / (1.0 + turn_load / 6.0);
         s.av += (input.turn * turn_max - s.av) * (turn_resp * dt).min(1.0);
-        // (Net tearing: milestone 4.)
+
+        // Netted: each hard swap of turn direction tears the net; thrust
+        // and side thrusters wear it down too.
+        let turn_sign = if input.turn.abs() > 0.5 {
+            input.turn.signum()
+        } else {
+            0.0
+        };
+        let mut ripped = false;
+        let mut torn = false;
+        if let Some(net) = s.net.as_mut() {
+            if turn_sign != 0.0 && s.last_turn_sign != 0.0 && turn_sign != s.last_turn_sign {
+                net.hp -= crate::opposition::NET_TEAR_PER_REVERSAL * self.net_tear;
+                ripped = true;
+            }
+            if input.thrust > 0.0 {
+                net.hp -= crate::opposition::NET_TEAR_THRUST * dt;
+            }
+            if mods.thrusters && input.strafe.abs() > 0.2 {
+                net.hp -= crate::opposition::NET_TEAR_STRAFE * input.strafe.abs() * dt;
+            }
+            torn = net.hp <= 0.0;
+        }
+        if turn_sign != 0.0 {
+            s.last_turn_sign = turn_sign;
+        }
         s.angle += s.av * dt;
         s.spin_meter = s.spin_meter * (-0.35 * dt).exp() + (s.av.abs() / turn_max) * dt;
 
         // Forward wins over brake; reverse thrust is deliberately weaker.
-        let throttle = if input.thrust > 0.0 {
+        let mut throttle = if input.thrust > 0.0 {
             input.thrust
         } else {
             -REVERSE_THROTTLE * input.reverse
@@ -516,7 +638,45 @@ impl World {
         if self.crabs.iter().any(|c| c.state == CrabState::Latched) {
             force *= CRAB_LATCHED_THRUST;
         }
-        // (Net, stun and afterburner modifiers: milestone 4.)
+        if s.net.is_some() {
+            force *= crate::opposition::NETTED_THRUST; // the net fouls the main nozzle
+        }
+        // Stunned by a sheriff bolt: engines at 45% while the charge bleeds off.
+        if s.stun_t > 0.0 {
+            s.stun_t -= dt;
+            force *= 0.45;
+        }
+        // Afterburner: a squeeze of both triggers (or Shift) fires a burst
+        // at full throttle. Each burst heats the engine; chain them and it
+        // overheats, leaving the tug crawling until it cools.
+        use crate::opposition::{BURN_HEAT, BURN_THRUST, BURN_TIME, ENGINE_COOL};
+        use crate::opposition::{ENGINE_OVERHEAT_THRUST, ENGINE_OVERHEAT_TIME};
+        if s.burn_t <= 0.0 {
+            s.engine_heat = (s.engine_heat - ENGINE_COOL * dt).max(0.0);
+        }
+        let mut cooked = false;
+        let mut burst = false;
+        if s.engine_over_t > 0.0 {
+            s.engine_over_t -= dt;
+            force *= ENGINE_OVERHEAT_THRUST;
+        } else if input.burn && !s.prev_burn && s.burn_t <= 0.0 {
+            s.engine_heat += BURN_HEAT;
+            if s.engine_heat >= 100.0 {
+                s.engine_heat = 100.0;
+                s.engine_over_t = ENGINE_OVERHEAT_TIME;
+                s.burn_t = 0.0;
+                cooked = true;
+            } else {
+                s.burn_t = BURN_TIME;
+                burst = true;
+            }
+        }
+        s.prev_burn = input.burn;
+        if s.burn_t > 0.0 {
+            s.burn_t -= dt;
+            force *= BURN_THRUST;
+            throttle = 1.0;
+        }
 
         // Engines sputter under heavy loads: random short cut-outs.
         if throttle > 0.0 && load_ratio > SPUTTER_LOAD {
@@ -580,6 +740,7 @@ impl World {
                 life: SLUG_LIFE,
                 dmg: SLUG_DAMAGE,
                 slug: true,
+                ..Bullet::default()
             });
             slug = true;
         } else if input.fire && s.fire_t <= 0.0 && mods.guns() > 0 && !s.overheated {
@@ -596,6 +757,7 @@ impl World {
                     life: BULLET_LIFE,
                     dmg: mods.cannon_dmg,
                     slug: false,
+                    ..Bullet::default()
                 });
             }
             // Cannon levels add a fan of angled shots from the muzzle, in pairs.
@@ -610,6 +772,7 @@ impl World {
                         life: BULLET_LIFE,
                         dmg: mods.cannon_dmg,
                         slug: false,
+                        ..Bullet::default()
                     });
                 }
             }
@@ -641,12 +804,17 @@ impl World {
             shield_up = s.shield >= mods.shield_max;
         }
 
-        // Looping alarm: low hull beeps. (The netted warble: milestone 4.)
+        // Looping alarms: low hull beeps, and a "wee-oo" warble while netted.
         s.alarm_t -= dt;
-        let mut alarm = false;
-        if s.alarm_t <= 0.0 && s.hp < mods.max_hp * 0.3 {
-            s.alarm_t = 0.9;
-            alarm = true;
+        let mut alarm = None;
+        if s.alarm_t <= 0.0 {
+            if s.net.is_some() {
+                s.alarm_t = 1.0;
+                alarm = Some(Sfx::NetAlarm);
+            } else if s.hp < mods.max_hp * 0.3 {
+                s.alarm_t = 0.9;
+                alarm = Some(Sfx::Alarm);
+            }
         }
 
         self.emit(Event::Thrust {
@@ -671,8 +839,23 @@ impl World {
                 self.sfx(Sfx::Shoot(-1));
             }
         }
-        if alarm {
+        if let Some(a) = alarm {
+            self.sfx(a);
+        }
+        if ripped {
+            let (x, y) = (self.ship.b.x, self.ship.b.y);
+            self.burst(x, y, 4, Tint::Collector, 90.0);
+            self.sfx(Sfx::Rip);
+        }
+        if cooked {
             self.sfx(Sfx::Alarm);
+            self.radio(Radio::EngineOverheat, true, false);
+        }
+        if burst {
+            self.sfx(Sfx::Missile);
+        }
+        if torn {
+            self.free_ship(true);
         }
         if low {
             self.radio(Radio::HullLow, true, false);
@@ -730,7 +913,7 @@ impl World {
     }
 
     /// Wreck the tug: cargo floats free, the deductible is charged, respawn soon.
-    pub(crate) fn kill_ship(&mut self) {
+    pub fn kill_ship(&mut self) {
         let s = &mut self.ship;
         s.alive = false;
         s.hp = 0.0;
@@ -754,11 +937,21 @@ impl World {
                 self.fling_crab(c, vx, vy);
             }
         }
-        // (Nets, the law and rogue sentries react here in milestone 4.)
+        if self.ship.net.is_some() {
+            self.free_ship(false);
+        }
+        self.clear_record();
+        // A wrecked tug is a bad debt: a collector comes looking 20 s
+        // later, once the mode's collectors have started appearing.
+        if self.collectors.is_empty() && self.shift_no >= self.collector_from {
+            self.collector_queue.push(self.t + 20.0);
+        }
         self.explosion_fx(x, y, 150.0, Tint::Hazard);
         self.shake = 18.0;
         self.sfx(Sfx::Boom);
         self.radio(Radio::Dead, true, false);
+        // After the "tug is down" call, so Marge warns about them last.
+        self.go_rogue();
     }
 
     fn respawn_ship(&mut self) {
@@ -778,6 +971,11 @@ impl World {
         s.shield_delay_t = 0.0;
         s.heat = 0.0;
         s.overheated = false;
+        s.missiles = self.mods.missile_rack;
+        s.stun_t = 0.0;
+        s.burn_t = 0.0;
+        s.engine_heat = 0.0;
+        s.engine_over_t = 0.0;
     }
 
     /// Any hostile opening fire on the tug, or landing a hit, raises the
@@ -835,9 +1033,19 @@ impl World {
                 it.b.vy += ((BAY_Y - it.b.y) / d) * pull;
             }
         }
-        let s = &mut self.ship;
+        let s = &self.ship;
         if s.alive && js::dist(s.b.x, s.b.y, BAY_X, BAY_Y) < BAY_REPAIR_RANGE {
-            // (Sanctuary from the law: milestone 4.)
+            // Sanctuary: the carrier is private property. Reaching the bay
+            // wipes the wanted level and sends the law home.
+            let chased = self
+                .sheriffs
+                .iter()
+                .any(|sh| !sh.dead && sh.state == crate::opposition::SheriffState::Pursuit);
+            if self.wanted > 0 || chased {
+                self.clear_record();
+                self.radio(Radio::Sanctuary, true, false);
+            }
+            let s = &mut self.ship;
             let mut repaired_low = false;
             if s.hp < self.mods.max_hp {
                 s.hp = self.mods.max_hp.min(s.hp + BAY_REPAIR_RATE * dt);
@@ -965,6 +1173,13 @@ impl World {
         }
         self.jumpers.retain(|j| !j.dead);
         self.crabs.retain(|c| !c.dead);
+        self.drones.retain(|d| !d.dead);
+        self.collectors.retain(|c| !c.dead);
+        self.miners.retain(|m| !m.dead);
+        self.sheriffs.retain(|s| !s.dead);
+        self.sentries.retain(|d| !d.dead);
+        self.nets.retain(|n| n.life > 0.0);
+        self.missiles.retain(|m| m.life > 0.0);
         let items = &self.items;
         self.chain.retain(|id| items.iter().any(|it| it.id == *id));
     }

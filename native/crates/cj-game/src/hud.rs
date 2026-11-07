@@ -103,6 +103,38 @@ pub fn draw(look: &Look, w: &World, career: Option<&Career>, view: (f32, f32), d
         ly += 18.0;
         online(&format!("Slugs {}", w.ship.slugs), ly, col::TEXT);
     }
+    if w.mods.missiles {
+        ly += 18.0;
+        let lw = text_left(
+            "Missiles ",
+            pad,
+            ly,
+            13.0,
+            &look.fonts.mono,
+            Color::from_hex(col::HAZARD),
+        );
+        let rack = w.mods.missile_rack as usize;
+        let n = (w.ship.missiles as usize).min(rack);
+        crate::ui::pips(
+            pad + lw,
+            ly + 8.0,
+            n,
+            rack,
+            13.0,
+            Color::from_hex(col::HAZARD),
+        );
+    }
+    if w.mods.drone_bay {
+        ly += 18.0;
+        let alive = w.sentries.iter().filter(|d| !d.dead && !d.rogue).count();
+        let max = cj_sim::parts::SENTRY_MAX as usize;
+        let s = format!(
+            "Sentries {}{}",
+            "◆".repeat(alive),
+            "◇".repeat(max.saturating_sub(alive))
+        );
+        online(&s, ly, col::CABLE);
+    }
 
     // Centre: shift and clock (red in the last 30 seconds).
     let shift = format!("Shift {} · Hollis Belt", w.shift_no);
@@ -117,6 +149,44 @@ pub fn draw(look: &Look, w: &World, career: Option<&Career>, view: (f32, f32), d
     // warning, stack between the shift label and the clock. (The wanted
     // stars join this column with the law in milestone 4.)
     let mut cy = top + 16.0;
+    // Wanted stars: always shown, dim when clean; the law tier that's
+    // coming for you once wanted; flashing while anyone is in pursuit.
+    {
+        use cj_sim::opposition::{law_tier, SheriffState, WANTED_MAX};
+        let tier = law_tier(w.wanted);
+        let note = match tier {
+            Some(t) => format!(" · {}", t.name.to_uppercase()),
+            None if w.sheriffs.iter().any(|s| s.shakedown) => " · SHAKEDOWN".to_owned(),
+            None => String::new(),
+        };
+        let pursuit = w.sheriffs.iter().any(|s| s.state == SheriffState::Pursuit);
+        let flash = pursuit && (get_time() * 4.0).floor() as i64 % 2 == 1;
+        let color = if w.wanted == 0 {
+            crate::look::rgba(col::MUTED, 0.55)
+        } else if tier.is_some_and(|t| t.swat) || flash {
+            Color::from_hex(col::DANGER)
+        } else {
+            Color::from_hex(col::LAW)
+        };
+        let font = if w.wanted == 0 {
+            &look.fonts.mono_light
+        } else {
+            &look.fonts.mono
+        };
+        let head = "WANTED ";
+        let star_w = 13.0;
+        let total = text_width(head, 13.0, font)
+            + star_w * WANTED_MAX as f32
+            + text_width(&note, 13.0, font);
+        let mut x = (vw - total) / 2.0;
+        x += text_left(head, x, cy, 13.0, font, color);
+        for i in 0..WANTED_MAX {
+            crate::look::star(x + star_w / 2.0, cy + 7.0, 5.5, i < w.wanted, color);
+            x += star_w;
+        }
+        text_left(&note, x, cy, 13.0, font, color);
+        cy += 17.0;
+    }
     let stage = w.rival_stage();
     if stage > 0 {
         let txt = format!("RIVALS · {}", RIVAL_STAGES[stage].name.to_uppercase());
@@ -198,14 +268,23 @@ pub fn draw(look: &Look, w: &World, career: Option<&Career>, view: (f32, f32), d
             col::TRADEOFF
         },
     );
-    // (The afterburner's Engine meter goes here in milestone 4.)
+    meter(
+        look,
+        "Engine",
+        mx,
+        top + 60.0,
+        mw,
+        (s.engine_heat.clamp(0.0, 100.0) / 100.0) as f32,
+        // The browser styles no "hot" state for this bar: always amber.
+        col::HAZARD,
+    );
     let load = w.tow_mass();
     let frac = (load / m.winch_cap) as f32;
     meter(
         look,
         "Winch",
         mx,
-        top + 60.0,
+        top + 80.0,
         mw,
         frac,
         if frac > 0.85 { col::JUMPER } else { col::CABLE },
@@ -220,7 +299,7 @@ pub fn draw(look: &Look, w: &World, career: Option<&Career>, view: (f32, f32), d
     text_left(
         &lt,
         vw - pad - tw,
-        top + 74.0,
+        top + 94.0,
         11.0,
         &look.fonts.mono_light,
         Color::from_hex(col::MUTED),

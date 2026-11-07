@@ -10,7 +10,15 @@ use crate::world::World;
 
 /// Accelerate toward a desired velocity aimed at (tx, ty), with the
 /// change capped per step, and face the target.
-fn steer(b: &mut Body, angle: &mut f64, tx: f64, ty: f64, max_speed: f64, accel: f64, dt: f64) {
+pub(crate) fn steer(
+    b: &mut Body,
+    angle: &mut f64,
+    tx: f64,
+    ty: f64,
+    max_speed: f64,
+    accel: f64,
+    dt: f64,
+) {
     let (dx, dy) = (tx - b.x, ty - b.y);
     let d = nonzero(js::hypot(dx, dy));
     let dvx = (dx / d) * max_speed - b.vx;
@@ -88,6 +96,7 @@ impl World {
                 life: EBULLET_LIFE,
                 dmg: EBULLET_DAMAGE,
                 slug: false,
+                ..Bullet::default()
             });
         }
         self.sfx(Sfx::EnemyShot(d.min(f64::from(u16::MAX)) as u16));

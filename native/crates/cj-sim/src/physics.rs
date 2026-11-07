@@ -5,6 +5,7 @@ use crate::consts::*;
 use crate::entities::{make_rock, Body, JumperState};
 use crate::events::{Event, Sfx, Tint};
 use crate::items::ItemType;
+use crate::opposition::{CollectorState, SheriffState};
 use crate::world::World;
 use std::f64::consts::TAU;
 
@@ -16,6 +17,12 @@ enum Handle {
     Item(usize),
     Wreck(usize),
     Jumper(usize),
+    Drone(usize),
+    Collector(usize),
+    Miner(usize),
+    Sheriff(usize),
+    /// The refinery's solid hub (static).
+    Refinery,
     /// One of the carrier's static hull circles (index into CARRIER_HULL).
     Hull(usize),
 }
@@ -105,8 +112,9 @@ fn collide(a: &mut Body, b: &mut Body) -> Option<f64> {
 impl World {
     pub(crate) fn integrate_all(&mut self, dt: f64) {
         if self.ship.alive {
-            // (A netted tug has no wall: milestone 4.)
-            integrate(&mut self.ship.b, dt, SHIP_DAMP, true);
+            // A netted tug has no wall: the collector can drag it out.
+            let bounded = self.ship.net.is_none();
+            integrate(&mut self.ship.b, dt, SHIP_DAMP, bounded);
         }
         for r in &mut self.rocks {
             // Storm debris settles over a few seconds; normal drift is undamped.
@@ -129,7 +137,20 @@ impl World {
             let bounded = j.state != JumperState::Haul;
             integrate(&mut j.b, dt, JUMPER_DAMP, bounded);
         }
-        // (Drones, collectors, miners and sheriffs: milestone 4.)
+        for d in &mut self.drones {
+            integrate(&mut d.b, dt, 0.5, true);
+        }
+        for c in &mut self.collectors {
+            let bounded = !matches!(c.state, CollectorState::Tow | CollectorState::Leave);
+            integrate(&mut c.b, dt, 0.4, bounded);
+        }
+        for m in &mut self.miners {
+            integrate(&mut m.b, dt, 0.5, true);
+        }
+        for s in &mut self.sheriffs {
+            let bounded = s.state != SheriffState::Leave;
+            integrate(&mut s.b, dt, 0.4, bounded);
+        }
     }
 
     fn body(&self, h: Handle) -> Body {
@@ -139,6 +160,11 @@ impl World {
             Handle::Item(i) => self.items[i].b,
             Handle::Wreck(i) => self.wrecks[i].b,
             Handle::Jumper(i) => self.jumpers[i].b,
+            Handle::Drone(i) => self.drones[i].b,
+            Handle::Collector(i) => self.collectors[i].b,
+            Handle::Miner(i) => self.miners[i].b,
+            Handle::Sheriff(i) => self.sheriffs[i].b,
+            Handle::Refinery => self.refinery.as_ref().expect("refinery").b,
             Handle::Hull(k) => hull_body(k),
         }
     }
@@ -150,7 +176,11 @@ impl World {
             Handle::Item(i) => self.items[i].b = b,
             Handle::Wreck(i) => self.wrecks[i].b = b,
             Handle::Jumper(i) => self.jumpers[i].b = b,
-            Handle::Hull(_) => {}
+            Handle::Drone(i) => self.drones[i].b = b,
+            Handle::Collector(i) => self.collectors[i].b = b,
+            Handle::Miner(i) => self.miners[i].b = b,
+            Handle::Sheriff(i) => self.sheriffs[i].b = b,
+            Handle::Refinery | Handle::Hull(_) => {}
         }
     }
 
@@ -160,7 +190,11 @@ impl World {
             Handle::Item(i) => self.items[i].dead,
             Handle::Wreck(i) => self.wrecks[i].dead,
             Handle::Jumper(i) => self.jumpers[i].dead,
-            Handle::Ship | Handle::Hull(_) => false,
+            Handle::Drone(i) => self.drones[i].dead,
+            Handle::Collector(i) => self.collectors[i].dead,
+            Handle::Miner(i) => self.miners[i].dead,
+            Handle::Sheriff(i) => self.sheriffs[i].dead,
+            Handle::Ship | Handle::Hull(_) | Handle::Refinery => false,
         }
     }
 
@@ -211,9 +245,34 @@ impl World {
                 .enumerate()
                 .map(|(i, j)| (Handle::Jumper(i), j.b)),
         );
-        // (Drones, collectors, miners, sheriffs and the refinery body go
-        // between the jumpers and the hull in milestone 4.)
+        bodies.extend(
+            self.drones
+                .iter()
+                .enumerate()
+                .map(|(i, d)| (Handle::Drone(i), d.b)),
+        );
+        bodies.extend(
+            self.collectors
+                .iter()
+                .enumerate()
+                .map(|(i, c)| (Handle::Collector(i), c.b)),
+        );
+        bodies.extend(
+            self.miners
+                .iter()
+                .enumerate()
+                .map(|(i, m)| (Handle::Miner(i), m.b)),
+        );
+        bodies.extend(
+            self.sheriffs
+                .iter()
+                .enumerate()
+                .map(|(i, s)| (Handle::Sheriff(i), s.b)),
+        );
         bodies.extend((0..CARRIER_HULL.len()).map(|k| (Handle::Hull(k), hull_body(k))));
+        if let Some(r) = &self.refinery {
+            bodies.push((Handle::Refinery, r.b));
+        }
 
         for i in 0..bodies.len() {
             let ha = bodies[i].0;
@@ -286,7 +345,28 @@ impl World {
                     Handle::Jumper(j) if rel > 140.0 => {
                         self.hurt_jumper(j, power / 260.0, Some(me_b.mass));
                     }
-                    // (Drones, collectors, the law and miners: milestone 4.)
+                    Handle::Drone(d) if rel > 140.0 => self.hurt_drone(d, power / 260.0),
+                    // Swinging or throwing your cargo into a collector or
+                    // the law counts as shooting first; drifting debris doesn't.
+                    Handle::Collector(c) if rel > 140.0 => {
+                        let it = &self.items[i];
+                        if it.towed || it.thrown_t > 0.0 {
+                            self.collectors[c].provoked = true;
+                        }
+                        self.hurt_collector(c, power / 260.0, Some(me_b.mass));
+                    }
+                    Handle::Sheriff(k) if rel > 140.0 => {
+                        let it = &self.items[i];
+                        if it.towed || it.thrown_t > 0.0 {
+                            self.sheriffs[k].provoked = true;
+                        }
+                        self.hurt_sheriff(k, power / 260.0, Some(me_b.mass));
+                    }
+                    Handle::Miner(m) if rel > 140.0 => {
+                        let it = &self.items[i];
+                        let yours = it.towed || it.thrown_t > 0.0;
+                        self.hurt_miner(m, power / 260.0, yours);
+                    }
                     Handle::Rock(r) if power > ROCK_IMPACT_POWER => {
                         self.damage_rock(r, (power / ROCK_IMPACT_POWER).floor());
                     }
@@ -314,12 +394,33 @@ impl World {
                     self.hurt_jumper(j, 1.0, None);
                 }
             }
-            Handle::Rock(_) | Handle::Wreck(_) | Handle::Hull(_) => {}
+            Handle::Drone(d) => {
+                if matches!(other, Handle::Rock(_) | Handle::Wreck(_)) && rel > 220.0 {
+                    self.hurt_drone(d, 1.0);
+                }
+            }
+            Handle::Collector(c) => {
+                if matches!(other, Handle::Rock(_) | Handle::Wreck(_)) && rel > 220.0 {
+                    self.hurt_collector(c, 0.5, None);
+                }
+            }
+            Handle::Rock(_)
+            | Handle::Wreck(_)
+            | Handle::Hull(_)
+            | Handle::Miner(_)
+            | Handle::Sheriff(_)
+            | Handle::Refinery => {}
         }
     }
 
     /// Damage a rock; it breaks into smaller pieces at zero.
     pub fn damage_rock(&mut self, i: usize, n: f64) {
+        self.damage_rock_by(i, n, false);
+    }
+
+    /// Damage a rock; `by_miner` is a mining drone's cutter (silent, and a
+    /// break throws a debris storm).
+    pub(crate) fn damage_rock_by(&mut self, i: usize, n: f64, by_miner: bool) {
         let r = &mut self.rocks[i];
         if r.dead {
             return;
@@ -327,21 +428,32 @@ impl World {
         r.hp -= n;
         r.flash = 0.08;
         if r.hp <= 0.0 {
-            self.break_rock(i);
-        } else {
+            self.break_rock(i, by_miner);
+        } else if !by_miner {
             self.sfx(Sfx::Chip);
         }
     }
 
     /// Split a rock into the next size down. Breaking makes the field
-    /// busier: everything you disturb makes it more dangerous.
-    fn break_rock(&mut self, i: usize) {
+    /// busier: everything you disturb makes it more dangerous. A miner's
+    /// cut flings the pieces much faster and spills extra ore.
+    fn break_rock(&mut self, i: usize, by_miner: bool) {
         self.rocks[i].dead = true;
         let rock = self.rocks[i].clone();
-        // (Miner cuts fling pieces faster and spill extra ore: milestone 4.)
+        if by_miner && rock.size >= 2 && self.rng.next() < crate::opposition::MINER_ORE_CHANCE {
+            let vx = rock.b.vx + self.rng.range(-50.0, 50.0);
+            let vy = rock.b.vy + self.rng.range(-50.0, 50.0);
+            let it = self.new_item(ItemType::Ore, rock.b.x, rock.b.y, vx, vy);
+            self.items.push(it);
+        }
+        let kick = if by_miner {
+            crate::opposition::MINER_KICK
+        } else {
+            0.0
+        };
         let spawn_child = |w: &mut World, size: u8| {
             let a = w.rng.range(0.0, TAU);
-            let sp = w.rng.range(50.0, 110.0);
+            let sp = w.rng.range(50.0, 110.0) + kick;
             let mut child = make_rock(
                 &mut w.rng,
                 size,

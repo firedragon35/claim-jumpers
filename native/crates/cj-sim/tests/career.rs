@@ -296,9 +296,9 @@ fn shop_buys_mounts_and_refuses_sensibly() {
     c.mount(Part::Grinder).unwrap();
     assert!(c.mods().grinder && !c.mods().winch_cap.eq(&26.0));
     assert_eq!(c.wallet, 10000.0 - 2800.0 - 2000.0 - 1500.0);
-    // Unique and not-yet-ported parts can't be bought.
+    // Unique chain parts can't be bought.
     assert!(c.buy_part(Part::Grapple).is_err());
-    assert!(c.buy_part(Part::Missiles).is_err());
+    assert!(c.buy_part(Part::HullSeal).is_err());
     // Weapon systems need their weapon; levels stop at the max.
     assert_eq!(c.level_price(System::Missiles), None);
     c.wallet = 1e6;
@@ -330,4 +330,20 @@ fn paying_the_loan_off_trades_up() {
     // A partial payment is just a payment.
     let (msg, outcome) = c.pay_extra(1000.0).unwrap();
     assert!(outcome.is_none() && msg.contains("Paid 1,000 cr"));
+}
+
+#[test]
+fn sentries_need_a_mounted_drone_bay_with_room() {
+    let mut c = Career::new(Mode::Standard);
+    c.wallet = 1e5;
+    assert!(c.buy_sentry().is_err(), "no drone bay");
+    c.buy_part(Part::DroneBay).unwrap();
+    for _ in 0..SENTRY_MAX {
+        c.buy_sentry().unwrap();
+    }
+    assert!(c.buy_sentry().is_err(), "the bay is full");
+    assert_eq!(c.sentries, SENTRY_MAX);
+    // A shift with the bay mounted launches them all.
+    let w = World::for_career(Rng::seeded(1), (1280.0, 720.0), &c);
+    assert_eq!(w.sentries.len(), SENTRY_MAX as usize);
 }

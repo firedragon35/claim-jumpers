@@ -540,6 +540,314 @@ impl Audio {
                     ..n(0.3, 1800.0)
                 },
             ),
+            // Refinery countdown: one beep per second, rising as it nears zero.
+            Sfx::ArmBeep(sec) => {
+                let f = 600.0 + (5.0 - f32::from(sec)) * 150.0;
+                self.tone(f, 0.1, ToneOpts { vol: 0.08, ..TONE });
+            }
+            // The jaws waking: a long, low groan.
+            Sfx::JawsWake => self.tone(
+                55.0,
+                1.2,
+                ToneOpts {
+                    slide: 0.7,
+                    ..t(Sawtooth, 0.25)
+                },
+            ),
+            // Collector arrival: a three-cycle two-tone siren.
+            Sfx::Siren => {
+                for i in 0..3 {
+                    let d = i as f32 * 0.26;
+                    self.tone(
+                        620.0,
+                        0.12,
+                        ToneOpts {
+                            vol: 0.05,
+                            delay: d,
+                            ..TONE
+                        },
+                    );
+                    self.tone(
+                        820.0,
+                        0.12,
+                        ToneOpts {
+                            vol: 0.05,
+                            delay: d + 0.13,
+                            ..TONE
+                        },
+                    );
+                }
+            }
+            // Net launched: a rising "fwoomp".
+            Sfx::NetFire => {
+                let o = NoiseOpts {
+                    filter: Filter::Bandpass,
+                    sweep_to: 2400.0,
+                    ..n(0.18, 400.0)
+                };
+                self.noise(0.3, o);
+                self.tone(
+                    180.0,
+                    0.28,
+                    ToneOpts {
+                        slide: 3.8,
+                        ..t(Triangle, 0.1)
+                    },
+                );
+            }
+            // Netted: a wobbly "sproing" and a thwap, then a falling "uh-oh-oh".
+            Sfx::Netted => {
+                let sproing = ToneOpts {
+                    slide: 0.13,
+                    vib: 45.0,
+                    vib_rate: 22.0,
+                    ..t(Triangle, 0.14)
+                };
+                self.tone(700.0, 0.55, sproing);
+                self.noise(0.18, n(0.3, 500.0));
+                self.tone(
+                    523.0,
+                    0.12,
+                    ToneOpts {
+                        vol: 0.07,
+                        delay: 0.3,
+                        ..TONE
+                    },
+                );
+                self.tone(
+                    392.0,
+                    0.12,
+                    ToneOpts {
+                        vol: 0.07,
+                        delay: 0.44,
+                        ..TONE
+                    },
+                );
+                let last = ToneOpts {
+                    vol: 0.07,
+                    delay: 0.58,
+                    vib: 8.0,
+                    vib_rate: 6.0,
+                    ..TONE
+                };
+                self.tone(311.0, 0.32, last);
+            }
+            // While netted: a "wee-oo" warble.
+            Sfx::NetAlarm => {
+                self.tone(880.0, 0.1, ToneOpts { vol: 0.05, ..TONE });
+                self.tone(
+                    660.0,
+                    0.12,
+                    ToneOpts {
+                        vol: 0.05,
+                        delay: 0.11,
+                        ..TONE
+                    },
+                );
+            }
+            // Each tug against the net: a ripping zip.
+            Sfx::Rip => {
+                self.noise(
+                    0.07,
+                    NoiseOpts {
+                        filter: Filter::Highpass,
+                        ..n(0.18, 2500.0)
+                    },
+                );
+                self.tone(
+                    300.0,
+                    0.06,
+                    ToneOpts {
+                        vol: 0.05,
+                        slide: 4.0,
+                        ..TONE
+                    },
+                );
+            }
+            // Torn free: a triumphant rising arpeggio.
+            Sfx::TornFree => {
+                for (i, f) in [523.0, 659.0, 784.0, 1047.0].into_iter().enumerate() {
+                    self.tone(
+                        f,
+                        0.08,
+                        ToneOpts {
+                            vol: 0.07,
+                            delay: i as f32 * 0.06,
+                            ..TONE
+                        },
+                    );
+                }
+                self.tone(
+                    1568.0,
+                    0.25,
+                    ToneOpts {
+                        delay: 0.24,
+                        ..t(Triangle, 0.08)
+                    },
+                );
+            }
+            // Impounded: the sad trombone, "wah wah wah waaah".
+            Sfx::SadTrombone => {
+                for (i, f) in [392.0, 370.0, 349.0].into_iter().enumerate() {
+                    let o = ToneOpts {
+                        delay: i as f32 * 0.3,
+                        attack: 0.03,
+                        ..t(Sawtooth, 0.09)
+                    };
+                    self.tone(f, 0.28, o);
+                }
+                let o = ToneOpts {
+                    delay: 0.9,
+                    attack: 0.03,
+                    vib: 6.0,
+                    vib_rate: 5.0,
+                    ..t(Sawtooth, 0.09)
+                };
+                self.tone(330.0, 0.9, o);
+            }
+            // Load confiscated: coins falling out of your pocket, then a thunk.
+            Sfx::Confiscated => {
+                for (i, f) in [1319.0, 1175.0, 988.0, 784.0, 659.0]
+                    .into_iter()
+                    .enumerate()
+                {
+                    self.tone(
+                        f,
+                        0.08,
+                        ToneOpts {
+                            vol: 0.06,
+                            delay: i as f32 * 0.07,
+                            ..TONE
+                        },
+                    );
+                }
+                self.tone(
+                    110.0,
+                    0.25,
+                    ToneOpts {
+                        delay: 0.38,
+                        slide: 0.5,
+                        ..t(Square, 0.08)
+                    },
+                );
+            }
+            // Wanted level rising: an ominous falling triad.
+            Sfx::WantedUp => {
+                for (i, f) in [659.0, 554.0, 440.0].into_iter().enumerate() {
+                    self.tone(
+                        f,
+                        0.18,
+                        ToneOpts {
+                            delay: i as f32 * 0.12,
+                            ..t(Triangle, 0.08)
+                        },
+                    );
+                }
+            }
+            // Police siren: a warbling "wee-woo", quieter with distance.
+            Sfx::PoliceSiren(d) => {
+                let v = 0.06 * (1.2 - f32::from(d) / 1600.0).clamp(0.25, 1.0);
+                let o = ToneOpts {
+                    vol: v,
+                    vib: 20.0,
+                    vib_rate: 7.0,
+                    ..TONE
+                };
+                self.tone(960.0, 0.32, o);
+                self.tone(740.0, 0.34, ToneOpts { delay: 0.36, ..o });
+            }
+            // Sheriff stun bolt: an electric "pwang".
+            Sfx::StunShot(d) => {
+                let d = f32::from(d);
+                if d < 1100.0 {
+                    let vol = 0.07 * (1.0 - d / 1100.0) + 0.02;
+                    let o = ToneOpts {
+                        slide: 0.35,
+                        vib: 60.0,
+                        vib_rate: 30.0,
+                        ..t(Sine, vol)
+                    };
+                    self.tone(1600.0, 0.2, o);
+                }
+            }
+            // Arrested: two cuff clicks and a low "dun-dun".
+            Sfx::Arrest => {
+                let click = NoiseOpts {
+                    filter: Filter::Highpass,
+                    ..n(0.25, 4000.0)
+                };
+                self.noise(0.04, click);
+                self.noise(
+                    0.04,
+                    NoiseOpts {
+                        delay: 0.12,
+                        ..click
+                    },
+                );
+                self.tone(
+                    147.0,
+                    0.35,
+                    ToneOpts {
+                        delay: 0.3,
+                        ..t(Sawtooth, 0.1)
+                    },
+                );
+                self.tone(
+                    110.0,
+                    0.7,
+                    ToneOpts {
+                        delay: 0.7,
+                        ..t(Sawtooth, 0.1)
+                    },
+                );
+            }
+            // Missile launch and impact.
+            Sfx::Missile => {
+                let o = NoiseOpts {
+                    filter: Filter::Bandpass,
+                    sweep_to: 2500.0,
+                    ..n(0.12, 600.0)
+                };
+                self.noise(0.25, o);
+                self.tone(
+                    320.0,
+                    0.2,
+                    ToneOpts {
+                        slide: 2.5,
+                        ..t(Sawtooth, 0.04)
+                    },
+                );
+            }
+            Sfx::MissileHit => {
+                self.noise(0.3, n(0.22, 900.0));
+                self.tone(
+                    200.0,
+                    0.2,
+                    ToneOpts {
+                        slide: 0.3,
+                        ..t(Square, 0.06)
+                    },
+                );
+            }
+            // Sentry drone shot: a small, high "tik".
+            Sfx::SentryShot => self.tone(
+                2100.0,
+                0.06,
+                ToneOpts {
+                    slide: 0.4,
+                    ..t(Square, 0.025)
+                },
+            ),
+            // Miner's cutter on your hull: a sizzling buzz.
+            Sfx::BeamZap => self.tone(
+                1300.0,
+                0.12,
+                ToneOpts {
+                    vib: 200.0,
+                    vib_rate: 40.0,
+                    ..t(Sawtooth, 0.04)
+                },
+            ),
             Sfx::Chip => self.noise(0.07, n(0.1, 2200.0)),
             Sfx::Crunch => self.noise(0.32, n(0.28, 650.0)),
             Sfx::Boom => {

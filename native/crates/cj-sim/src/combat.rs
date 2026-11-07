@@ -51,17 +51,48 @@ impl World {
             b.life -= dt;
             let s = &self.ship;
             if s.alive && b.life > 0.0 && js::dist(b.x, b.y, s.b.x, s.b.y) < s.b.r + 3.0 {
-                if s.invuln <= 0.0 {
+                let open = s.invuln <= 0.0;
+                if open {
                     self.sfx(Sfx::ZapHit);
                     self.under_attack();
                 }
-                // (Sheriff stun bolts: milestone 4.)
-                self.damage_ship(EBULLET_DAMAGE);
+                // Sheriff stun bolts hit softer but leave the tug sluggish.
+                if b.stun && open {
+                    self.ship.stun_t = crate::opposition::STUN_TIME;
+                }
+                self.damage_ship(b.dmg);
                 b.life = 0.0;
-                self.burst(b.x, b.y, 5, Tint::Jumper, 100.0);
+                let tint = if b.swat || b.rogue {
+                    Tint::Danger
+                } else if b.stun {
+                    Tint::Law
+                } else {
+                    Tint::Jumper
+                };
+                self.burst(b.x, b.y, 5, tint, 100.0);
             }
-            // (Rogue sentry bolts, sentries in the way and escorted haulers:
-            // milestones 4 and 5.)
+            // A rogue's bolt hits whatever crosses it.
+            if b.rogue && b.life > 0.0 {
+                let hit = self.rogue_bolt_target(b.x, b.y);
+                if let Some(t) = hit {
+                    self.rogue_bolt_hit(t);
+                    b.life = 0.0;
+                    self.burst(b.x, b.y, 5, Tint::Danger, 100.0);
+                }
+            }
+            // Enemy fire can knock out a sentry in the way.
+            if b.life > 0.0 {
+                let hit = (0..self.sentries.len()).find(|&i| {
+                    let d = &self.sentries[i];
+                    !d.dead && !(b.rogue && d.rogue) && js::dist(b.x, b.y, d.x, d.y) <= d.r + 3.0
+                });
+                if let Some(i) = hit {
+                    self.hurt_sentry(i, if b.stun { 2.0 } else { 3.0 });
+                    b.life = 0.0;
+                    self.burst(b.x, b.y, 5, Tint::Cable, 100.0);
+                }
+            }
+            // (Escorted haulers: milestone 5.)
             // Enemy fire can set off volatile cargo, towed or not.
             if b.life > 0.0 {
                 for i in 0..self.items.len() {
@@ -108,8 +139,70 @@ impl World {
             self.hurt_jumper(i, dmg, None);
             return true;
         }
-        // (Drones, miners, rogue sentries, the law, collectors and the
-        // refinery's jaws and hull: milestone 4.)
+        if let Some(i) = (0..self.drones.len())
+            .find(|&i| !self.drones[i].dead && hits(b.x, b.y, &self.drones[i].b, 4.0))
+        {
+            self.hurt_drone(i, dmg);
+            return true;
+        }
+        if let Some(i) = (0..self.miners.len())
+            .find(|&i| !self.miners[i].dead && hits(b.x, b.y, &self.miners[i].b, 4.0))
+        {
+            self.hurt_miner(i, dmg, true);
+            return true;
+        }
+        if !b.sentry {
+            if let Some(i) = (0..self.sentries.len()).find(|&i| {
+                let d = &self.sentries[i];
+                let body = Body {
+                    x: d.x,
+                    y: d.y,
+                    r: d.r,
+                    ..Body::default()
+                };
+                d.rogue && !d.dead && hits(b.x, b.y, &body, 4.0)
+            }) {
+                self.hurt_sentry(i, dmg);
+                return true;
+            }
+            // Sentry fire never touches the law; your own cannon still can.
+            if let Some(k) = (0..self.sheriffs.len())
+                .find(|&k| !self.sheriffs[k].dead && hits(b.x, b.y, &self.sheriffs[k].b, 4.0))
+            {
+                self.sheriffs[k].provoked = true;
+                self.hurt_sheriff(k, dmg, None);
+                return true;
+            }
+        }
+        if let Some(c) = (0..self.collectors.len())
+            .find(|&c| !self.collectors[c].dead && hits(b.x, b.y, &self.collectors[c].b, 4.0))
+        {
+            if !b.sentry {
+                self.collectors[c].provoked = true; // your cannon, not a stray bolt
+            }
+            let n = if b.slug {
+                dmg
+            } else {
+                dmg * crate::opposition::COLLECTOR_BULLET_ARMOR
+            };
+            self.hurt_collector(c, n, None);
+            if !b.slug {
+                self.burst(b.x, b.y, 3, Tint::Text, 120.0); // sparks off the armor
+            }
+            return true;
+        }
+        // Shots into the awake maw damage the jaws; the hub stops shots.
+        if let Some(r) = &self.refinery {
+            let (mx, my) = r.maw();
+            if r.jaws_vulnerable() && js::dist(b.x, b.y, mx, my) < crate::opposition::MAW_R {
+                self.hurt_jaws(dmg);
+                self.burst(b.x, b.y, 4, Tint::Danger, 100.0);
+                return true;
+            }
+            if hits(b.x, b.y, &r.b, 0.0) {
+                return true;
+            }
+        }
         if let Some(c) = (0..self.crabs.len()).find(|&c| {
             let cr = &self.crabs[c];
             let body = Body {
@@ -272,28 +365,32 @@ impl World {
         // announced. (A rogue sentry's kills, which are not yours, and the
         // fixer crew's half-grudge arrive in milestones 4 and 3.)
         let before = self.rival_stage();
-        self.stats.jumpers += 1;
-        self.rep_delta.rivals += crate::career::REP_RIVAL_KILL;
-        self.grudge += 1.0;
-        let k = &mut self.kills;
-        match variant {
-            Variant::Skiff => k.skiff += 1,
-            Variant::Cutter => k.cutter += 1,
-            Variant::Brute => k.brute += 1,
-            Variant::Gunship => k.gunship += 1,
-        }
-        // Rival bounty by hull type, paid into this shift's earnings.
-        // (Boss crews pay their own, bigger bounty: milestone 5.)
-        let bounty = variant.def().bounty;
-        if bounty > 0.0 {
-            self.banked += bounty;
-            self.bounties += bounty;
-            self.popup(
-                x,
-                y - 60.0,
-                format!("+{} BOUNTY", fmt_credits(bounty)),
-                Tint::Hazard,
-            );
+        // A rogue sentry's kill isn't yours: no tally, grudge, standing or
+        // bounty.
+        if !self.no_blame {
+            self.stats.jumpers += 1;
+            self.rep_delta.rivals += crate::career::REP_RIVAL_KILL;
+            self.grudge += 1.0;
+            let k = &mut self.kills;
+            match variant {
+                Variant::Skiff => k.skiff += 1,
+                Variant::Cutter => k.cutter += 1,
+                Variant::Brute => k.brute += 1,
+                Variant::Gunship => k.gunship += 1,
+            }
+            // Rival bounty by hull type, paid into this shift's earnings.
+            // (Boss crews pay their own, bigger bounty: milestone 5.)
+            let bounty = variant.def().bounty;
+            if bounty > 0.0 {
+                self.banked += bounty;
+                self.bounties += bounty;
+                self.popup(
+                    x,
+                    y - 60.0,
+                    format!("+{} BOUNTY", fmt_credits(bounty)),
+                    Tint::Hazard,
+                );
+            }
         }
         let after = self.rival_stage();
         if after > before {
@@ -316,7 +413,7 @@ impl World {
         }
         let smashed = by_item.is_some_and(|m| m >= 3.0);
         // Smashing one with cargo scares off its wingmates for a moment.
-        if smashed {
+        if smashed && !self.no_blame {
             self.scatter_rivals(j);
         }
         // Their wreckage is salvage too: tow it home.
@@ -411,8 +508,68 @@ impl World {
             }
             i += 1;
         }
-        // (Drones, collectors, the refinery's jaws, miners, the law and
-        // sentries: milestone 4.)
+        let mut i = 0;
+        while i < self.drones.len() {
+            let f = falloff(&self.drones[i].b);
+            if f > 0.0 {
+                shove(&mut self.drones[i].b, f);
+                self.hurt_drone(i, 6.0 * f);
+            }
+            i += 1;
+        }
+        let mut i = 0;
+        while i < self.collectors.len() {
+            let f = falloff(&self.collectors[i].b);
+            if f > 0.0 {
+                shove(&mut self.collectors[i].b, f);
+                self.hurt_collector(i, 6.0 * f, None);
+            }
+            i += 1;
+        }
+        let jaws = self
+            .refinery
+            .as_ref()
+            .filter(|r| r.jaws_vulnerable())
+            .map(|r| r.jaw_body());
+        if let Some(jb) = jaws {
+            let f = falloff(&jb);
+            if f > 0.0 {
+                self.hurt_jaws(15.0 * f);
+            }
+        }
+        let mut i = 0;
+        while i < self.miners.len() {
+            let f = falloff(&self.miners[i].b);
+            if f > 0.0 {
+                shove(&mut self.miners[i].b, f);
+                self.hurt_miner(i, 6.0 * f, false);
+            }
+            i += 1;
+        }
+        let mut i = 0;
+        while i < self.sheriffs.len() {
+            let f = falloff(&self.sheriffs[i].b);
+            if f > 0.0 {
+                shove(&mut self.sheriffs[i].b, f);
+                self.hurt_sheriff(i, 6.0 * f, None);
+            }
+            i += 1;
+        }
+        let mut i = 0;
+        while i < self.sentries.len() {
+            let d = &self.sentries[i];
+            let body = Body {
+                x: d.x,
+                y: d.y,
+                r: d.r,
+                ..Body::default()
+            };
+            let f = falloff(&body);
+            if f > 0.0 {
+                self.hurt_sentry(i, 6.0 * f);
+            }
+            i += 1;
+        }
         let mut c = 0;
         while c < self.crabs.len() {
             let cr = &self.crabs[c];

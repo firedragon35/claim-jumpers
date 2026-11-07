@@ -19,6 +19,10 @@ pub enum Tint {
     Jumper,
     Crab,
     Reactor,
+    Collector,
+    Law,
+    Miner,
+    Muted,
     /// An explicit 0xRRGGBB colour (rare item grades carry their own).
     Rgb(u32),
 }
@@ -55,6 +59,34 @@ pub enum Sfx {
     Slug,
     /// The grinder chewing a piece into slugs.
     Grind,
+    /// Refinery countdown beep: seconds left (pitch rises as it nears zero).
+    ArmBeep(u8),
+    JawsWake,
+    /// Debt collector arrival siren.
+    Siren,
+    NetFire,
+    Netted,
+    /// The netted warble, repeated while caught.
+    NetAlarm,
+    /// Each tug against the net.
+    Rip,
+    TornFree,
+    /// Impounded: the sad trombone.
+    SadTrombone,
+    /// Load confiscated (or jacked).
+    Confiscated,
+    WantedUp,
+    /// A police siren this many pixels from the tug.
+    PoliceSiren(u16),
+    /// A sheriff's stun bolt fired this many pixels away.
+    StunShot(u16),
+    Arrest,
+    /// Missile launch and impact.
+    Missile,
+    MissileHit,
+    SentryShot,
+    /// A miner's cutter on your hull.
+    BeamZap,
 }
 
 /// Lines Marge can say (the radio keys in src/js/04-dispatcher-radio.js).
@@ -97,6 +129,50 @@ pub enum Radio {
     Grind,
     GrindReactor,
     Scooped,
+    EngineOverheat,
+    Refinery,
+    RefineryHint,
+    Drones,
+    DroneKill,
+    Seated,
+    Armed,
+    Vault,
+    Jaws,
+    JawsWrecked,
+    JawsShip,
+    AteCargo,
+    Collector,
+    CollectorLeaves,
+    CollectorKill,
+    Greedy,
+    Netted,
+    NetEdge,
+    NetFree,
+    Jacked,
+    Confiscated,
+    LowWallet,
+    FatCable,
+    WantedMore,
+    Swat,
+    SheriffPatrol,
+    SheriffWanted,
+    Reinforcements,
+    Pursuit,
+    Shakedown,
+    LostSheriff,
+    SheriffShotAt,
+    SheriffKill,
+    Arrested,
+    ShookDown,
+    Sanctuary,
+    MissilesLive,
+    SentriesRogue,
+    SentryLost,
+    RogueDown,
+    Miners,
+    MinerAngry,
+    MinerKill,
+    Storm,
 }
 
 #[derive(Clone, Debug, PartialEq)]

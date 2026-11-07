@@ -32,6 +32,7 @@ pub enum Act {
     Mount(Part),
     Unmount(Part),
     Level(System),
+    BuySentry,
 }
 
 fn c(rgb: u32) -> Color {
@@ -223,6 +224,7 @@ fn guide(look: &Look, u: &Ui, tab: usize, x: f32, y: f32, w: f32) {
             ("W / ↑", "Thrust"),
             ("A D / ← →", "Turn"),
             ("S / ↓", "Brake"),
+            ("Shift", "Afterburner (heats the engine)"),
             ("Space", "Cutting cannon"),
             ("E", "Hook nearby salvage"),
             ("Q", "Drop last piece (fling it)"),
@@ -234,6 +236,7 @@ fn guide(look: &Look, u: &Ui, tab: usize, x: f32, y: f32, w: f32) {
             ("L-stick / D-pad", "Turn"),
             ("RT or A", "Thrust (RT is analog)"),
             ("LT", "Brake"),
+            ("LT + RT", "Afterburner (heats the engine)"),
             ("RB", "Cutting cannon"),
             ("Y · B · LB", "Hook · drop last · cut all"),
             ("R-stick · X", "Strafe · grind (with upgrades)"),
@@ -400,7 +403,19 @@ pub struct Report {
     pub lost: f64,
     pub deaths: u32,
     pub bounties: f64,
-    pub kills: [(u32, &'static str, &'static str); 4],
+    /// Kills by kind (KILL_KINDS): count, plural and singular; the
+    /// first four are rival crews.
+    pub kills: [(u32, &'static str, &'static str); 10],
+    /// The money side of the opposition (impound, confiscation, arrests).
+    pub impounded: bool,
+    pub impound_fee: f64,
+    /// Seconds left on the clock when it ended.
+    pub time_left: f64,
+    pub confiscated: f64,
+    pub loan_credit: f64,
+    pub arrests: u32,
+    pub fines: f64,
+    pub fine_from_cargo: f64,
     /// The career after settling (for the wallet, loan and notes).
     pub career: Career,
     pub mode: Mode,
@@ -424,7 +439,21 @@ impl Report {
                 (k.cutter, "cutters", "cutter"),
                 (k.brute, "brutes", "brute"),
                 (k.gunship, "gunships", "gunship"),
+                (k.collector, "debt collectors", "debt collector"),
+                (k.law, "law units", "law unit"),
+                (k.miner, "mining drones", "mining drone"),
+                (k.drone, "refinery drones", "refinery drone"),
+                (k.rogue, "rogue sentries", "rogue sentry"),
+                (k.jaws, "kessler jaws", "set of Kessler jaws"),
             ],
+            impounded: w.impounded,
+            impound_fee: w.impound_fee,
+            time_left: w.time_left,
+            confiscated: w.confiscated,
+            loan_credit: w.loan_credit,
+            arrests: w.arrests,
+            fines: w.fines,
+            fine_from_cargo: w.fine_from_cargo,
             career: career.clone(),
             mode: career.mode,
             best,
@@ -458,22 +487,68 @@ impl Report {
                 } else {
                     String::new()
                 };
+                let seized = if self.confiscated > 0.0 {
+                    format!(
+                        " Kessler Mutual confiscated {} of cargo and credited {} to your loan.",
+                        cr(self.confiscated),
+                        cr(self.loan_credit)
+                    )
+                } else {
+                    String::new()
+                };
+                let law = if self.arrests > 0 {
+                    let cargo = if self.fine_from_cargo > 0.0 {
+                        format!(
+                            ", {} of it paid with seized cargo",
+                            cr(self.fine_from_cargo)
+                        )
+                    } else {
+                        String::new()
+                    };
+                    format!(
+                        " Arrested {}×: {} in fines{cargo}.",
+                        self.arrests,
+                        cr(self.fines)
+                    )
+                } else {
+                    String::new()
+                };
+                // (Contract chain notes join with chains in milestone 5.)
+                let next = format!(
+                    "Next installment is {}, due after shift {}.{overdraft}{seized}{law}{heat}",
+                    cr(c.due(0)),
+                    c.shift
+                );
+                if self.impounded {
+                    let left = self.time_left.ceil().max(0.0) as i64;
+                    let note = format!(
+                        "Kessler Mutual towed the tug off the field with {}:{:02} still on the clock. Impound fee: {}. {next}",
+                        left / 60,
+                        left % 60,
+                        cr(self.impound_fee)
+                    );
+                    return ("Impounded".to_owned(), rank, note, "Outfit the tug");
+                }
                 let title = if self.is_best && earned > 0.0 {
                     "New personal best".to_owned()
                 } else {
                     format!("Shift {shift} complete")
                 };
-                let note = format!(
-                    "Next installment is {}, due after shift {}.{overdraft}{heat} Marge suggests not spending all of it.",
-                    cr(c.due(0)),
-                    c.shift
-                );
+                let note = format!("{next} Marge suggests not spending all of it.");
                 (title, rank, note, "Outfit the tug")
             }
             Outcome::Repossessed { over } => {
                 let shift = c.shift;
+                let impound = if self.impounded {
+                    format!(
+                        "Kessler Mutual impounded the tug (fee {}), and then you",
+                        cr(self.impound_fee)
+                    )
+                } else {
+                    "You".to_owned()
+                };
                 let note = format!(
-                    "You ended up {} overdrawn, {} past the bank's limit. They took the \"{}\" after {} shift{}. Marge kept your mug.",
+                    "{impound} ended up {} overdrawn, {} past the bank's limit. They took the \"{}\" after {} shift{}. Marge kept your mug.",
                     cr(-c.wallet),
                     cr(*over),
                     c.tug().name,
@@ -605,7 +680,7 @@ pub fn report(
         .filter(|k| k.0 > 0)
         .map(|k| format!("{} {}", k.0, if k.0 == 1 { k.2 } else { k.1 }))
         .collect();
-    let rivals: u32 = rep.kills.iter().map(|k| k.0).sum();
+    let rivals: u32 = rep.kills[..4].iter().map(|k| k.0).sum();
     let sign = |n: f64| {
         if n > 0.0 {
             format!("+{n}")
@@ -1038,7 +1113,9 @@ fn tug_tab(
             act = Some(a);
         }
     }
-    sentry_row(look, u, career, x2, &mut y2, cw);
+    if let Some(a) = sentry_row(look, u, career, x2, &mut y2, cw) {
+        act = Some(a);
+    }
     act
 }
 
@@ -1153,11 +1230,24 @@ fn status(look: &Look, u: &Ui, s: &str, right: f32, y: f32, color: u32) {
     text(look, u, s, right - w, y, 12.0, Which::MonoLight, c(color));
 }
 
-/// The sentry drone row. Sentries fly with the drone bay in milestone 4;
-/// until then the row explains what they need and nothing is sold.
-fn sentry_row(look: &Look, u: &mut Ui, career: &Career, x: f32, y: &mut f32, w: f32) {
-    let s = "Needs a drone bay (utility part). Drone bays and sentries arrive with milestone 4 of the port.";
-    let h = 44.0 + paragraph_h(look, s, w - 140.0, 14.0, Which::Body, 1.3);
+/// The sentry drone row: needs a mounted drone bay with room (buySentry).
+fn sentry_row(
+    look: &Look,
+    u: &mut Ui,
+    career: &Career,
+    x: f32,
+    y: &mut f32,
+    w: f32,
+) -> Option<Act> {
+    let bay = career.is_mounted(Part::DroneBay);
+    let s = if bay {
+        "Orbit the tug and shoot hostiles. Never the sheriff. Lost if destroyed."
+    } else if career.owns(Part::DroneBay) {
+        "Mount your drone bay to launch them."
+    } else {
+        "Needs a drone bay (utility part, below)."
+    };
+    let h = (44.0 + paragraph_h(look, s, w - 140.0, 14.0, Which::Body, 1.3)).max(70.0);
     let r = Rect::new(x, *y, w, h);
     draw_rectangle(r.x, r.y, r.w, r.h, c(0x0b101c));
     draw_rectangle_lines(r.x, r.y, r.w, r.h, 1.0, c(col::PANEL_EDGE));
@@ -1196,15 +1286,16 @@ fn sentry_row(look: &Look, u: &mut Ui, career: &Career, x: f32, y: &mut f32, w: 
         c(col::MUTED),
         1.3,
     );
-    status(
-        look,
-        u,
-        &cr(SENTRY_PRICE),
-        r.x + r.w - 12.0,
-        r.y + 12.0,
-        col::HAZARD,
-    );
+    let right = r.x + r.w - 12.0;
+    status(look, u, &cr(SENTRY_PRICE), right, r.y + 12.0, col::HAZARD);
+    let full = career.sentries >= SENTRY_MAX;
+    let lbl = if full { "Bay full" } else { "Buy sentry" };
+    let br = ui::button_rect(look, 0.0, 0.0, Style::Buy, lbl);
+    let br = Rect::new(right - br.w, r.y + 34.0, br.w, br.h);
+    let can = bay && !full && career.wallet >= SENTRY_PRICE;
+    let pressed = u.button(look, "sentry", br, Style::Buy, lbl, can);
     *y += r.h + 6.0;
+    pressed.then_some(Act::BuySentry)
 }
 
 /// The Parts tab: a grid of compact cards (#shop-catalog), each with what

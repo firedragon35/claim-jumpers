@@ -1,7 +1,9 @@
-//! Claim Jumpers, native Windows build. Milestone 3: the career. Fly the
-//! tug, tow and fight through five-minute shifts; after each, the shift
-//! report settles the loan installment, and the machine shop sells parts
-//! and system levels. The career is saved in %APPDATA%\ClaimJumpers.
+//! Claim Jumpers, native Windows build. Milestone 4: the opposition. Fly
+//! the tug, tow and fight through five-minute shifts against rival crews,
+//! debt collectors, the law, mining drones and the Kessler refinery;
+//! after each, the shift report settles the loan installment, and the
+//! machine shop sells parts and system levels. The career is saved in
+//! %APPDATA%\ClaimJumpers.
 //!
 //! The app moves between the browser's screens (appState in
 //! src/js/14-game-state.js): title, play, paused, the shift report and the
@@ -10,7 +12,7 @@
 //! `--smoke` runs an unattended check through every screen: a scripted
 //! shift (tow and firefight, one simulation step per frame), the pause
 //! card, the report, a purchase in the shop, and the title, saving a
-//! screenshot of each to %TEMP%\claim-jumpers-m3-<screen>.png and printing
+//! screenshot of each to %TEMP%\claim-jumpers-m4-<screen>.png and printing
 //! a report. It uses a temporary save folder, never the player's.
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
@@ -18,6 +20,7 @@
 mod audio;
 mod controls;
 mod draw;
+mod foes;
 mod fx;
 mod hud;
 mod look;
@@ -282,6 +285,11 @@ impl App {
                     _ => (c.unmount(p), Sfx::Drop),
                 };
                 self.finish_shop(res, sound, audio);
+            }
+            Act::BuySentry => {
+                let c = self.career.as_mut().expect("a career");
+                let res = c.buy_sentry();
+                self.finish_shop(res, Sfx::Bank, audio);
             }
             Act::Level(s) => {
                 let c = self.career.as_mut().expect("a career");
@@ -623,7 +631,7 @@ impl Smoke {
             Screen::Title if self.on_screen == 3 && self.shots.len() == 5 => "title",
             _ => return false,
         };
-        let path = std::env::temp_dir().join(format!("claim-jumpers-m3-{name}.png"));
+        let path = std::env::temp_dir().join(format!("claim-jumpers-m4-{name}.png"));
         // The framebuffer reads bottom row first and carries the alpha of
         // the last blend; flip it and make it opaque.
         let mut img = get_screen_data();
@@ -642,6 +650,11 @@ impl Smoke {
                 self.frame, self.steps, get_time() - start, s.b.x, s.b.y, s.hp, s.shield,
                 w.chain.len(), w.tow_mass(), w.shots_fired, w.jumpers.len(), w.crabs.len(), w.rocks.len()
             ));
+            self.lines.push(format!(
+                "  opposition: wanted {}, {} law units, {} collectors, {} nets, {} miners, refinery {:?} with {} drones, {} missiles in flight ({} in the rack), {} sentries",
+                w.wanted, w.sheriffs.len(), w.collectors.len(), w.nets.len(), w.miners.len(),
+                w.refinery.as_ref().map(|r| r.state), w.drones.len(), w.missiles.len(), s.missiles, w.sentries.len()
+            ));
         }
         if name == "report" {
             let r = app.report.as_ref().expect("a report");
@@ -656,7 +669,7 @@ impl Smoke {
     }
 
     fn finish(&self, app: &App, audio: &audio::Audio, secs: f64) {
-        println!("M3 SMOKE REPORT");
+        println!("M4 SMOKE REPORT");
         println!(
             "  view: {:.0} x {:.0} logical px, dpi scale {:.2}",
             app.world.view.0,
@@ -722,6 +735,36 @@ fn smoke_script(w: &mut World, frame: u32) {
         w.jumpers.push(j);
         // Some salvage already banked, so the report has numbers in it.
         w.banked = 1840.0;
+        // The opposition on screen: a missile rack and drone bay with three
+        // sentries, the refinery close by (its drones wake), a debt
+        // collector, a mining crew, and two wanted stars bringing the law.
+        let mut mounted = [None; 5];
+        mounted[0] = Some(cj_sim::parts::Part::Cannon);
+        mounted[1] = Some(cj_sim::parts::Part::Missiles);
+        mounted[3] = Some(cj_sim::parts::Part::DroneBay);
+        w.mods = cj_sim::mods::compute_mods(&mounted, &cj_sim::parts::Levels::default(), 0);
+        for i in 0..3 {
+            let s = w.make_sentry(i, 3);
+            w.sentries.push(s);
+        }
+        w.spawn_refinery();
+        if let Some(r) = w.refinery.as_mut() {
+            r.b.x = BAY_X - 450.0;
+            r.b.y = BAY_Y - 650.0;
+        }
+        w.spawn_collector();
+        if let Some(c) = w.collectors.last_mut() {
+            c.b.x = BAY_X - 150.0;
+            c.b.y = BAY_Y + 450.0;
+        }
+        w.spawn_miners(2);
+        for (i, m) in w.miners.iter_mut().enumerate() {
+            m.b.x = BAY_X - 1000.0 + i as f64 * 60.0;
+            m.b.y = BAY_Y + 250.0;
+        }
+        let (x, y) = (w.ship.b.x, w.ship.b.y);
+        w.add_wanted(2, x, y);
+        w.reinforce_t = Some(0.0);
     }
     if frame == 3 {
         w.action(Action::Hook);

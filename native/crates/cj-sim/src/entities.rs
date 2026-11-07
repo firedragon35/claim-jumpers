@@ -93,6 +93,22 @@ pub struct Ship {
     pub slugs: u32,
     /// Side-thruster input this step, -1..1 (0 without the part).
     pub strafe: f64,
+    /// Caught in a debt collector's net.
+    pub net: Option<crate::opposition::NetHold>,
+    /// The last hard turn direction, for counting reversals that tear a net.
+    pub last_turn_sign: f64,
+    /// Seconds left slowed by a sheriff's stun bolt.
+    pub stun_t: f64,
+    /// Afterburner: seconds of burst left, engine heat 0..100, seconds of
+    /// overheat penalty left, and whether the button was held last step.
+    pub burn_t: f64,
+    pub engine_heat: f64,
+    pub engine_over_t: f64,
+    pub prev_burn: bool,
+    /// Missiles in the rack, and the reload and launch-gap timers.
+    pub missiles: u32,
+    pub missile_reload_t: f64,
+    pub missile_gap_t: f64,
 }
 
 impl Ship {
@@ -128,6 +144,16 @@ impl Ship {
             alarm_t: 0.0,
             slugs: 0,
             strafe: 0.0,
+            net: None,
+            last_turn_sign: 0.0,
+            stun_t: 0.0,
+            burn_t: 0.0,
+            engine_heat: 0.0,
+            engine_over_t: 0.0,
+            prev_burn: false,
+            missiles: mods.missile_rack,
+            missile_reload_t: 0.0,
+            missile_gap_t: 0.0,
         }
     }
 
@@ -264,6 +290,8 @@ pub struct Crater {
 
 #[derive(Clone, Debug)]
 pub struct Rock {
+    /// Stable identity (a miner keeps cutting the same rock).
+    pub id: u32,
     pub size: u8,
     pub b: Body,
     pub hp: f64,
@@ -298,6 +326,7 @@ pub fn make_rock(rng: &mut Rng, size: u8, x: f64, y: f64, vx: f64, vy: f64, vein
         })
         .collect();
     Rock {
+        id: next_rock_id(),
         size,
         b: Body {
             x,
@@ -318,6 +347,15 @@ pub fn make_rock(rng: &mut Rng, size: u8, x: f64, y: f64, vx: f64, vy: f64, vein
         crumble_t: None,
         dead: false,
     }
+}
+
+/// A fresh rock identity. Rocks are made by free functions without the
+/// world at hand, so they draw from a process-wide counter; ids are only
+/// ever compared for identity, never fed into any numbers.
+pub fn next_rock_id() -> u32 {
+    use std::sync::atomic::{AtomicU32, Ordering};
+    static NEXT: AtomicU32 = AtomicU32::new(1);
+    NEXT.fetch_add(1, Ordering::Relaxed)
 }
 
 /// A rock with the browser's default drift and vein rolls.
@@ -572,7 +610,7 @@ pub fn make_crab(rng: &mut Rng, state: CrabState, host: Option<u32>, x: f64, y: 
 }
 
 /// A cannon round (yours) or a bolt (theirs).
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Bullet {
     pub x: f64,
     pub y: f64,
@@ -582,4 +620,12 @@ pub struct Bullet {
     pub dmg: f64,
     /// A heavy grinder slug rather than a cutter round.
     pub slug: bool,
+    /// Fired by one of your sentries (passes through the law).
+    pub sentry: bool,
+    /// A sheriff's bolt: stuns (or SWAT's real round).
+    pub stun: bool,
+    pub swat: bool,
+    /// A rogue sentry's bolt, and which sentry fired it.
+    pub rogue: bool,
+    pub owner: Option<u32>,
 }

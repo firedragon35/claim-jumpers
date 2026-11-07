@@ -188,7 +188,6 @@ impl Part {
     /// mount them yet, so nobody pays for a part that does nothing.
     pub fn pending(self) -> Option<&'static str> {
         match self {
-            Part::Missiles | Part::DroneBay => Some("milestone 4"),
             Part::HullSeal => Some("milestone 5"),
             _ => None,
         }

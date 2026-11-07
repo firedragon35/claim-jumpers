@@ -91,6 +91,7 @@ fn build(sc: &Value, init: &Value) -> World {
         let size = r["size"].as_u64().unwrap() as u8;
         let (rad, hp) = rock_size(size);
         w.rocks.push(Rock {
+            id: cj_sim::entities::next_rock_id(),
             size,
             b: Body {
                 x: num(r, "x", 0.0),
@@ -169,6 +170,56 @@ fn build(sc: &Value, init: &Value) -> World {
         w.crabs.push(crab);
     }
     w.grudge = num(sc, "grudge", 0.0);
+    // The exporter's shift has a new Standard career behind it.
+    let mut career = cj_sim::career::Career::new(cj_sim::career::Mode::Standard);
+    if let Some(v) = sc["wallet"].as_f64() {
+        career.wallet = v;
+    }
+    w.career = Some(career);
+    if let Some(v) = sc["timeLeft"].as_f64() {
+        w.time_left = v;
+    }
+    for c in sc["collectors"].as_array().into_iter().flatten() {
+        w.spawn_collector();
+        let k = w.collectors.last_mut().unwrap();
+        k.b.x = num(c, "x", k.b.x);
+        k.b.y = num(c, "y", k.b.y);
+    }
+    for s in sc["sheriffs"].as_array().into_iter().flatten() {
+        w.spawn_sheriff(s["responding"].as_bool().unwrap_or(false));
+        let k = w.sheriffs.last_mut().unwrap();
+        k.b.x = num(s, "x", k.b.x);
+        k.b.y = num(s, "y", k.b.y);
+    }
+    if let Some(ms) = sc["miners"].as_array() {
+        w.spawn_miners(ms.len() as i32);
+        for (m, s) in w.miners.iter_mut().zip(ms) {
+            m.b.x = num(s, "x", m.b.x);
+            m.b.y = num(s, "y", m.b.y);
+        }
+    }
+    if let Some(r) = sc.get("refinery") {
+        w.spawn_refinery();
+        let k = w.refinery.as_mut().unwrap();
+        k.spin = num(r, "spin", k.spin);
+        k.hunger = num(r, "hunger", k.hunger);
+        k.jaw_hp = num(r, "jawHp", k.jaw_hp);
+        if r["state"].as_str() == Some("hungry") {
+            k.state = cj_sim::opposition::RefineryState::Hungry;
+        }
+    }
+    let n = sc["sentries"].as_u64().unwrap_or(0) as usize;
+    for i in 0..n {
+        let s = w.make_sentry(i, n);
+        w.sentries.push(s);
+    }
+    if let Some(n) = sc["wanted"].as_u64() {
+        let (x, y) = (w.ship.b.x, w.ship.b.y);
+        w.add_wanted(n as u32, x, y);
+    }
+    if let Some(v) = sc["reinforceT"].as_f64() {
+        w.reinforce_t = Some(v);
+    }
     w.cam = Camera {
         x: w.ship.b.x,
         y: w.ship.b.y,
@@ -186,7 +237,7 @@ fn input_for(keys: &[Value]) -> Input {
         turn: on(held("right")) - on(held("left")),
         strafe: on(held("strafeR")) - on(held("strafeL")),
         fire: held("fire"),
-        ..Input::default()
+        burn: held("burn"),
     }
 }
 
@@ -251,7 +302,102 @@ fn check_step(w: &World, want: &Value) -> Result<(), String> {
             s.spin_meter,
             on(s.alive),
             f64::from(s.slugs),
+            s.stun_t,
+            s.burn_t,
+            s.engine_heat,
+            s.engine_over_t,
+            s.net.map_or(-1.0, |n| n.hp),
+            f64::from(s.missiles),
         ],
+    )?;
+    use cj_sim::opposition::{CollectorState, RefineryState, SheriffState};
+    cmp_list(
+        "drones",
+        &want["drones"],
+        w.drones
+            .iter()
+            .map(|d| vec![d.b.x, d.b.y, d.b.vx, d.b.vy, d.hp])
+            .collect(),
+    )?;
+    cmp_list(
+        "collectors",
+        &want["collectors"],
+        w.collectors
+            .iter()
+            .map(|c| {
+                let st = match c.state {
+                    CollectorState::Approach => 0.0,
+                    CollectorState::Tow => 1.0,
+                    CollectorState::Recover => 2.0,
+                    CollectorState::Leave => 3.0,
+                };
+                vec![c.b.x, c.b.y, c.b.vx, c.b.vy, c.hp, st, c.tether]
+            })
+            .collect(),
+    )?;
+    cmp_list(
+        "nets",
+        &want["nets"],
+        w.nets.iter().map(|n| vec![n.x, n.y, n.life]).collect(),
+    )?;
+    cmp_list(
+        "sheriffs",
+        &want["sheriffs"],
+        w.sheriffs
+            .iter()
+            .map(|s| {
+                let st = match s.state {
+                    SheriffState::Patrol => 0.0,
+                    SheriffState::Pursuit => 1.0,
+                    SheriffState::Leave => 2.0,
+                };
+                vec![s.b.x, s.b.y, s.b.vx, s.b.vy, s.hp, st, s.cuff]
+            })
+            .collect(),
+    )?;
+    cmp_list(
+        "miners",
+        &want["miners"],
+        w.miners
+            .iter()
+            .map(|m| vec![m.b.x, m.b.y, m.b.vx, m.b.vy, m.hp, m.angry_t, m.drill])
+            .collect(),
+    )?;
+    cmp_list(
+        "missiles",
+        &want["missiles"],
+        w.missiles
+            .iter()
+            .map(|m| vec![m.x, m.y, m.vx, m.vy, m.life])
+            .collect(),
+    )?;
+    cmp_list(
+        "sentries",
+        &want["sentries"],
+        w.sentries
+            .iter()
+            .map(|d| vec![d.x, d.y, d.hp, on(d.rogue)])
+            .collect(),
+    )?;
+    let refinery: Vec<f64> = w.refinery.as_ref().map_or(Vec::new(), |r| {
+        let st = match r.state {
+            RefineryState::Dormant => 0.0,
+            RefineryState::Locked => 1.0,
+            RefineryState::Armed => 2.0,
+            RefineryState::Open => 3.0,
+            RefineryState::Hungry => 4.0,
+            RefineryState::Wrecked => 5.0,
+        };
+        let filled = r.sockets.iter().filter(|k| k.filled).count() as f64;
+        vec![
+            r.b.x, r.b.y, r.angle, st, r.hunger, r.pull_r, r.jaw_hp, filled,
+        ]
+    });
+    cmp_row("refinery", &want["refinery"], &refinery)?;
+    cmp_row(
+        "law",
+        &want["law"],
+        &[f64::from(w.wanted), w.fines, f64::from(w.arrests)],
     )?;
     let types: Vec<&str> = w.items.iter().map(|it| it.kind.key()).collect();
     let want_types: Vec<&str> = want["types"]
@@ -426,16 +572,18 @@ fn run(name: &str) {
         );
     }
 
-    let actions: Vec<(u64, Action)> = sc["actions"]
+    let actions: Vec<(u64, Option<Action>)> = sc["actions"]
         .as_array()
         .unwrap()
         .iter()
         .map(|a| {
             let act = match a["do"].as_str().unwrap() {
-                "hook" => Action::Hook,
-                "drop" => Action::Drop,
-                "cut" => Action::Cut,
-                "grind" => Action::Grind,
+                // Wrecking the tug outright (killShip) is not a player action.
+                "kill" => None,
+                "hook" => Some(Action::Hook),
+                "drop" => Some(Action::Drop),
+                "cut" => Some(Action::Cut),
+                "grind" => Some(Action::Grind),
                 other => panic!("unknown action {other}"),
             };
             (a["at"].as_u64().unwrap(), act)
@@ -447,7 +595,10 @@ fn run(name: &str) {
         let input = input_for(seg["keys"].as_array().unwrap());
         for _ in 0..seg["n"].as_u64().unwrap() {
             for (_, a) in actions.iter().filter(|(at, _)| *at == k) {
-                w.action(*a);
+                match a {
+                    Some(a) => w.action(*a),
+                    None => w.kill_ship(),
+                }
             }
             w.step(&input, STEP);
             if let Err(e) = check_step(&w, &steps[k as usize]) {
@@ -526,4 +677,32 @@ fn scoop() {
 #[test]
 fn loadout() {
     run("loadout");
+}
+#[test]
+fn afterburn() {
+    run("afterburn");
+}
+#[test]
+fn collector() {
+    run("collector");
+}
+#[test]
+fn law() {
+    run("law");
+}
+#[test]
+fn miners() {
+    run("miners");
+}
+#[test]
+fn refinery() {
+    run("refinery");
+}
+#[test]
+fn jaws() {
+    run("jaws");
+}
+#[test]
+fn rogue() {
+    run("rogue");
 }

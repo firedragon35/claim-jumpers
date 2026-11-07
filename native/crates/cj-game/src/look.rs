@@ -29,6 +29,8 @@ pub mod col {
     pub const COLLECTOR: u32 = 0xa98bff;
     /// The cost line on upgrades; also the heat meter.
     pub const TRADEOFF: u32 = 0xf2a493;
+    pub const LAW: u32 = 0x5b8cff;
+    pub const MINER: u32 = 0x58e0a0;
     pub const PANEL_EDGE: u32 = 0x2a3550;
 }
 
@@ -53,6 +55,10 @@ pub fn tint_rgb(t: cj_sim::events::Tint) -> u32 {
         Jumper => col::JUMPER,
         Crab => col::CRAB,
         Reactor => col::REACTOR,
+        Collector => col::COLLECTOR,
+        Law => col::LAW,
+        Miner => col::MINER,
+        Muted => col::MUTED,
         Rgb(c) => c,
     }
 }
@@ -260,4 +266,54 @@ pub fn text_left(text: &str, x: f32, y: f32, size: f32, font: &Font, color: Colo
 /// Width of a run of text at `size`.
 pub fn text_width(text: &str, size: f32, font: &Font) -> f32 {
     measure_text(text, Some(font), size as u16, 1.0).width
+}
+
+/// A five-point star (★ filled, ☆ hollow) centred on (x, y). None of the
+/// game's fonts has the star glyphs (the browser falls back to a system
+/// font), so the wanted stars are drawn.
+pub fn star(x: f32, y: f32, r: f32, filled: bool, color: Color) {
+    let pts: Vec<Vec2> = (0..10)
+        .map(|i| {
+            let a = -std::f32::consts::FRAC_PI_2 + i as f32 * std::f32::consts::PI / 5.0;
+            let rr = if i % 2 == 0 { r } else { r * 0.45 };
+            vec2(x + a.cos() * rr, y + a.sin() * rr)
+        })
+        .collect();
+    if filled {
+        crate::draw::fill_poly(&pts, color);
+    } else {
+        crate::draw::polyline(&pts, true, 1.0, color);
+    }
+}
+
+/// Centred world text in which any ★ is drawn as a star shape.
+pub fn text_centered_stars(
+    text: &str,
+    x: f32,
+    y: f32,
+    size: f32,
+    font: &Font,
+    color: Color,
+    scale: f32,
+) {
+    if !text.contains('★') {
+        text_centered(text, x, y, size, font, color, scale);
+        return;
+    }
+    let (head, rest) = text.split_once('★').expect("contains a star");
+    let n = 1 + rest.matches('★').count();
+    let star_w = size * 0.9;
+    let hw = text_width(head, size, font);
+    let total = hw + star_w * n as f32;
+    let left = x - total / 2.0;
+    text_centered(head, left + hw / 2.0, y, size, font, color, scale);
+    for i in 0..n {
+        star(
+            left + hw + star_w * (i as f32 + 0.5),
+            y,
+            size * 0.38,
+            true,
+            color,
+        );
+    }
 }

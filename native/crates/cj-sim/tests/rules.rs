@@ -350,6 +350,7 @@ fn under_attack_alarm_is_rate_limited() {
                 life: 1.0,
                 dmg: 5.0,
                 slug: false,
+                ..cj_sim::entities::Bullet::default()
             });
         }
         w.events.clear();

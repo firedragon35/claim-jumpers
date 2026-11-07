@@ -1,5 +1,5 @@
 {
-  "about": "Golden-trace scenarios shared by the browser exporter (native/tools/golden/export.mjs) and the Rust tests (crates/cj-sim/tests/golden.rs). Each scenario empties the field, places the bodies below, then runs fixed 1/60 s steps with the listed held keys and one-shot actions. Math.random is pinned to 0.5 in the browser and in the Rust test RNG, so spawn rolls and sputter rolls agree without depending on call order. Item grades come from that 0.5 roll. Optional body fields override what the factory produced. Combat scenarios can also place jumpers (variant and position, from the real makeJumper), crabs (state, host item index and optional position, from makeCrab), wreck contents, and the rival grudge; the fire key holds the cannon trigger. A scenario may also fit a loadout (mounted parts, system levels and tug class, through the real computeMods); strafeL and strafeR hold the side thrusters and the grind action runs the salvage grinder.",
+  "about": "Golden-trace scenarios shared by the browser exporter (native/tools/golden/export.mjs) and the Rust tests (crates/cj-sim/tests/golden.rs). Each scenario empties the field, places the bodies below, then runs fixed 1/60 s steps with the listed held keys and one-shot actions. Math.random is pinned to 0.5 in the browser and in the Rust test RNG, so spawn rolls and sputter rolls agree without depending on call order. Item grades come from that 0.5 roll. Optional body fields override what the factory produced. Combat scenarios can also place jumpers (variant and position, from the real makeJumper), crabs (state, host item index and optional position, from makeCrab), wreck contents, and the rival grudge; the fire key holds the cannon trigger. A scenario may also fit a loadout (mounted parts, system levels and tug class, through the real computeMods); strafeL and strafeR hold the side thrusters and the grind action runs the salvage grinder. Opposition scenarios can field collectors, sheriffs (responding or on patrol), miners, the refinery and sentries through the real spawners (scenario fields then override), set the wanted level, wallet and clock, press the afterburner (burn) and wreck the tug (kill).",
   "scenarios": [
     {
       "name": "flight",
@@ -903,6 +903,436 @@
         {
           "at": 0,
           "do": "hook"
+        }
+      ]
+    },
+    {
+      "name": "afterburn",
+      "ship": {
+        "x": 1000,
+        "y": 1000,
+        "angle": 0
+      },
+      "items": [],
+      "rocks": [],
+      "wrecks": [],
+      "inputs": [
+        {
+          "n": 1,
+          "keys": [
+            "thrust",
+            "burn"
+          ]
+        },
+        {
+          "n": 181,
+          "keys": [
+            "thrust"
+          ]
+        },
+        {
+          "n": 1,
+          "keys": [
+            "thrust",
+            "burn"
+          ]
+        },
+        {
+          "n": 181,
+          "keys": [
+            "thrust"
+          ]
+        },
+        {
+          "n": 1,
+          "keys": [
+            "thrust",
+            "burn"
+          ]
+        },
+        {
+          "n": 181,
+          "keys": [
+            "thrust"
+          ]
+        },
+        {
+          "n": 200,
+          "keys": [
+            "thrust",
+            "left"
+          ]
+        }
+      ],
+      "actions": []
+    },
+    {
+      "name": "collector",
+      "ship": {
+        "x": 1200,
+        "y": 2600,
+        "angle": 0,
+        "invuln": 0
+      },
+      "wallet": 0,
+      "timeLeft": 50,
+      "items": [],
+      "rocks": [],
+      "wrecks": [],
+      "collectors": [
+        {
+          "x": 1200,
+          "y": 2150
+        }
+      ],
+      "inputs": [
+        {
+          "n": 360,
+          "keys": []
+        },
+        {
+          "n": 10,
+          "keys": [
+            "left"
+          ]
+        },
+        {
+          "n": 10,
+          "keys": [
+            "right"
+          ]
+        },
+        {
+          "n": 10,
+          "keys": [
+            "left"
+          ]
+        },
+        {
+          "n": 10,
+          "keys": [
+            "right"
+          ]
+        },
+        {
+          "n": 10,
+          "keys": [
+            "left"
+          ]
+        },
+        {
+          "n": 10,
+          "keys": [
+            "right"
+          ]
+        },
+        {
+          "n": 10,
+          "keys": [
+            "left"
+          ]
+        },
+        {
+          "n": 10,
+          "keys": [
+            "right"
+          ]
+        },
+        {
+          "n": 10,
+          "keys": [
+            "left"
+          ]
+        },
+        {
+          "n": 10,
+          "keys": [
+            "right"
+          ]
+        },
+        {
+          "n": 10,
+          "keys": [
+            "left"
+          ]
+        },
+        {
+          "n": 10,
+          "keys": [
+            "right"
+          ]
+        },
+        {
+          "n": 10,
+          "keys": [
+            "left"
+          ]
+        },
+        {
+          "n": 10,
+          "keys": [
+            "right"
+          ]
+        },
+        {
+          "n": 10,
+          "keys": [
+            "left"
+          ]
+        },
+        {
+          "n": 10,
+          "keys": [
+            "right"
+          ]
+        },
+        {
+          "n": 120,
+          "keys": [
+            "thrust"
+          ]
+        }
+      ],
+      "actions": []
+    },
+    {
+      "name": "law",
+      "ship": {
+        "x": 2600,
+        "y": 4300,
+        "angle": 1.5707963267948966,
+        "invuln": 0
+      },
+      "items": [
+        {
+          "type": "scrap",
+          "x": 2600,
+          "y": 4180
+        }
+      ],
+      "rocks": [],
+      "wrecks": [],
+      "wanted": 2,
+      "reinforceT": 0,
+      "inputs": [
+        {
+          "n": 500,
+          "keys": []
+        }
+      ],
+      "actions": [
+        {
+          "at": 0,
+          "do": "hook"
+        }
+      ]
+    },
+    {
+      "name": "miners",
+      "ship": {
+        "x": 4200,
+        "y": 900,
+        "angle": 3.141592653589793,
+        "invuln": 0
+      },
+      "items": [],
+      "wrecks": [],
+      "rocks": [
+        {
+          "size": 3,
+          "x": 3700,
+          "y": 900,
+          "vx": 0,
+          "vy": 0,
+          "veined": false
+        },
+        {
+          "size": 2,
+          "x": 3600,
+          "y": 1150,
+          "vx": 0,
+          "vy": 0,
+          "veined": false
+        }
+      ],
+      "miners": [
+        {
+          "x": 3800,
+          "y": 1050
+        },
+        {
+          "x": 3550,
+          "y": 800
+        }
+      ],
+      "inputs": [
+        {
+          "n": 300,
+          "keys": []
+        },
+        {
+          "n": 30,
+          "keys": [
+            "fire"
+          ]
+        },
+        {
+          "n": 200,
+          "keys": []
+        }
+      ],
+      "actions": []
+    },
+    {
+      "name": "refinery",
+      "ship": {
+        "x": 1500,
+        "y": 2600,
+        "angle": 3.141592653589793,
+        "invuln": 0
+      },
+      "items": [],
+      "rocks": [],
+      "wrecks": [],
+      "refinery": {
+        "spin": 0.05
+      },
+      "inputs": [
+        {
+          "n": 200,
+          "keys": []
+        },
+        {
+          "n": 200,
+          "keys": [
+            "fire",
+            "left"
+          ]
+        }
+      ],
+      "actions": []
+    },
+    {
+      "name": "jaws",
+      "ship": {
+        "x": 1500,
+        "y": 2400,
+        "angle": 3.141592653589793,
+        "invuln": 0
+      },
+      "items": [
+        {
+          "type": "engine",
+          "x": 1380,
+          "y": 2400
+        },
+        {
+          "type": "scrap",
+          "x": 1150,
+          "y": 2700
+        }
+      ],
+      "rocks": [
+        {
+          "size": 2,
+          "x": 1250,
+          "y": 2500,
+          "vx": 0,
+          "vy": 0,
+          "veined": false
+        }
+      ],
+      "wrecks": [],
+      "refinery": {
+        "state": "hungry",
+        "hunger": 0.6,
+        "jawHp": 12
+      },
+      "inputs": [
+        {
+          "n": 200,
+          "keys": [
+            "thrust"
+          ]
+        },
+        {
+          "n": 120,
+          "keys": [
+            "fire",
+            "right"
+          ]
+        },
+        {
+          "n": 100,
+          "keys": [
+            "fire"
+          ]
+        }
+      ],
+      "actions": [
+        {
+          "at": 0,
+          "do": "hook"
+        }
+      ]
+    },
+    {
+      "name": "rogue",
+      "mounted": {
+        "w1": "cannon",
+        "w2": "missiles",
+        "mod": null,
+        "u1": "dronebay",
+        "u2": null
+      },
+      "levels": {
+        "missiles": 5,
+        "drones": 2
+      },
+      "ship": {
+        "x": 3600,
+        "y": 3600,
+        "angle": 0,
+        "invuln": 0
+      },
+      "items": [],
+      "rocks": [],
+      "wrecks": [],
+      "sentries": 3,
+      "jumpers": [
+        {
+          "variant": "brute",
+          "x": 3900,
+          "y": 3700,
+          "hunter": false
+        },
+        {
+          "variant": "cutter",
+          "x": 3300,
+          "y": 3400,
+          "hunter": false
+        }
+      ],
+      "collectors": [
+        {
+          "x": 4100,
+          "y": 3300
+        }
+      ],
+      "inputs": [
+        {
+          "n": 150,
+          "keys": []
+        },
+        {
+          "n": 400,
+          "keys": []
+        }
+      ],
+      "actions": [
+        {
+          "at": 150,
+          "do": "kill"
         }
       ]
     }

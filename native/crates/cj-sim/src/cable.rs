@@ -234,9 +234,14 @@ impl World {
             }
             rival_links.push((j, i));
         }
+        // The collector holding the tug's net, if any.
+        let tether = self
+            .ship
+            .net
+            .and_then(|n| self.collector_index(n.by))
+            .filter(|&c| !self.collectors[c].dead);
         // Multiple passes let corrections propagate down a long train.
-        // (The collector tether and the partner latch join these passes in
-        // milestones 4 and 5.)
+        // (The co-op partner latch joins these passes in milestone 5.)
         for _ in 0..CABLE_ITERATIONS {
             if self.ship.alive {
                 for (k, &i) in links.iter().enumerate() {
@@ -253,6 +258,17 @@ impl World {
             for &(j, i) in &rival_links {
                 let jm = &mut self.jumpers[j];
                 rope_constraint(&mut jm.b, &mut self.items[i].b, jm.link_len);
+            }
+            // The collector's tether: the same rope as cargo, so your
+            // cargo's mass anchors you.
+            if let Some(c) = tether.filter(|_| self.ship.alive) {
+                let cl = &mut self.collectors[c];
+                rope_constraint(&mut cl.b, &mut self.ship.b, cl.tether);
+            }
+        }
+        for c in &mut self.collectors {
+            if c.state == crate::opposition::CollectorState::Tow && c.tether > 160.0 {
+                c.tether = (c.tether - 90.0 * dt).max(160.0);
             }
         }
         // Smoothed tension drives the cable's colour; big jerks rattle the cargo.

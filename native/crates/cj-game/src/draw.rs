@@ -20,30 +20,30 @@ use std::f32::consts::TAU;
 
 /* ------------------------------ Helpers ------------------------------ */
 
-fn v(x: f64, y: f64) -> Vec2 {
+pub(crate) fn v(x: f64, y: f64) -> Vec2 {
     vec2(x as f32, y as f32)
 }
 
 /// A rigid transform: local tug/rock coordinates to world coordinates.
 #[derive(Clone, Copy)]
-struct Xf {
-    o: Vec2,
+pub(crate) struct Xf {
+    pub(crate) o: Vec2,
     c: f32,
     s: f32,
 }
 
 impl Xf {
-    fn new(x: f64, y: f64, angle: f64) -> Xf {
+    pub(crate) fn new(x: f64, y: f64, angle: f64) -> Xf {
         Xf {
             o: v(x, y),
             c: angle.cos() as f32,
             s: angle.sin() as f32,
         }
     }
-    fn p(&self, x: f32, y: f32) -> Vec2 {
+    pub(crate) fn p(&self, x: f32, y: f32) -> Vec2 {
         self.o + vec2(x * self.c - y * self.s, x * self.s + y * self.c)
     }
-    fn pts(&self, local: &[(f32, f32)]) -> Vec<Vec2> {
+    pub(crate) fn pts(&self, local: &[(f32, f32)]) -> Vec<Vec2> {
         local.iter().map(|&(x, y)| self.p(x, y)).collect()
     }
 }
@@ -482,18 +482,18 @@ fn draw_rock(look: &Look, rk: &Rock) {
 }
 
 /// Fill a convex closed path (a rectangle, a box) as a triangle fan.
-fn fill_convex(pts: &[Vec2], color: Color) {
+pub(crate) fn fill_convex(pts: &[Vec2], color: Color) {
     let c = pts.iter().fold(Vec2::ZERO, |a, p| a + *p) / pts.len() as f32;
     fill_fan(c, pts, color);
 }
 
 /// An axis-aligned local rectangle, as a closed outline.
-fn rect_pts(xf: &Xf, x: f32, y: f32, w: f32, h: f32) -> Vec<Vec2> {
+pub(crate) fn rect_pts(xf: &Xf, x: f32, y: f32, w: f32, h: f32) -> Vec<Vec2> {
     xf.pts(&[(x, y), (x + w, y), (x + w, y + h), (x, y + h)])
 }
 
 /// Points along a local arc from `a0` to `a1` (radians).
-fn arc_pts(xf: &Xf, cx: f32, cy: f32, r: f32, a0: f32, a1: f32, n: usize) -> Vec<Vec2> {
+pub(crate) fn arc_pts(xf: &Xf, cx: f32, cy: f32, r: f32, a0: f32, a1: f32, n: usize) -> Vec<Vec2> {
     (0..=n)
         .map(|k| {
             let a = a0 + (a1 - a0) * k as f32 / n as f32;
@@ -628,14 +628,71 @@ fn draw_item(look: &Look, it: &Item, t: f32, scale: f32) {
                 scale,
             );
         }
-        // Placeholder: mining charges, ingots, keycards and rogue cores
-        // only come from systems that arrive in milestone 4 (the
-        // refinery, sealed holds and rogue sentries), which bring their
-        // artwork. Until then they are a plain outlined disc.
-        _ => {
-            let c = it.tint.unwrap_or(col::STEEL);
-            draw_circle(xf.o.x, xf.o.y, r, Color::from_hex(0x18202e));
-            draw_circle_lines(xf.o.x, xf.o.y, r, 2.0, Color::from_hex(c));
+        ItemType::Charge => {
+            let warn = it.fuse > 0.0 || it.hp.is_some_and(|hp| hp < 2.0);
+            crate::foes::charge(&xf, t, warn);
+        }
+        ItemType::Ingot => {
+            let c = it.tint.unwrap_or(col::ORE);
+            let pts = xf.pts(&[
+                (-r, r * 0.5),
+                (-r * 0.6, -r * 0.5),
+                (r * 0.6, -r * 0.5),
+                (r, r * 0.5),
+            ]);
+            fill_convex(&pts, rgba(c, 0.35));
+            glow_stroke(&pts, true, c, 2.5, 1.0);
+            polyline(
+                &xf.pts(&[(-r * 0.4, -r * 0.1), (r * 0.4, -r * 0.1)]),
+                false,
+                1.0,
+                Color::from_hex(c),
+            );
+        }
+        ItemType::Keycard => {
+            // A small card with a magnetic stripe, blinking so it can be spotted.
+            let body = rect_pts(&xf, -r, -r * 0.65, r * 2.0, r * 1.3);
+            fill_convex(&body, Color::from_hex(0x0e2230));
+            glow_stroke(&body, true, col::CABLE, 2.0, 1.0);
+            fill_convex(
+                &rect_pts(&xf, -r, -2.0, r * 2.0, 3.0),
+                Color::from_hex(col::CABLE),
+            );
+            let p = xf.o;
+            look.additive(|| {
+                look.glow(
+                    p.x,
+                    p.y,
+                    10.0 + 5.0 * (t * 4.0).sin().abs(),
+                    col::CABLE,
+                    true,
+                    1.0,
+                )
+            });
+        }
+        ItemType::Core => {
+            // Rogue core: a red hexagon with a pulsing, flickering heart.
+            let hex: Vec<Vec2> = (0..6)
+                .map(|i| {
+                    let a = i as f32 / 6.0 * TAU;
+                    xf.p(a.cos() * r, a.sin() * r)
+                })
+                .collect();
+            fill_fan(xf.o, &hex, Color::from_hex(0x2a0b0b));
+            glow_stroke(&hex, true, col::DANGER, 2.0, 1.0);
+            if (t * 19.0 + it.b.x as f32).sin() > -0.5 {
+                let p = xf.o;
+                look.additive(|| {
+                    look.glow(
+                        p.x,
+                        p.y,
+                        9.0 + (t * 7.0).sin() * 3.0,
+                        col::DANGER,
+                        true,
+                        1.0,
+                    )
+                });
+            }
         }
     }
 }
@@ -834,6 +891,8 @@ fn draw_ship(look: &Look, w: &World, t: f32, rng: &mut Rng) {
         flash: s.flash > 0.0,
         overheated: s.overheated,
         sentries: 0,
+        burn: s.burn_t > 0.0,
+        missiles: Some(s.missiles),
     };
     tug::draw_tug(look, &f, &w.mods, &st, rng);
     tug::draw_shield(
@@ -1089,6 +1148,10 @@ pub fn render(sc: Scene) {
 
     draw_boundary(t);
     draw_carrier(sc.look, t, scale);
+    // The refinery's pull field can be larger than the screen.
+    if let Some(r) = &w.refinery {
+        crate::foes::refinery(sc.look, r, t, scale);
+    }
     for wr in &w.wrecks {
         if visible(wr.b.x, wr.b.y, wr.b.r) {
             draw_wreck(wr, t);
@@ -1112,6 +1175,7 @@ pub fn render(sc: Scene) {
             draw_jumper(sc.look, w, j);
         }
     }
+    crate::foes::draw_all(sc.look, w, t, sc.rng, scale, &visible);
     for c in &w.crabs {
         if visible(c.x, c.y, c.r) {
             draw_crab(c);
@@ -1119,11 +1183,13 @@ pub fn render(sc: Scene) {
     }
     if sc.show_tug {
         draw_ship(sc.look, w, t, sc.rng);
+        crate::foes::net_on_ship(sc.look, w, t, sc.device, scale);
+        crate::foes::cuff_meter(sc.look, w, t, scale);
     }
     draw_particles(sc.look, sc.fx, visible, || draw_shots(sc.look, w));
     for p in &sc.fx.popups {
         let c = rgba(p.rgb, p.life.min(1.0) as f32);
-        text_centered(
+        crate::look::text_centered_stars(
             &p.text,
             p.x as f32,
             p.y as f32,

@@ -425,6 +425,25 @@ impl Career {
         Ok(format!("{} upgraded to level {lv}.", s.name()))
     }
 
+    /// Buy one sentry drone (needs a mounted drone bay with room).
+    pub fn buy_sentry(&mut self) -> ShopResult {
+        if !self.is_mounted(Part::DroneBay) || self.sentries >= SENTRY_MAX {
+            return Err("No room for a sentry.".to_owned());
+        }
+        if self.wallet < SENTRY_PRICE {
+            return Err(format!(
+                "Need {} cr more.",
+                crate::world::fmt_credits(SENTRY_PRICE - self.wallet)
+            ));
+        }
+        self.wallet -= SENTRY_PRICE;
+        self.sentries += 1;
+        Ok(format!(
+            "Sentry drone added. {} of {SENTRY_MAX} in the bay.",
+            self.sentries
+        ))
+    }
+
     /// An extra loan payment of up to `limit` cr. Paying early improves the
     /// bank's opinion of you (per whole 1,000 cr). Returns the trade-up if
     /// it cleared the loan.
@@ -485,12 +504,21 @@ impl Career {
     /// this settlement with their systems in milestone 5.)
     pub fn settle(&mut self, w: &World) -> Settlement {
         let earned = js::round(w.banked);
+        // Collectors that confiscated a fat load credited it to the loan
+        // during the shift (career.loan in the browser), before the
+        // installment below is worked out.
+        self.loan = (self.loan - w.loan_credit).max(0.0);
         let keep = if tier(self.rep.rivals) == Tier::Good {
             GRUDGE_COOLING_GOOD
         } else {
             GRUDGE_COOLING
         };
         self.grudge = (w.grudge * keep).floor();
+        // Sentries that survived go back in the bay; destroyed or rogue
+        // ones are gone for good.
+        if w.mods.drone_bay {
+            self.sentries = w.sentries.iter().filter(|d| !d.dead && !d.rogue).count() as u32;
+        }
         // Unspent money stays in the wallet. The installment is always
         // taken; a negative wallet is an overdraft, allowed down to a third
         // of what is still owed (checked after the payment).
@@ -508,8 +536,7 @@ impl Career {
         } else {
             d.bank += REP_OVERDRAWN_BANK;
         }
-        // (No wanted stars or arrests exist before milestone 4.)
-        if d.law == 0.0 {
+        if w.wanted == 0 && w.arrests == 0 && d.law == 0.0 {
             d.law += REP_CLEAN_LAW;
         }
         if w.stats.jumpers == 0 {
@@ -526,7 +553,7 @@ impl Career {
         self.extra.insert(
             "lastShift".to_owned(),
             json!({
-                "earned": earned, "deaths": w.stats.deaths, "kills": w.stats.jumpers, "arrests": 0,
+                "earned": earned, "deaths": w.stats.deaths, "kills": w.stats.jumpers, "arrests": w.arrests,
                 "wallet": self.wallet, "contract": null, "boss": null, "hold": false, "escort": false,
             }),
         );
