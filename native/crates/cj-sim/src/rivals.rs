@@ -87,6 +87,7 @@ impl World {
                 vy: ak.sin() * EBULLET_SPEED,
                 life: EBULLET_LIFE,
                 dmg: EBULLET_DAMAGE,
+                slug: false,
             });
         }
         self.sfx(Sfx::EnemyShot(d.min(f64::from(u16::MAX)) as u16));

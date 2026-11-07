@@ -9,8 +9,9 @@
 use crate::controls::Device;
 use crate::fx::{Fx, Kind};
 use crate::look::{col, rgba, text_centered, Look};
+use crate::tug;
 use cj_sim::consts::*;
-use cj_sim::entities::{Crab, Item, Jumper, Rock, ShapePt, Ship, Wreck};
+use cj_sim::entities::{Crab, Item, Jumper, Rock, ShapePt, Wreck};
 use cj_sim::items::ItemType;
 use cj_sim::rng::Rng;
 use cj_sim::World;
@@ -50,7 +51,7 @@ impl Xf {
 /// A line through `pts`, optionally closed. Opaque lines get round joints
 /// so corners don't show notches; translucent ones skip them to avoid
 /// doubled alpha where segments meet.
-fn polyline(pts: &[Vec2], closed: bool, width: f32, color: Color) {
+pub(crate) fn polyline(pts: &[Vec2], closed: bool, width: f32, color: Color) {
     let n = pts.len();
     if n < 2 {
         return;
@@ -68,20 +69,20 @@ fn polyline(pts: &[Vec2], closed: bool, width: f32, color: Color) {
 }
 
 /// glowStroke: the path stroked wide and faint, then thin and bright.
-fn glow_stroke(pts: &[Vec2], closed: bool, rgb: u32, width: f32, alpha: f32) {
+pub(crate) fn glow_stroke(pts: &[Vec2], closed: bool, rgb: u32, width: f32, alpha: f32) {
     polyline(pts, closed, width * 3.5, rgba(rgb, alpha * 0.22));
     polyline(pts, closed, width, rgba(rgb, alpha));
 }
 
 /// Fill a star-shaped polygon as a fan around `centre`.
-fn fill_fan(centre: Vec2, pts: &[Vec2], color: Color) {
+pub(crate) fn fill_fan(centre: Vec2, pts: &[Vec2], color: Color) {
     for i in 0..pts.len() {
         draw_triangle(centre, pts[i], pts[(i + 1) % pts.len()], color);
     }
 }
 
 /// Fill any simple polygon by ear clipping (the carrier hull is concave).
-fn fill_poly(pts: &[Vec2], color: Color) {
+pub(crate) fn fill_poly(pts: &[Vec2], color: Color) {
     let mut idx: Vec<usize> = (0..pts.len()).collect();
     // Winding sign, so "convex corner" means the same thing either way round.
     let area: f32 = (0..pts.len())
@@ -132,7 +133,15 @@ fn fill_poly(pts: &[Vec2], color: Color) {
 }
 
 /// A dashed line along a polyline, like setLineDash with lineDashOffset.
-fn dashed(pts: &[Vec2], closed: bool, dash: f32, gap: f32, offset: f32, width: f32, color: Color) {
+pub(crate) fn dashed(
+    pts: &[Vec2],
+    closed: bool,
+    dash: f32,
+    gap: f32,
+    offset: f32,
+    width: f32,
+    color: Color,
+) {
     let period = dash + gap;
     let mut along = offset.rem_euclid(period); // distance into the pattern
     let n = pts.len();
@@ -159,7 +168,7 @@ fn dashed(pts: &[Vec2], closed: bool, dash: f32, gap: f32, offset: f32, width: f
     }
 }
 
-fn circle_pts(c: Vec2, r: f32, n: usize) -> Vec<Vec2> {
+pub(crate) fn circle_pts(c: Vec2, r: f32, n: usize) -> Vec<Vec2> {
     (0..n)
         .map(|i| {
             let a = i as f32 / n as f32 * TAU;
@@ -811,90 +820,31 @@ fn draw_cable(w: &World) {
 }
 
 /// The stock Mk I tug (drawTug with the cannon mounted and no other parts).
-fn draw_ship(look: &Look, s: &Ship, t: f32, rng: &mut Rng) {
+fn draw_ship(look: &Look, w: &World, t: f32, rng: &mut Rng) {
+    let s = &w.ship;
     if !s.alive || (s.invuln > 0.0 && ((t * 12.0).floor() as i64) % 2 == 1) {
         return; // respawn flicker
     }
-    let xf = Xf::new(s.b.x, s.b.y, s.angle);
-    // Exhaust flame, choked while sputtering.
-    if s.thrust_level > 0.0 && !s.sputtering {
-        let len = rng.range(14.0, 26.0) as f32;
-        let g = xf.p(-24.0, 0.0);
-        look.additive(|| look.glow(g.x, g.y, 16.0 + len * 0.4, col::HAZARD, true, 1.0));
-        draw_triangle(
-            xf.p(-20.0, -6.0),
-            xf.p(-20.0 - len, 0.0),
-            xf.p(-20.0, 6.0),
-            rgba(col::HAZARD, 0.85),
-        );
-        draw_triangle(
-            xf.p(-20.0, -3.0),
-            xf.p(-20.0 - len * 0.55, 0.0),
-            xf.p(-20.0, 3.0),
-            Color::from_hex(0xfff3d0),
-        );
-    }
-    // The cannon's barrel, red while the guns are overheated.
-    let barrel = xf.pts(&[(20.0, -1.5), (32.0, -1.5), (32.0, 1.5), (20.0, 1.5)]);
-    fill_fan(
-        (barrel[0] + barrel[2]) / 2.0,
-        &barrel,
-        Color::from_hex(if s.overheated { col::DANGER } else { col::TEXT }),
+    let f = tug::Frame::new(s.b.x as f32, s.b.y as f32, s.angle as f32, 1.0);
+    let st = tug::TugState {
+        t,
+        thrust: s.thrust_level as f32,
+        sputtering: s.sputtering,
+        strafe: s.strafe as f32,
+        flash: s.flash > 0.0,
+        overheated: s.overheated,
+        sentries: 0,
+    };
+    tug::draw_tug(look, &f, &w.mods, &st, rng);
+    tug::draw_shield(
+        s.b.x as f32,
+        s.b.y as f32,
+        s.shield,
+        w.mods.shield_max,
+        s.shield_flash,
+        s.shield_delay_t,
+        t,
     );
-    // Hull.
-    let hull = xf.pts(&[
-        (22.0, -6.0),
-        (22.0, 6.0),
-        (14.0, 13.0),
-        (-14.0, 14.0),
-        (-20.0, 8.0),
-        (-20.0, -8.0),
-        (-14.0, -14.0),
-        (14.0, -13.0),
-    ]);
-    fill_fan(xf.o, &hull, Color::from_hex(0x2a1d06));
-    glow_stroke(
-        &hull,
-        true,
-        if s.flash > 0.0 {
-            col::DANGER
-        } else {
-            col::HAZARD
-        },
-        2.0,
-        1.0,
-    );
-    let cab = xf.pts(&[(6.0, -5.0), (15.0, -5.0), (15.0, 5.0), (6.0, 5.0)]);
-    fill_fan((cab[0] + cab[2]) / 2.0, &cab, Color::from_hex(col::CABLE));
-    let (a, b) = (xf.p(-6.0, -14.0), xf.p(-6.0, 14.0));
-    draw_line(a.x, a.y, b.x, b.y, 1.5, Color::from_hex(col::HAZARD));
-    // Stock winch drum.
-    polyline(
-        &circle_pts(xf.p(-16.0, 0.0), 5.0, 20),
-        true,
-        1.5,
-        Color::from_hex(col::HAZARD),
-    );
-
-    // Shield bubble: faint when full, brighter as it takes hits, gone when
-    // depleted; a rippling dashed ring while recharging.
-    if s.shield > 0.0 {
-        let frac = (s.shield / 40.0) as f32;
-        let flash = s.shield_flash as f32;
-        draw_circle(
-            xf.o.x,
-            xf.o.y,
-            34.0,
-            rgba(col::SHIELD, (0.05 + frac * 0.06 + flash * 1.2).min(1.0)),
-        );
-        let ring = circle_pts(xf.o, 34.0, 64);
-        let c = rgba(col::SHIELD, (0.25 + frac * 0.35 + flash * 2.0).min(1.0));
-        if s.shield_delay_t <= 0.0 && frac < 1.0 {
-            dashed(&ring, true, 6.0, 6.0, t * 30.0, 1.5, c);
-        } else {
-            polyline(&ring, true, 1.5, c);
-        }
-    }
 }
 
 /// `${it.mass}` in JavaScript: no decimals for whole numbers.
@@ -1094,6 +1044,10 @@ pub struct Scene<'a> {
     /// Logical viewport size and the display's pixel ratio.
     pub view: (f32, f32),
     pub dpi: f32,
+    /// The tug and its cable are drawn on every screen but the title.
+    pub show_tug: bool,
+    /// The hook target only shows while flying.
+    pub playing: bool,
 }
 
 pub fn render(sc: Scene) {
@@ -1145,7 +1099,9 @@ pub fn render(sc: Scene) {
             draw_rock(sc.look, rk);
         }
     }
-    draw_cable(w);
+    if sc.show_tug {
+        draw_cable(w);
+    }
     for it in &w.items {
         if visible(it.b.x, it.b.y, it.b.r) {
             draw_item(sc.look, it, t, scale);
@@ -1161,7 +1117,9 @@ pub fn render(sc: Scene) {
             draw_crab(c);
         }
     }
-    draw_ship(sc.look, &w.ship, t, sc.rng);
+    if sc.show_tug {
+        draw_ship(sc.look, w, t, sc.rng);
+    }
     draw_particles(sc.look, sc.fx, visible, || draw_shots(sc.look, w));
     for p in &sc.fx.popups {
         let c = rgba(p.rgb, p.life.min(1.0) as f32);
@@ -1175,7 +1133,7 @@ pub fn render(sc: Scene) {
             scale,
         );
     }
-    if !w.shift_over {
+    if sc.playing && !w.shift_over {
         draw_hook_target(sc.look, w, t, sc.device, scale);
     }
 
@@ -1193,7 +1151,7 @@ pub fn render(sc: Scene) {
         );
     }
     // Under attack: a red edge pulses around the screen while the warning holds.
-    if w.under_attack_t > 0.0 && !w.shift_over {
+    if w.under_attack_t > 0.0 && sc.playing && !w.shift_over {
         let a = 0.3 * (0.5 + 0.5 * (t * 10.0).sin()) * (w.under_attack_t as f32).min(1.0);
         draw_rectangle_lines(
             0.0,
@@ -1205,7 +1163,7 @@ pub fn render(sc: Scene) {
         );
     }
     // A red wash for a moment after the hull takes a hit.
-    if w.ship.flash > 0.0 && !w.shift_over {
+    if w.ship.flash > 0.0 && sc.playing && !w.shift_over {
         draw_rectangle(
             0.0,
             0.0,

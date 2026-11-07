@@ -244,6 +244,19 @@ impl Fx {
                 }),
                 // A round striking something: a brief hot flash.
                 Event::Hit { x, y } => self.spark(*x, *y, 0.0, 0.0, 0.15, col::HAZARD, 3.0),
+                Event::Strafe {
+                    x,
+                    y,
+                    vx,
+                    vy,
+                    px,
+                    py,
+                    side,
+                } if self.rng.chance(0.7) => {
+                    let (ox, oy) = (px * 17.0 * side, py * 17.0 * side);
+                    let (bx, by) = (px * side * 160.0, py * side * 160.0);
+                    self.spark(x + ox, y + oy, vx + bx, vy + by, 0.25, col::CABLE, 2.5);
+                }
                 _ => {}
             }
         }

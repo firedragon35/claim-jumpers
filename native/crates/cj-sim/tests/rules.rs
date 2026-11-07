@@ -349,6 +349,7 @@ fn under_attack_alarm_is_rate_limited() {
                 vy: 0.0,
                 life: 1.0,
                 dmg: 5.0,
+                slug: false,
             });
         }
         w.events.clear();

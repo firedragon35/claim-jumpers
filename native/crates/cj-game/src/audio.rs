@@ -520,6 +520,26 @@ impl Audio {
                     },
                 );
             }
+            // Grinder slug: a heavier "thoom-pew".
+            Sfx::Slug => {
+                self.tone(
+                    420.0,
+                    0.22,
+                    ToneOpts {
+                        slide: 0.15,
+                        ..t(Sawtooth, 0.09)
+                    },
+                );
+                self.noise(0.12, n(0.12, 800.0));
+            }
+            // The salvage grinder chewing a piece into slugs.
+            Sfx::Grind => self.noise(
+                0.4,
+                NoiseOpts {
+                    filter: Filter::Bandpass,
+                    ..n(0.3, 1800.0)
+                },
+            ),
             Sfx::Chip => self.noise(0.07, n(0.1, 2200.0)),
             Sfx::Crunch => self.noise(0.32, n(0.28, 650.0)),
             Sfx::Boom => {

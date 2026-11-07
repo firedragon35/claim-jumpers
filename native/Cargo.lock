@@ -166,6 +166,7 @@ dependencies = [
  "cpal",
  "gilrs",
  "macroquad",
+ "serde_json",
 ]
 
 [[package]]

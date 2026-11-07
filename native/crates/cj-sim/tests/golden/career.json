@@ -1,0 +1,2150 @@
+{
+ "mods": [
+  {
+   "mounted": {
+    "w1": "cannon",
+    "w2": null,
+    "mod": null,
+    "u1": null,
+    "u2": null
+   },
+   "levels": {
+    "shield": 1,
+    "thrust": 1,
+    "armor": 1,
+    "cannon": 1,
+    "missiles": 1,
+    "drones": 1
+   },
+   "tugClass": 0,
+   "mods": {
+    "winchCap": 16,
+    "reel": 150,
+    "hookRange": 150,
+    "maxHp": 100,
+    "mass": 3,
+    "turnLoad": 0,
+    "thrustMul": 1,
+    "turnMul": 1,
+    "shieldMax": 40,
+    "shieldRate": 3,
+    "shieldDelay": 5,
+    "barrels": [
+     0
+    ],
+    "cannonDmg": 1,
+    "fireMul": 1,
+    "heatMul": 1,
+    "cannonSpread": 0,
+    "thrusters": false,
+    "scoop": false,
+    "grinder": false,
+    "armor": false,
+    "missiles": false,
+    "droneBay": false,
+    "strafeMul": 1,
+    "strafeHeatMul": 1,
+    "missileRack": 4,
+    "missileReload": 3,
+    "missileDmg": 2.5,
+    "missileSalvo": 1,
+    "torpedo": false,
+    "droneHp": 6,
+    "droneDmg": 0.6,
+    "droneFire": 0.8
+   }
+  },
+  {
+   "mounted": {
+    "w1": null,
+    "w2": null,
+    "mod": null,
+    "u1": null,
+    "u2": null
+   },
+   "levels": {
+    "shield": 1,
+    "thrust": 1,
+    "armor": 1,
+    "cannon": 1,
+    "missiles": 1,
+    "drones": 1
+   },
+   "tugClass": 0,
+   "mods": {
+    "winchCap": 16,
+    "reel": 150,
+    "hookRange": 150,
+    "maxHp": 100,
+    "mass": 3,
+    "turnLoad": 0,
+    "thrustMul": 1,
+    "turnMul": 1,
+    "shieldMax": 40,
+    "shieldRate": 3,
+    "shieldDelay": 5,
+    "barrels": [],
+    "cannonDmg": 1,
+    "fireMul": 1,
+    "heatMul": 1,
+    "cannonSpread": 0,
+    "thrusters": false,
+    "scoop": false,
+    "grinder": false,
+    "armor": false,
+    "missiles": false,
+    "droneBay": false,
+    "strafeMul": 1,
+    "strafeHeatMul": 1,
+    "missileRack": 4,
+    "missileReload": 3,
+    "missileDmg": 2.5,
+    "missileSalvo": 1,
+    "torpedo": false,
+    "droneHp": 6,
+    "droneDmg": 0.6,
+    "droneFire": 0.8
+   }
+  },
+  {
+   "mounted": {
+    "w1": "cannon",
+    "w2": null,
+    "mod": "twin",
+    "u1": null,
+    "u2": null
+   },
+   "levels": {
+    "shield": 2,
+    "thrust": 3,
+    "armor": 4,
+    "cannon": 2,
+    "missiles": 1,
+    "drones": 1
+   },
+   "tugClass": 1,
+   "mods": {
+    "winchCap": 20,
+    "reel": 150,
+    "hookRange": 150,
+    "maxHp": 200,
+    "mass": 4.2,
+    "turnLoad": 0,
+    "thrustMul": 1.3392000000000002,
+    "turnMul": 1.1536000000000002,
+    "shieldMax": 75,
+    "shieldRate": 4,
+    "shieldDelay": 4.5,
+    "barrels": [
+     0,
+     -7,
+     7
+    ],
+    "cannonDmg": 1.1,
+    "fireMul": 0.9,
+    "heatMul": 0.9,
+    "cannonSpread": 2,
+    "thrusters": false,
+    "scoop": false,
+    "grinder": false,
+    "armor": false,
+    "missiles": false,
+    "droneBay": false,
+    "strafeMul": 1.3,
+    "strafeHeatMul": 0.7,
+    "missileRack": 4,
+    "missileReload": 3,
+    "missileDmg": 2.5,
+    "missileSalvo": 1,
+    "torpedo": false,
+    "droneHp": 6,
+    "droneDmg": 0.6,
+    "droneFire": 0.8
+   }
+  },
+  {
+   "mounted": {
+    "w1": null,
+    "w2": null,
+    "mod": "twin",
+    "u1": null,
+    "u2": null
+   },
+   "levels": {
+    "shield": 1,
+    "thrust": 1,
+    "armor": 1,
+    "cannon": 4,
+    "missiles": 1,
+    "drones": 1
+   },
+   "tugClass": 0,
+   "mods": {
+    "winchCap": 16,
+    "reel": 150,
+    "hookRange": 150,
+    "maxHp": 100,
+    "mass": 3,
+    "turnLoad": 0,
+    "thrustMul": 1,
+    "turnMul": 1,
+    "shieldMax": 40,
+    "shieldRate": 3,
+    "shieldDelay": 5,
+    "barrels": [],
+    "cannonDmg": 1.35,
+    "fireMul": 0.7,
+    "heatMul": 0.7,
+    "cannonSpread": 0,
+    "thrusters": false,
+    "scoop": false,
+    "grinder": false,
+    "armor": false,
+    "missiles": false,
+    "droneBay": false,
+    "strafeMul": 1,
+    "strafeHeatMul": 1,
+    "missileRack": 4,
+    "missileReload": 3,
+    "missileDmg": 2.5,
+    "missileSalvo": 1,
+    "torpedo": false,
+    "droneHp": 6,
+    "droneDmg": 0.6,
+    "droneFire": 0.8
+   }
+  },
+  {
+   "mounted": {
+    "w1": "cannon",
+    "w2": "missiles",
+    "mod": null,
+    "u1": "winch",
+    "u2": "armor"
+   },
+   "levels": {
+    "shield": 4,
+    "thrust": 4,
+    "armor": 4,
+    "cannon": 4,
+    "missiles": 5,
+    "drones": 4
+   },
+   "tugClass": 4,
+   "mods": {
+    "winchCap": 42,
+    "reel": 230,
+    "hookRange": 195,
+    "maxHp": 345,
+    "mass": 5.7,
+    "turnLoad": 2,
+    "thrustMul": 1.8360000000000003,
+    "turnMul": 1.3569999999999998,
+    "shieldMax": 160,
+    "shieldRate": 6,
+    "shieldDelay": 3.5,
+    "barrels": [
+     0
+    ],
+    "cannonDmg": 1.35,
+    "fireMul": 0.7,
+    "heatMul": 0.7,
+    "cannonSpread": 4,
+    "thrusters": false,
+    "scoop": false,
+    "grinder": false,
+    "armor": true,
+    "missiles": true,
+    "droneBay": false,
+    "strafeMul": 1.45,
+    "strafeHeatMul": 0.55,
+    "missileRack": 6,
+    "missileReload": 2.4,
+    "missileDmg": 9,
+    "missileSalvo": 2,
+    "torpedo": true,
+    "droneHp": 13,
+    "droneDmg": 1.1,
+    "droneFire": 0.5
+   }
+  },
+  {
+   "mounted": {
+    "w1": "missiles",
+    "w2": null,
+    "mod": null,
+    "u1": "thrusters",
+    "u2": "grapple"
+   },
+   "levels": {
+    "shield": 3,
+    "thrust": 2,
+    "armor": 1,
+    "cannon": 3,
+    "missiles": 4,
+    "drones": 2
+   },
+   "tugClass": 2,
+   "mods": {
+    "winchCap": 24,
+    "reel": 150,
+    "hookRange": 240,
+    "maxHp": 150,
+    "mass": 3,
+    "turnLoad": 0,
+    "thrustMul": 1.2992000000000001,
+    "turnMul": 1.1236000000000002,
+    "shieldMax": 110,
+    "shieldRate": 5,
+    "shieldDelay": 4,
+    "barrels": [],
+    "cannonDmg": 1.2,
+    "fireMul": 0.8,
+    "heatMul": 0.8,
+    "cannonSpread": 0,
+    "thrusters": true,
+    "scoop": false,
+    "grinder": false,
+    "armor": false,
+    "missiles": true,
+    "droneBay": false,
+    "strafeMul": 1.15,
+    "strafeHeatMul": 0.85,
+    "missileRack": 8,
+    "missileReload": 1.8,
+    "missileDmg": 3.6,
+    "missileSalvo": 3,
+    "torpedo": false,
+    "droneHp": 8,
+    "droneDmg": 0.75,
+    "droneFire": 0.7
+   }
+  },
+  {
+   "mounted": {
+    "w1": "cannon",
+    "w2": null,
+    "mod": null,
+    "u1": "scoop",
+    "u2": "grinder"
+   },
+   "levels": {
+    "shield": 1,
+    "thrust": 4,
+    "armor": 2,
+    "cannon": 3,
+    "missiles": 2,
+    "drones": 3
+   },
+   "tugClass": 3,
+   "mods": {
+    "winchCap": 28,
+    "reel": 150,
+    "hookRange": 150,
+    "maxHp": 205,
+    "mass": 3.4,
+    "turnLoad": 0,
+    "thrustMul": 1.7000000000000002,
+    "turnMul": 1.298,
+    "shieldMax": 85,
+    "shieldRate": 3,
+    "shieldDelay": 5,
+    "barrels": [
+     0
+    ],
+    "cannonDmg": 1.2,
+    "fireMul": 0.8,
+    "heatMul": 0.8,
+    "cannonSpread": 2,
+    "thrusters": false,
+    "scoop": true,
+    "grinder": true,
+    "armor": false,
+    "missiles": false,
+    "droneBay": false,
+    "strafeMul": 1.45,
+    "strafeHeatMul": 0.55,
+    "missileRack": 5,
+    "missileReload": 2.6,
+    "missileDmg": 3,
+    "missileSalvo": 2,
+    "torpedo": false,
+    "droneHp": 10,
+    "droneDmg": 0.9,
+    "droneFire": 0.6
+   }
+  },
+  {
+   "mounted": {
+    "w1": null,
+    "w2": null,
+    "mod": null,
+    "u1": "winch",
+    "u2": "grapple"
+   },
+   "levels": {
+    "shield": 1,
+    "thrust": 1,
+    "armor": 3,
+    "cannon": 1,
+    "missiles": 1,
+    "drones": 1
+   },
+   "tugClass": 0,
+   "mods": {
+    "winchCap": 26,
+    "reel": 230,
+    "hookRange": 312,
+    "maxHp": 150,
+    "mass": 3.8,
+    "turnLoad": 0,
+    "thrustMul": 1,
+    "turnMul": 1,
+    "shieldMax": 40,
+    "shieldRate": 3,
+    "shieldDelay": 5,
+    "barrels": [],
+    "cannonDmg": 1,
+    "fireMul": 1,
+    "heatMul": 1,
+    "cannonSpread": 0,
+    "thrusters": false,
+    "scoop": false,
+    "grinder": false,
+    "armor": false,
+    "missiles": false,
+    "droneBay": false,
+    "strafeMul": 1,
+    "strafeHeatMul": 1,
+    "missileRack": 4,
+    "missileReload": 3,
+    "missileDmg": 2.5,
+    "missileSalvo": 1,
+    "torpedo": false,
+    "droneHp": 6,
+    "droneDmg": 0.6,
+    "droneFire": 0.8
+   }
+  },
+  {
+   "mounted": {
+    "w1": "cannon",
+    "w2": null,
+    "mod": null,
+    "u1": "dronebay",
+    "u2": "hullseal"
+   },
+   "levels": {
+    "shield": 2,
+    "thrust": 2,
+    "armor": 2,
+    "cannon": 2,
+    "missiles": 3,
+    "drones": 4
+   },
+   "tugClass": 1,
+   "mods": {
+    "winchCap": 20,
+    "reel": 150,
+    "hookRange": 150,
+    "maxHp": 150,
+    "mass": 3.4,
+    "turnLoad": 0,
+    "thrustMul": 1.2096000000000002,
+    "turnMul": 1.0918,
+    "shieldMax": 75,
+    "shieldRate": 4,
+    "shieldDelay": 4.5,
+    "barrels": [
+     0
+    ],
+    "cannonDmg": 1.1,
+    "fireMul": 0.9,
+    "heatMul": 0.9,
+    "cannonSpread": 2,
+    "thrusters": false,
+    "scoop": false,
+    "grinder": false,
+    "armor": false,
+    "missiles": false,
+    "droneBay": true,
+    "strafeMul": 1.15,
+    "strafeHeatMul": 0.85,
+    "missileRack": 6,
+    "missileReload": 2.2,
+    "missileDmg": 3,
+    "missileSalvo": 2,
+    "torpedo": false,
+    "droneHp": 13,
+    "droneDmg": 1.1,
+    "droneFire": 0.5
+   }
+  }
+ ],
+ "installments": [
+  {
+   "n": 1,
+   "loan": 40000,
+   "mode": "relaxed",
+   "due": 500
+  },
+  {
+   "n": 2,
+   "loan": 40000,
+   "mode": "relaxed",
+   "due": 650
+  },
+  {
+   "n": 3,
+   "loan": 40000,
+   "mode": "relaxed",
+   "due": 850
+  },
+  {
+   "n": 4,
+   "loan": 40000,
+   "mode": "relaxed",
+   "due": 1000
+  },
+  {
+   "n": 5,
+   "loan": 40000,
+   "mode": "relaxed",
+   "due": 1200
+  },
+  {
+   "n": 6,
+   "loan": 40000,
+   "mode": "relaxed",
+   "due": 1400
+  },
+  {
+   "n": 7,
+   "loan": 40000,
+   "mode": "relaxed",
+   "due": 1550
+  },
+  {
+   "n": 8,
+   "loan": 40000,
+   "mode": "relaxed",
+   "due": 1750
+  },
+  {
+   "n": 9,
+   "loan": 40000,
+   "mode": "relaxed",
+   "due": 1900
+  },
+  {
+   "n": 10,
+   "loan": 40000,
+   "mode": "relaxed",
+   "due": 2100
+  },
+  {
+   "n": 11,
+   "loan": 40000,
+   "mode": "relaxed",
+   "due": 2300
+  },
+  {
+   "n": 12,
+   "loan": 40000,
+   "mode": "relaxed",
+   "due": 2450
+  },
+  {
+   "n": 1,
+   "loan": 1234,
+   "mode": "relaxed",
+   "due": 500
+  },
+  {
+   "n": 2,
+   "loan": 1234,
+   "mode": "relaxed",
+   "due": 650
+  },
+  {
+   "n": 3,
+   "loan": 1234,
+   "mode": "relaxed",
+   "due": 850
+  },
+  {
+   "n": 4,
+   "loan": 1234,
+   "mode": "relaxed",
+   "due": 1000
+  },
+  {
+   "n": 5,
+   "loan": 1234,
+   "mode": "relaxed",
+   "due": 1200
+  },
+  {
+   "n": 6,
+   "loan": 1234,
+   "mode": "relaxed",
+   "due": 1234
+  },
+  {
+   "n": 7,
+   "loan": 1234,
+   "mode": "relaxed",
+   "due": 1234
+  },
+  {
+   "n": 8,
+   "loan": 1234,
+   "mode": "relaxed",
+   "due": 1234
+  },
+  {
+   "n": 9,
+   "loan": 1234,
+   "mode": "relaxed",
+   "due": 1234
+  },
+  {
+   "n": 10,
+   "loan": 1234,
+   "mode": "relaxed",
+   "due": 1234
+  },
+  {
+   "n": 11,
+   "loan": 1234,
+   "mode": "relaxed",
+   "due": 1234
+  },
+  {
+   "n": 12,
+   "loan": 1234,
+   "mode": "relaxed",
+   "due": 1234
+  },
+  {
+   "n": 1,
+   "loan": 600,
+   "mode": "relaxed",
+   "due": 500
+  },
+  {
+   "n": 2,
+   "loan": 600,
+   "mode": "relaxed",
+   "due": 600
+  },
+  {
+   "n": 3,
+   "loan": 600,
+   "mode": "relaxed",
+   "due": 600
+  },
+  {
+   "n": 4,
+   "loan": 600,
+   "mode": "relaxed",
+   "due": 600
+  },
+  {
+   "n": 5,
+   "loan": 600,
+   "mode": "relaxed",
+   "due": 600
+  },
+  {
+   "n": 6,
+   "loan": 600,
+   "mode": "relaxed",
+   "due": 600
+  },
+  {
+   "n": 7,
+   "loan": 600,
+   "mode": "relaxed",
+   "due": 600
+  },
+  {
+   "n": 8,
+   "loan": 600,
+   "mode": "relaxed",
+   "due": 600
+  },
+  {
+   "n": 9,
+   "loan": 600,
+   "mode": "relaxed",
+   "due": 600
+  },
+  {
+   "n": 10,
+   "loan": 600,
+   "mode": "relaxed",
+   "due": 600
+  },
+  {
+   "n": 11,
+   "loan": 600,
+   "mode": "relaxed",
+   "due": 600
+  },
+  {
+   "n": 12,
+   "loan": 600,
+   "mode": "relaxed",
+   "due": 600
+  },
+  {
+   "n": 1,
+   "loan": 40000,
+   "mode": "standard",
+   "due": 800
+  },
+  {
+   "n": 2,
+   "loan": 40000,
+   "mode": "standard",
+   "due": 1100
+  },
+  {
+   "n": 3,
+   "loan": 40000,
+   "mode": "standard",
+   "due": 1400
+  },
+  {
+   "n": 4,
+   "loan": 40000,
+   "mode": "standard",
+   "due": 1700
+  },
+  {
+   "n": 5,
+   "loan": 40000,
+   "mode": "standard",
+   "due": 2000
+  },
+  {
+   "n": 6,
+   "loan": 40000,
+   "mode": "standard",
+   "due": 2300
+  },
+  {
+   "n": 7,
+   "loan": 40000,
+   "mode": "standard",
+   "due": 2600
+  },
+  {
+   "n": 8,
+   "loan": 40000,
+   "mode": "standard",
+   "due": 2900
+  },
+  {
+   "n": 9,
+   "loan": 40000,
+   "mode": "standard",
+   "due": 3200
+  },
+  {
+   "n": 10,
+   "loan": 40000,
+   "mode": "standard",
+   "due": 3500
+  },
+  {
+   "n": 11,
+   "loan": 40000,
+   "mode": "standard",
+   "due": 3800
+  },
+  {
+   "n": 12,
+   "loan": 40000,
+   "mode": "standard",
+   "due": 4100
+  },
+  {
+   "n": 1,
+   "loan": 1234,
+   "mode": "standard",
+   "due": 800
+  },
+  {
+   "n": 2,
+   "loan": 1234,
+   "mode": "standard",
+   "due": 1100
+  },
+  {
+   "n": 3,
+   "loan": 1234,
+   "mode": "standard",
+   "due": 1234
+  },
+  {
+   "n": 4,
+   "loan": 1234,
+   "mode": "standard",
+   "due": 1234
+  },
+  {
+   "n": 5,
+   "loan": 1234,
+   "mode": "standard",
+   "due": 1234
+  },
+  {
+   "n": 6,
+   "loan": 1234,
+   "mode": "standard",
+   "due": 1234
+  },
+  {
+   "n": 7,
+   "loan": 1234,
+   "mode": "standard",
+   "due": 1234
+  },
+  {
+   "n": 8,
+   "loan": 1234,
+   "mode": "standard",
+   "due": 1234
+  },
+  {
+   "n": 9,
+   "loan": 1234,
+   "mode": "standard",
+   "due": 1234
+  },
+  {
+   "n": 10,
+   "loan": 1234,
+   "mode": "standard",
+   "due": 1234
+  },
+  {
+   "n": 11,
+   "loan": 1234,
+   "mode": "standard",
+   "due": 1234
+  },
+  {
+   "n": 12,
+   "loan": 1234,
+   "mode": "standard",
+   "due": 1234
+  },
+  {
+   "n": 1,
+   "loan": 600,
+   "mode": "standard",
+   "due": 600
+  },
+  {
+   "n": 2,
+   "loan": 600,
+   "mode": "standard",
+   "due": 600
+  },
+  {
+   "n": 3,
+   "loan": 600,
+   "mode": "standard",
+   "due": 600
+  },
+  {
+   "n": 4,
+   "loan": 600,
+   "mode": "standard",
+   "due": 600
+  },
+  {
+   "n": 5,
+   "loan": 600,
+   "mode": "standard",
+   "due": 600
+  },
+  {
+   "n": 6,
+   "loan": 600,
+   "mode": "standard",
+   "due": 600
+  },
+  {
+   "n": 7,
+   "loan": 600,
+   "mode": "standard",
+   "due": 600
+  },
+  {
+   "n": 8,
+   "loan": 600,
+   "mode": "standard",
+   "due": 600
+  },
+  {
+   "n": 9,
+   "loan": 600,
+   "mode": "standard",
+   "due": 600
+  },
+  {
+   "n": 10,
+   "loan": 600,
+   "mode": "standard",
+   "due": 600
+  },
+  {
+   "n": 11,
+   "loan": 600,
+   "mode": "standard",
+   "due": 600
+  },
+  {
+   "n": 12,
+   "loan": 600,
+   "mode": "standard",
+   "due": 600
+  },
+  {
+   "n": 1,
+   "loan": 40000,
+   "mode": "hard",
+   "due": 1050
+  },
+  {
+   "n": 2,
+   "loan": 40000,
+   "mode": "hard",
+   "due": 1450
+  },
+  {
+   "n": 3,
+   "loan": 40000,
+   "mode": "hard",
+   "due": 1800
+  },
+  {
+   "n": 4,
+   "loan": 40000,
+   "mode": "hard",
+   "due": 2200
+  },
+  {
+   "n": 5,
+   "loan": 40000,
+   "mode": "hard",
+   "due": 2600
+  },
+  {
+   "n": 6,
+   "loan": 40000,
+   "mode": "hard",
+   "due": 3000
+  },
+  {
+   "n": 7,
+   "loan": 40000,
+   "mode": "hard",
+   "due": 3400
+  },
+  {
+   "n": 8,
+   "loan": 40000,
+   "mode": "hard",
+   "due": 3750
+  },
+  {
+   "n": 9,
+   "loan": 40000,
+   "mode": "hard",
+   "due": 4150
+  },
+  {
+   "n": 10,
+   "loan": 40000,
+   "mode": "hard",
+   "due": 4550
+  },
+  {
+   "n": 11,
+   "loan": 40000,
+   "mode": "hard",
+   "due": 4950
+  },
+  {
+   "n": 12,
+   "loan": 40000,
+   "mode": "hard",
+   "due": 5350
+  },
+  {
+   "n": 1,
+   "loan": 1234,
+   "mode": "hard",
+   "due": 1050
+  },
+  {
+   "n": 2,
+   "loan": 1234,
+   "mode": "hard",
+   "due": 1234
+  },
+  {
+   "n": 3,
+   "loan": 1234,
+   "mode": "hard",
+   "due": 1234
+  },
+  {
+   "n": 4,
+   "loan": 1234,
+   "mode": "hard",
+   "due": 1234
+  },
+  {
+   "n": 5,
+   "loan": 1234,
+   "mode": "hard",
+   "due": 1234
+  },
+  {
+   "n": 6,
+   "loan": 1234,
+   "mode": "hard",
+   "due": 1234
+  },
+  {
+   "n": 7,
+   "loan": 1234,
+   "mode": "hard",
+   "due": 1234
+  },
+  {
+   "n": 8,
+   "loan": 1234,
+   "mode": "hard",
+   "due": 1234
+  },
+  {
+   "n": 9,
+   "loan": 1234,
+   "mode": "hard",
+   "due": 1234
+  },
+  {
+   "n": 10,
+   "loan": 1234,
+   "mode": "hard",
+   "due": 1234
+  },
+  {
+   "n": 11,
+   "loan": 1234,
+   "mode": "hard",
+   "due": 1234
+  },
+  {
+   "n": 12,
+   "loan": 1234,
+   "mode": "hard",
+   "due": 1234
+  },
+  {
+   "n": 1,
+   "loan": 600,
+   "mode": "hard",
+   "due": 600
+  },
+  {
+   "n": 2,
+   "loan": 600,
+   "mode": "hard",
+   "due": 600
+  },
+  {
+   "n": 3,
+   "loan": 600,
+   "mode": "hard",
+   "due": 600
+  },
+  {
+   "n": 4,
+   "loan": 600,
+   "mode": "hard",
+   "due": 600
+  },
+  {
+   "n": 5,
+   "loan": 600,
+   "mode": "hard",
+   "due": 600
+  },
+  {
+   "n": 6,
+   "loan": 600,
+   "mode": "hard",
+   "due": 600
+  },
+  {
+   "n": 7,
+   "loan": 600,
+   "mode": "hard",
+   "due": 600
+  },
+  {
+   "n": 8,
+   "loan": 600,
+   "mode": "hard",
+   "due": 600
+  },
+  {
+   "n": 9,
+   "loan": 600,
+   "mode": "hard",
+   "due": 600
+  },
+  {
+   "n": 10,
+   "loan": 600,
+   "mode": "hard",
+   "due": 600
+  },
+  {
+   "n": 11,
+   "loan": 600,
+   "mode": "hard",
+   "due": 600
+  },
+  {
+   "n": 12,
+   "loan": 600,
+   "mode": "hard",
+   "due": 600
+  }
+ ],
+ "dues": [
+  {
+   "bank": -60,
+   "ahead": 0,
+   "due": 3000,
+   "limit": 18518
+  },
+  {
+   "bank": -60,
+   "ahead": 1,
+   "due": 3450,
+   "limit": 18518
+  },
+  {
+   "bank": -60,
+   "ahead": 2,
+   "due": 3900,
+   "limit": 18518
+  },
+  {
+   "bank": 0,
+   "ahead": 0,
+   "due": 2600,
+   "limit": 18518
+  },
+  {
+   "bank": 0,
+   "ahead": 1,
+   "due": 3000,
+   "limit": 18518
+  },
+  {
+   "bank": 0,
+   "ahead": 2,
+   "due": 3400,
+   "limit": 18518
+  },
+  {
+   "bank": 39,
+   "ahead": 0,
+   "due": 2600,
+   "limit": 18518
+  },
+  {
+   "bank": 39,
+   "ahead": 1,
+   "due": 3000,
+   "limit": 18518
+  },
+  {
+   "bank": 39,
+   "ahead": 2,
+   "due": 3400,
+   "limit": 18518
+  },
+  {
+   "bank": 40,
+   "ahead": 0,
+   "due": 2350,
+   "limit": 18518
+  },
+  {
+   "bank": 40,
+   "ahead": 1,
+   "due": 2700,
+   "limit": 18518
+  },
+  {
+   "bank": 40,
+   "ahead": 2,
+   "due": 3050,
+   "limit": 18518
+  },
+  {
+   "bank": 80,
+   "ahead": 0,
+   "due": 2350,
+   "limit": 18518
+  },
+  {
+   "bank": 80,
+   "ahead": 1,
+   "due": 2700,
+   "limit": 18518
+  },
+  {
+   "bank": 80,
+   "ahead": 2,
+   "due": 3050,
+   "limit": 18518
+  }
+ ],
+ "loads": [
+  {
+   "raw": {
+    "shift": 4,
+    "wallet": 2500,
+    "loan": 33000,
+    "owned": [
+     "cannon",
+     "winch",
+     "twin",
+     "bogus"
+    ],
+    "mounted": {
+     "w1": "cannon",
+     "w2": "twin",
+     "mod": null,
+     "u1": "winch",
+     "u2": "winch"
+    },
+    "totalBanked": 9000,
+    "difficulty": "hard",
+    "grudge": 3.7,
+    "levels": {
+     "shield": 3,
+     "thrust": 9,
+     "armor": 0,
+     "cannon": 2.6,
+     "missiles": 5,
+     "drones": "x"
+    },
+    "sentries": 7,
+    "tugClass": 0,
+    "loanStart": 9,
+    "rep": {
+     "bank": 140,
+     "law": -12.5,
+     "rivals": "bad"
+    },
+    "belt": "kessler",
+    "crew": "broker",
+    "cores": 2
+   },
+   "career": {
+    "shift": 4,
+    "wallet": 2500,
+    "loan": 33000,
+    "owned": [
+     "cannon",
+     "winch",
+     "twin"
+    ],
+    "mounted": {
+     "w1": "cannon",
+     "w2": null,
+     "mod": "twin",
+     "u1": "winch",
+     "u2": null
+    },
+    "totalBanked": 9000,
+    "difficulty": "hard",
+    "grudge": 3,
+    "wanted": 0,
+    "levels": {
+     "shield": 3,
+     "thrust": 4,
+     "armor": 1,
+     "cannon": 2,
+     "missiles": 5,
+     "drones": 1
+    },
+    "sentries": 3,
+    "tugClass": 0,
+    "loanStart": 4,
+    "crew": "broker",
+    "contract": null,
+    "contractShift": 0,
+    "offers": null,
+    "offersShift": 0,
+    "belt": "hollis",
+    "rep": {
+     "bank": 100,
+     "law": -12.5,
+     "rivals": 0
+    },
+    "chain": null,
+    "chainsDone": [],
+    "conditions": null,
+    "cores": 2
+   }
+  },
+  {
+   "raw": {
+    "shift": -3,
+    "wallet": -999999,
+    "loan": 90000,
+    "owned": "cannon",
+    "difficulty": "impossible",
+    "grudge": -4,
+    "tugClass": 7,
+    "loanStart": 0
+   },
+   "career": {
+    "shift": 1,
+    "wallet": -30000,
+    "loan": 90000,
+    "owned": [
+     "cannon"
+    ],
+    "mounted": {
+     "w1": "cannon",
+     "w2": null,
+     "mod": null,
+     "u1": null,
+     "u2": null
+    },
+    "totalBanked": 0,
+    "difficulty": "standard",
+    "grudge": 0,
+    "wanted": 0,
+    "levels": {
+     "shield": 1,
+     "thrust": 1,
+     "armor": 1,
+     "cannon": 1,
+     "missiles": 1,
+     "drones": 1
+    },
+    "sentries": 0,
+    "tugClass": 4,
+    "loanStart": 1,
+    "crew": null,
+    "contract": null,
+    "contractShift": 0,
+    "offers": null,
+    "offersShift": 0,
+    "belt": "hollis",
+    "rep": {
+     "bank": 0,
+     "law": 0,
+     "rivals": 0
+    },
+    "chain": null,
+    "chainsDone": [],
+    "conditions": null,
+    "cores": 0
+   }
+  },
+  {
+   "raw": {
+    "shift": 2.9,
+    "wallet": null,
+    "loan": 0,
+    "tugClass": 2,
+    "levels": null,
+    "mounted": {
+     "w1": "missiles",
+     "u1": "armor"
+    },
+    "owned": [
+     "missiles"
+    ]
+   },
+   "career": {
+    "shift": 2,
+    "wallet": 0,
+    "loan": 85000,
+    "owned": [
+     "cannon",
+     "missiles"
+    ],
+    "mounted": {
+     "w1": "missiles",
+     "w2": null,
+     "mod": null,
+     "u1": null,
+     "u2": null
+    },
+    "totalBanked": 0,
+    "difficulty": "standard",
+    "grudge": 0,
+    "wanted": 0,
+    "levels": {
+     "shield": 1,
+     "thrust": 1,
+     "armor": 1,
+     "cannon": 1,
+     "missiles": 1,
+     "drones": 1
+    },
+    "sentries": 0,
+    "tugClass": 2,
+    "loanStart": 1,
+    "crew": null,
+    "contract": null,
+    "contractShift": 0,
+    "offers": null,
+    "offersShift": 0,
+    "belt": "hollis",
+    "rep": {
+     "bank": 0,
+     "law": 0,
+     "rivals": 0
+    },
+    "chain": null,
+    "chainsDone": [],
+    "conditions": null,
+    "cores": 0
+   }
+  },
+  {
+   "raw": {
+    "shift": 12,
+    "wallet": 100,
+    "loan": 50000,
+    "tugClass": 1,
+    "loanStart": 10,
+    "mounted": {
+     "w1": "twin",
+     "w2": "cannon",
+     "mod": null
+    },
+    "owned": [
+     "twin"
+    ],
+    "lastShift": {
+     "earned": 4100,
+     "deaths": 1.8,
+     "kills": -2,
+     "arrests": 3,
+     "wallet": -50,
+     "contract": "done",
+     "boss": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+     "hold": 1,
+     "tradedUp": true
+    }
+   },
+   "career": {
+    "shift": 12,
+    "wallet": 100,
+    "loan": 50000,
+    "owned": [
+     "cannon",
+     "twin"
+    ],
+    "mounted": {
+     "w1": null,
+     "w2": "cannon",
+     "mod": "twin",
+     "u1": null,
+     "u2": null
+    },
+    "totalBanked": 0,
+    "difficulty": "standard",
+    "grudge": 0,
+    "wanted": 0,
+    "levels": {
+     "shield": 1,
+     "thrust": 1,
+     "armor": 1,
+     "cannon": 1,
+     "missiles": 1,
+     "drones": 1
+    },
+    "sentries": 0,
+    "tugClass": 1,
+    "loanStart": 10,
+    "crew": null,
+    "contract": null,
+    "contractShift": 0,
+    "offers": null,
+    "offersShift": 0,
+    "belt": "hollis",
+    "rep": {
+     "bank": 0,
+     "law": 0,
+     "rivals": 0
+    },
+    "chain": null,
+    "chainsDone": [],
+    "conditions": null,
+    "cores": 0,
+    "lastShift": {
+     "earned": 4100,
+     "deaths": 1,
+     "kills": 0,
+     "arrests": 3,
+     "wallet": -50,
+     "contract": "done",
+     "boss": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+     "hold": true,
+     "escort": false,
+     "tradedUp": true
+    }
+   }
+  },
+  {
+   "raw": {},
+   "career": {
+    "shift": 1,
+    "wallet": 0,
+    "loan": 40000,
+    "owned": [
+     "cannon"
+    ],
+    "mounted": {
+     "w1": "cannon",
+     "w2": null,
+     "mod": null,
+     "u1": null,
+     "u2": null
+    },
+    "totalBanked": 0,
+    "difficulty": "standard",
+    "grudge": 0,
+    "wanted": 0,
+    "levels": {
+     "shield": 1,
+     "thrust": 1,
+     "armor": 1,
+     "cannon": 1,
+     "missiles": 1,
+     "drones": 1
+    },
+    "sentries": 0,
+    "tugClass": 0,
+    "loanStart": 1,
+    "crew": null,
+    "contract": null,
+    "contractShift": 0,
+    "offers": null,
+    "offersShift": 0,
+    "belt": "hollis",
+    "rep": {
+     "bank": 0,
+     "law": 0,
+     "rivals": 0
+    },
+    "chain": null,
+    "chainsDone": [],
+    "conditions": null,
+    "cores": 0
+   }
+  }
+ ],
+ "settles": [
+  {
+   "input": {
+    "career": {
+     "shift": 1
+    },
+    "banked": 2345.6,
+    "grudge": 3,
+    "jumpers": 2,
+    "rivalsDelta": -6
+   },
+   "career": {
+    "shift": 2,
+    "wallet": 1546,
+    "loan": 39200,
+    "owned": [
+     "cannon"
+    ],
+    "mounted": {
+     "w1": "cannon",
+     "w2": null,
+     "mod": null,
+     "u1": null,
+     "u2": null
+    },
+    "totalBanked": 2346,
+    "difficulty": "standard",
+    "grudge": 1,
+    "wanted": 0,
+    "levels": {
+     "shield": 1,
+     "thrust": 1,
+     "armor": 1,
+     "cannon": 1,
+     "missiles": 1,
+     "drones": 1
+    },
+    "sentries": 0,
+    "tugClass": 0,
+    "loanStart": 1,
+    "crew": null,
+    "contract": null,
+    "contractShift": 0,
+    "offers": null,
+    "offersShift": 0,
+    "belt": "hollis",
+    "rep": {
+     "bank": 4,
+     "law": 3,
+     "rivals": -6
+    },
+    "chain": null,
+    "chainsDone": [],
+    "conditions": {
+     "shift": 1,
+     "map": {
+      "quiet": "none",
+      "hollis": "none",
+      "kessler": "none",
+      "cinder": "none",
+      "frontier": "none"
+     }
+    },
+    "cores": 0,
+    "lastShift": {
+     "earned": 2346,
+     "deaths": 0,
+     "kills": 2,
+     "arrests": 0,
+     "wallet": 1546,
+     "contract": null,
+     "boss": null,
+     "hold": false,
+     "escort": false
+    }
+   },
+   "title": "New personal best",
+   "saved": true
+  },
+  {
+   "input": {
+    "career": {
+     "shift": 3,
+     "wallet": -100,
+     "loan": 30000,
+     "rep": {
+      "bank": 0,
+      "law": 0,
+      "rivals": 50
+     }
+    },
+    "banked": 0,
+    "grudge": 9,
+    "jumpers": 0,
+    "rivalsDelta": 0
+   },
+   "career": {
+    "shift": 4,
+    "wallet": -1500,
+    "loan": 28600,
+    "owned": [
+     "cannon"
+    ],
+    "mounted": {
+     "w1": "cannon",
+     "w2": null,
+     "mod": null,
+     "u1": null,
+     "u2": null
+    },
+    "totalBanked": 0,
+    "difficulty": "standard",
+    "grudge": 3,
+    "wanted": 0,
+    "levels": {
+     "shield": 1,
+     "thrust": 1,
+     "armor": 1,
+     "cannon": 1,
+     "missiles": 1,
+     "drones": 1
+    },
+    "sentries": 0,
+    "tugClass": 0,
+    "loanStart": 1,
+    "crew": null,
+    "contract": null,
+    "contractShift": 0,
+    "offers": null,
+    "offersShift": 0,
+    "belt": "hollis",
+    "rep": {
+     "bank": -8,
+     "law": 3,
+     "rivals": 52
+    },
+    "chain": null,
+    "chainsDone": [],
+    "conditions": {
+     "shift": 3,
+     "map": {
+      "quiet": "oreBoom",
+      "hollis": "oreBoom",
+      "kessler": "oreBoom",
+      "cinder": "oreBoom",
+      "frontier": "oreBoom"
+     }
+    },
+    "cores": 0,
+    "lastShift": {
+     "earned": 0,
+     "deaths": 0,
+     "kills": 0,
+     "arrests": 0,
+     "wallet": -1500,
+     "contract": null,
+     "boss": null,
+     "hold": false,
+     "escort": false
+    }
+   },
+   "title": "Shift 3 complete",
+   "saved": true
+  },
+  {
+   "input": {
+    "career": {
+     "shift": 5,
+     "wallet": -9000,
+     "loan": 20000,
+     "difficulty": "hard"
+    },
+    "banked": 100,
+    "grudge": 0,
+    "jumpers": 1,
+    "rivalsDelta": -3
+   },
+   "career": {
+    "shift": 5,
+    "wallet": -11500,
+    "loan": 17400,
+    "owned": [
+     "cannon"
+    ],
+    "mounted": {
+     "w1": "cannon",
+     "w2": null,
+     "mod": null,
+     "u1": null,
+     "u2": null
+    },
+    "totalBanked": 100,
+    "difficulty": "hard",
+    "grudge": 0,
+    "wanted": 0,
+    "levels": {
+     "shield": 1,
+     "thrust": 1,
+     "armor": 1,
+     "cannon": 1,
+     "missiles": 1,
+     "drones": 1
+    },
+    "sentries": 0,
+    "tugClass": 0,
+    "loanStart": 1,
+    "crew": null,
+    "contract": null,
+    "contractShift": 0,
+    "offers": null,
+    "offersShift": 0,
+    "belt": "hollis",
+    "rep": {
+     "bank": -8,
+     "law": 3,
+     "rivals": -3
+    },
+    "chain": null,
+    "chainsDone": [],
+    "conditions": {
+     "shift": 5,
+     "map": {
+      "quiet": "oreBoom",
+      "hollis": "oreBoom",
+      "kessler": "oreBoom",
+      "cinder": "oreBoom",
+      "frontier": "oreBoom"
+     }
+    },
+    "cores": 0,
+    "lastShift": {
+     "earned": 100,
+     "deaths": 0,
+     "kills": 1,
+     "arrests": 0,
+     "wallet": -11500,
+     "contract": null,
+     "boss": null,
+     "hold": false,
+     "escort": false
+    }
+   },
+   "title": "Repossessed",
+   "saved": false
+  },
+  {
+   "input": {
+    "career": {
+     "shift": 9,
+     "wallet": 500,
+     "loan": 2000,
+     "loanStart": 2
+    },
+    "banked": 4000,
+    "grudge": 2,
+    "jumpers": 0,
+    "rivalsDelta": 0
+   },
+   "career": {
+    "shift": 10,
+    "wallet": 2500,
+    "loan": 60000,
+    "owned": [
+     "cannon"
+    ],
+    "mounted": {
+     "w1": "cannon",
+     "w2": null,
+     "mod": null,
+     "u1": null,
+     "u2": null
+    },
+    "totalBanked": 4000,
+    "difficulty": "standard",
+    "grudge": 1,
+    "wanted": 0,
+    "levels": {
+     "shield": 1,
+     "thrust": 1,
+     "armor": 1,
+     "cannon": 1,
+     "missiles": 1,
+     "drones": 1
+    },
+    "sentries": 0,
+    "tugClass": 1,
+    "loanStart": 10,
+    "crew": null,
+    "contract": null,
+    "contractShift": 0,
+    "offers": null,
+    "offersShift": 0,
+    "belt": "hollis",
+    "rep": {
+     "bank": 4,
+     "law": 3,
+     "rivals": 2
+    },
+    "chain": null,
+    "chainsDone": [],
+    "conditions": {
+     "shift": 9,
+     "map": {
+      "quiet": "oreBoom",
+      "hollis": "oreBoom",
+      "kessler": "oreBoom",
+      "cinder": "oreBoom",
+      "frontier": "oreBoom"
+     }
+    },
+    "cores": 0,
+    "lastShift": {
+     "earned": 4000,
+     "deaths": 0,
+     "kills": 0,
+     "arrests": 0,
+     "wallet": 2500,
+     "contract": null,
+     "boss": null,
+     "hold": false,
+     "escort": false,
+     "tradedUp": true
+    }
+   },
+   "title": "Traded up: Mk II \"Refinance\"",
+   "saved": true
+  },
+  {
+   "input": {
+    "career": {
+     "shift": 9,
+     "wallet": -3000,
+     "loan": 1500,
+     "tugClass": 2,
+     "loanStart": 4
+    },
+    "banked": 0,
+    "grudge": 2,
+    "jumpers": 0,
+    "rivalsDelta": 0
+   },
+   "career": {
+    "shift": 10,
+    "wallet": 0,
+    "loan": 119500,
+    "owned": [
+     "cannon"
+    ],
+    "mounted": {
+     "w1": "cannon",
+     "w2": null,
+     "mod": null,
+     "u1": null,
+     "u2": null
+    },
+    "totalBanked": 0,
+    "difficulty": "standard",
+    "grudge": 1,
+    "wanted": 0,
+    "levels": {
+     "shield": 1,
+     "thrust": 1,
+     "armor": 1,
+     "cannon": 1,
+     "missiles": 1,
+     "drones": 1
+    },
+    "sentries": 0,
+    "tugClass": 3,
+    "loanStart": 10,
+    "crew": null,
+    "contract": null,
+    "contractShift": 0,
+    "offers": null,
+    "offersShift": 0,
+    "belt": "hollis",
+    "rep": {
+     "bank": -8,
+     "law": 3,
+     "rivals": 2
+    },
+    "chain": null,
+    "chainsDone": [],
+    "conditions": {
+     "shift": 9,
+     "map": {
+      "quiet": "oreBoom",
+      "hollis": "oreBoom",
+      "kessler": "oreBoom",
+      "cinder": "oreBoom",
+      "frontier": "oreBoom"
+     }
+    },
+    "cores": 0,
+    "lastShift": {
+     "earned": 0,
+     "deaths": 0,
+     "kills": 0,
+     "arrests": 0,
+     "wallet": -4500,
+     "contract": null,
+     "boss": null,
+     "hold": false,
+     "escort": false,
+     "tradedUp": true
+    }
+   },
+   "title": "Traded up: Mk IV \"Golden Parachute\"",
+   "saved": true
+  },
+  {
+   "input": {
+    "career": {
+     "shift": 20,
+     "wallet": 100,
+     "loan": 900,
+     "tugClass": 4,
+     "loanStart": 15
+    },
+    "banked": 50,
+    "grudge": 1,
+    "jumpers": 0,
+    "rivalsDelta": 0
+   },
+   "career": {
+    "shift": 21,
+    "wallet": -750,
+    "loan": 0,
+    "owned": [
+     "cannon"
+    ],
+    "mounted": {
+     "w1": "cannon",
+     "w2": null,
+     "mod": null,
+     "u1": null,
+     "u2": null
+    },
+    "totalBanked": 50,
+    "difficulty": "standard",
+    "grudge": 0,
+    "wanted": 0,
+    "levels": {
+     "shield": 1,
+     "thrust": 1,
+     "armor": 1,
+     "cannon": 1,
+     "missiles": 1,
+     "drones": 1
+    },
+    "sentries": 0,
+    "tugClass": 4,
+    "loanStart": 15,
+    "crew": null,
+    "contract": null,
+    "contractShift": 0,
+    "offers": null,
+    "offersShift": 0,
+    "belt": "hollis",
+    "rep": {
+     "bank": -8,
+     "law": 3,
+     "rivals": 2
+    },
+    "chain": null,
+    "chainsDone": [],
+    "conditions": {
+     "shift": 20,
+     "map": {
+      "quiet": "oreBoom",
+      "hollis": "oreBoom",
+      "kessler": "oreBoom",
+      "cinder": "oreBoom",
+      "frontier": "oreBoom"
+     }
+    },
+    "cores": 0,
+    "lastShift": {
+     "earned": 50,
+     "deaths": 0,
+     "kills": 0,
+     "arrests": 0,
+     "wallet": -750,
+     "contract": null,
+     "boss": null,
+     "hold": false,
+     "escort": false,
+     "tradedUp": true
+    }
+   },
+   "title": "Fleet paid off",
+   "saved": false
+  },
+  {
+   "input": {
+    "career": {
+     "shift": 6,
+     "wallet": 0,
+     "loan": 30000,
+     "rep": {
+      "bank": 45,
+      "law": 99,
+      "rivals": -50
+     },
+     "difficulty": "relaxed"
+    },
+    "banked": 1200,
+    "grudge": 5.5,
+    "jumpers": 3,
+    "rivalsDelta": -9
+   },
+   "career": {
+    "shift": 7,
+    "wallet": -50,
+    "loan": 28750,
+    "owned": [
+     "cannon"
+    ],
+    "mounted": {
+     "w1": "cannon",
+     "w2": null,
+     "mod": null,
+     "u1": null,
+     "u2": null
+    },
+    "totalBanked": 1200,
+    "difficulty": "relaxed",
+    "grudge": 3,
+    "wanted": 0,
+    "levels": {
+     "shield": 1,
+     "thrust": 1,
+     "armor": 1,
+     "cannon": 1,
+     "missiles": 1,
+     "drones": 1
+    },
+    "sentries": 0,
+    "tugClass": 0,
+    "loanStart": 1,
+    "crew": null,
+    "contract": null,
+    "contractShift": 0,
+    "offers": null,
+    "offersShift": 0,
+    "belt": "hollis",
+    "rep": {
+     "bank": 37,
+     "law": 100,
+     "rivals": -59
+    },
+    "chain": null,
+    "chainsDone": [],
+    "conditions": {
+     "shift": 6,
+     "map": {
+      "quiet": "oreBoom",
+      "hollis": "oreBoom",
+      "kessler": "oreBoom",
+      "cinder": "oreBoom",
+      "frontier": "oreBoom"
+     }
+    },
+    "cores": 0,
+    "lastShift": {
+     "earned": 1200,
+     "deaths": 0,
+     "kills": 3,
+     "arrests": 0,
+     "wallet": -50,
+     "contract": null,
+     "boss": null,
+     "hold": false,
+     "escort": false
+    }
+   },
+   "title": "New personal best",
+   "saved": true
+  }
+ ]
+}

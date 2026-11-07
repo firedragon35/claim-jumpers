@@ -7,7 +7,7 @@
 
 use crate::consts::*;
 use crate::entities::{Body, CrabState, Item};
-use crate::events::{Radio, Sfx};
+use crate::events::{Radio, Sfx, Tint};
 use crate::world::World;
 
 /// Rope between two bodies. If stretched past `len`, positions are pulled
@@ -264,6 +264,78 @@ impl World {
         }
         if rattle {
             self.sfx(Sfx::Rattle);
+        }
+    }
+
+    /// Salvage grinder (grindLast): turn the last piece on the line into
+    /// heavy slugs, two per tonne. Its sale value is gone. A reactor
+    /// detonates in the grinder.
+    pub fn grind_last(&mut self) {
+        let last = self.chain.last().and_then(|id| self.item_index(*id));
+        let Some(i) = last.filter(|_| self.mods.grinder && self.ship.alive) else {
+            self.sfx(Sfx::Deny);
+            return;
+        };
+        if self.items[i].def().volatile {
+            self.radio(Radio::GrindReactor, true, false);
+            self.detonate(i);
+            return;
+        }
+        let slugs = (self.items[i].b.mass * 2.0).ceil() as u32;
+        self.remove_item(i);
+        let s = &mut self.ship;
+        s.slugs += slugs;
+        let (x, y, a) = (s.b.x, s.b.y, s.angle);
+        self.popup(x, y - 30.0, format!("+{slugs} SLUGS"), Tint::Text);
+        self.burst(
+            x - a.cos() * 16.0,
+            y - a.sin() * 16.0,
+            16,
+            Tint::Steel,
+            180.0,
+        );
+        self.sfx(Sfx::Grind);
+        self.radio(Radio::Grind, false, false);
+    }
+
+    /// Magnetic scoop (updateScoop): pulls light salvage toward the tug and
+    /// hooks it on contact. The catch is that it pulls pebbles in too.
+    pub(crate) fn update_scoop(&mut self, dt: f64) {
+        if !self.mods.scoop || !self.ship.alive {
+            return;
+        }
+        let s = self.ship.b;
+        // Pull a body toward the tug; returns its distance (infinite if
+        // out of reach, so it can never be close enough to hook).
+        let pull = |b: &mut Body, strength: f64| {
+            let d = b.dist_to(&s);
+            if d > SCOOP_RANGE || d == 0.0 {
+                return f64::INFINITY;
+            }
+            let k = (strength * (1.0 - d / SCOOP_RANGE) * dt) / d;
+            b.vx += (s.x - b.x) * k;
+            b.vy += (s.y - b.y) * k;
+            d
+        };
+        for i in 0..self.items.len() {
+            let it = &mut self.items[i];
+            if it.dead || it.towed || it.hooked_by.is_some() || it.b.mass > SCOOP_MAX_MASS {
+                continue;
+            }
+            let d = pull(&mut it.b, SCOOP_PULL);
+            let (r, mass) = (it.b.r, it.b.mass);
+            if d < s.r + r + 40.0 && self.tow_mass() + mass <= self.mods.winch_cap {
+                self.attach_to_line(i);
+                let (x, y) = (self.items[i].b.x, self.items[i].b.y);
+                self.popup(x, y - 16.0, "SCOOPED".to_owned(), Tint::Cable);
+                self.sfx(Sfx::Hook);
+                self.radio(Radio::Scooped, false, true);
+            }
+        }
+        for r in &mut self.rocks {
+            if r.size == 1 && !r.dead {
+                pull(&mut r.b, SCOOP_PEBBLE_PULL);
+            }
         }
     }
 }

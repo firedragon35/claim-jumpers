@@ -6,7 +6,8 @@
 //! level, heat, engine heat and weapon counters join with their systems.
 
 use crate::controls::Device;
-use crate::look::{col, rgba, text_left, text_width, Look};
+use crate::look::{col, text_left, text_width, Look};
+use cj_sim::career::Career;
 use cj_sim::consts::RIVAL_STAGES;
 use cj_sim::world::fmt_credits;
 use cj_sim::World;
@@ -49,7 +50,7 @@ fn meter(look: &Look, name: &str, x: f32, y: f32, w: f32, frac: f32, fill: u32) 
     draw_rectangle_lines(bx, by, bw, 8.0, 1.0, Color::from_hex(col::PANEL_EDGE));
 }
 
-pub fn draw(look: &Look, w: &World, view: (f32, f32), device: Device) {
+pub fn draw(look: &Look, w: &World, career: Option<&Career>, view: (f32, f32), device: Device) {
     let (vw, vh) = view;
     let (pad, top) = (16.0, 12.0);
 
@@ -63,15 +64,45 @@ pub fn draw(look: &Look, w: &World, view: (f32, f32), device: Device) {
         &look.fonts.display,
         Color::from_hex(col::HAZARD),
     );
-    let line = format!("On the line {} cr", fmt_credits(w.line_value()));
-    text_left(
-        &line,
-        pad,
-        top + 54.0,
-        13.0,
-        &look.fonts.mono,
-        Color::from_hex(col::CABLE),
-    );
+    // Sealed pods stay secret on the HUD too: their value shows as "+ ?".
+    let chain = w
+        .chain
+        .iter()
+        .filter_map(|id| w.item_index(*id))
+        .map(|i| &w.items[i]);
+    let known = chain
+        .clone()
+        .filter(|it| !it.hidden)
+        .fold(0.0, |a, it| a + it.value);
+    let secret = if chain.clone().any(|it| it.hidden) {
+        " + ?"
+    } else {
+        ""
+    };
+    let line = format!("On the line {}{secret} cr", fmt_credits(known));
+    let mut ly = top + 54.0;
+    let online = |s: &str, y: f32, c: u32| {
+        text_left(s, pad, y, 13.0, &look.fonts.mono, Color::from_hex(c));
+    };
+    online(&line, ly, col::CABLE);
+    // Carried-over money from earlier shifts (this shift's haul is "Banked").
+    if let Some(c) = career {
+        ly += 18.0;
+        let (s, colr) = if c.wallet < 0.0 {
+            (
+                format!("Wallet −{} cr overdrawn", fmt_credits(-c.wallet)),
+                col::DANGER,
+            )
+        } else {
+            (format!("Wallet {} cr", fmt_credits(c.wallet)), col::CABLE)
+        };
+        online(&s, ly, colr);
+    }
+    // (The contract line joins with contracts in milestone 5.)
+    if w.mods.grinder || w.ship.slugs > 0 {
+        ly += 18.0;
+        online(&format!("Slugs {}", w.ship.slugs), ly, col::TEXT);
+    }
 
     // Centre: shift and clock (red in the last 30 seconds).
     let shift = format!("Shift {} · Hollis Belt", w.shift_no);
@@ -218,27 +249,4 @@ pub fn draw(look: &Look, w: &World, view: (f32, f32), device: Device) {
             Color::from_hex(col::MUTED),
         );
     }
-}
-
-/// A centred title with a subtitle over a dimmed field (pause, shift end).
-pub fn banner(look: &Look, view: (f32, f32), title: &str, sub: &str) {
-    let (vw, vh) = view;
-    let tw = text_width(title, 64.0, &look.fonts.display);
-    text_left(
-        title,
-        (vw - tw) / 2.0,
-        vh * 0.36,
-        64.0,
-        &look.fonts.display,
-        Color::from_hex(col::HAZARD),
-    );
-    let sw = text_width(sub, 18.0, &look.fonts.body);
-    text_left(
-        sub,
-        (vw - sw) / 2.0,
-        vh * 0.36 + 76.0,
-        18.0,
-        &look.fonts.body,
-        rgba(col::TEXT, 0.9),
-    );
 }

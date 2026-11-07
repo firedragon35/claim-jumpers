@@ -89,6 +89,10 @@ pub struct Ship {
     pub overheated: bool,
     /// Seconds until the hull-alarm or under-attack loops sound again.
     pub alarm_t: f64,
+    /// Grinder slugs loaded; they fire instead of cutter rounds.
+    pub slugs: u32,
+    /// Side-thruster input this step, -1..1 (0 without the part).
+    pub strafe: f64,
 }
 
 impl Ship {
@@ -122,6 +126,8 @@ impl Ship {
             heat: 0.0,
             overheated: false,
             alarm_t: 0.0,
+            slugs: 0,
+            strafe: 0.0,
         }
     }
 
@@ -471,15 +477,15 @@ pub fn make_jumper(
     y: f64,
     variant: Option<Variant>,
     stage: usize,
+    hunter_mul: f64,
 ) -> Jumper {
     let st = &RIVAL_STAGES[stage];
     let variant = variant.unwrap_or_else(|| pick_variant(rng, stage));
     let v = variant.def();
     let fire_t = rng.range(1.0, 2.5);
     let orbit = rng.angle();
-    // (Crews with good standing send half as many hunters: standing
-    // arrives with the career in milestone 3.)
-    let hunter = v.hunter || rng.next() < st.hunters;
+    // Crews with good standing send half as many hunters (`hunter_mul`).
+    let hunter = v.hunter || rng.next() < st.hunters * hunter_mul;
     Jumper {
         id,
         variant,
@@ -574,4 +580,6 @@ pub struct Bullet {
     pub vy: f64,
     pub life: f64,
     pub dmg: f64,
+    /// A heavy grinder slug rather than a cutter round.
+    pub slug: bool,
 }

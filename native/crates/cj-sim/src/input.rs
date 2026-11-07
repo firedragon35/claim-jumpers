@@ -10,7 +10,7 @@ pub struct Input {
     pub reverse: f64,
     /// Turn -1 (left, counter-clockwise on screen) .. 1 (right).
     pub turn: f64,
-    /// Side thrusters -1..1 (needs the thrusters part; none in milestone 1).
+    /// Side thrusters -1..1 (needs the side thrusters part).
     pub strafe: f64,
     pub fire: bool,
     /// Afterburner (both triggers or Shift); arrives in milestone 4.
@@ -26,4 +26,6 @@ pub enum Action {
     Drop,
     /// Cut the whole chain loose.
     Cut,
+    /// Grind the last piece into slugs (needs the salvage grinder).
+    Grind,
 }

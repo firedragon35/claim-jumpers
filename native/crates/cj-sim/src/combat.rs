@@ -273,6 +273,7 @@ impl World {
         // fixer crew's half-grudge arrive in milestones 4 and 3.)
         let before = self.rival_stage();
         self.stats.jumpers += 1;
+        self.rep_delta.rivals += crate::career::REP_RIVAL_KILL;
         self.grudge += 1.0;
         let k = &mut self.kills;
         match variant {

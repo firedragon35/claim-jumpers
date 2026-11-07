@@ -51,6 +51,10 @@ pub enum Sfx {
     Alarm,
     /// The under-attack klaxon.
     AttackAlarm,
+    /// A grinder slug fired.
+    Slug,
+    /// The grinder chewing a piece into slugs.
+    Grind,
 }
 
 /// Lines Marge can say (the radio keys in src/js/04-dispatcher-radio.js).
@@ -90,6 +94,9 @@ pub enum Radio {
     RivalsAnnoyed,
     RivalsHostile,
     RivalsVendetta,
+    Grind,
+    GrindReactor,
+    Scooped,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -122,6 +129,18 @@ pub enum Event {
         y: f64,
         size: f64,
         tint: Tint,
+    },
+    /// A side thruster firing on a tug at (x, y) moving at (vx, vy):
+    /// (px, py) is its starboard direction, `side` which way the puff
+    /// leaves (-1 port, 1 starboard).
+    Strafe {
+        x: f64,
+        y: f64,
+        vx: f64,
+        vy: f64,
+        px: f64,
+        py: f64,
+        side: f64,
     },
     /// A round striking something: a short flash where it hit.
     Hit {

@@ -9,6 +9,7 @@
 //! enough to match its recorded golden traces (tests/golden.rs).
 
 pub mod cable;
+pub mod career;
 pub mod combat;
 pub mod consts;
 pub mod crabs;
@@ -18,6 +19,7 @@ pub mod input;
 pub mod items;
 pub mod js;
 pub mod mods;
+pub mod parts;
 pub mod physics;
 pub mod rivals;
 pub mod rng;

@@ -1,5 +1,5 @@
 {
-  "about": "Golden-trace scenarios shared by the browser exporter (native/tools/golden/export.mjs) and the Rust tests (crates/cj-sim/tests/golden.rs). Each scenario empties the field, places the bodies below, then runs fixed 1/60 s steps with the listed held keys and one-shot actions. Math.random is pinned to 0.5 in the browser and in the Rust test RNG, so spawn rolls and sputter rolls agree without depending on call order. Item grades come from that 0.5 roll. Optional body fields override what the factory produced. Combat scenarios can also place jumpers (variant and position, from the real makeJumper), crabs (state, host item index and optional position, from makeCrab), wreck contents, and the rival grudge; the fire key holds the cannon trigger.",
+  "about": "Golden-trace scenarios shared by the browser exporter (native/tools/golden/export.mjs) and the Rust tests (crates/cj-sim/tests/golden.rs). Each scenario empties the field, places the bodies below, then runs fixed 1/60 s steps with the listed held keys and one-shot actions. Math.random is pinned to 0.5 in the browser and in the Rust test RNG, so spawn rolls and sputter rolls agree without depending on call order. Item grades come from that 0.5 roll. Optional body fields override what the factory produced. Combat scenarios can also place jumpers (variant and position, from the real makeJumper), crabs (state, host item index and optional position, from makeCrab), wreck contents, and the rival grudge; the fire key holds the cannon trigger. A scenario may also fit a loadout (mounted parts, system levels and tug class, through the real computeMods); strafeL and strafeR hold the side thrusters and the grind action runs the salvage grinder.",
   "scenarios": [
     {
       "name": "flight",
@@ -622,6 +622,289 @@
         }
       ],
       "actions": []
+    },
+    {
+      "name": "strafe",
+      "mounted": {
+        "w1": "cannon",
+        "w2": null,
+        "mod": null,
+        "u1": "thrusters",
+        "u2": null
+      },
+      "levels": {
+        "thrust": 3
+      },
+      "ship": {
+        "x": 1500,
+        "y": 4000,
+        "angle": 0
+      },
+      "items": [],
+      "rocks": [],
+      "wrecks": [],
+      "inputs": [
+        {
+          "n": 90,
+          "keys": [
+            "strafeL"
+          ]
+        },
+        {
+          "n": 60,
+          "keys": [
+            "strafeR",
+            "fire"
+          ]
+        },
+        {
+          "n": 120,
+          "keys": [
+            "strafeR",
+            "thrust"
+          ]
+        },
+        {
+          "n": 60,
+          "keys": []
+        }
+      ],
+      "actions": []
+    },
+    {
+      "name": "grinder",
+      "mounted": {
+        "w1": "cannon",
+        "w2": null,
+        "mod": null,
+        "u1": "grinder",
+        "u2": null
+      },
+      "ship": {
+        "x": 4000,
+        "y": 4200,
+        "angle": 0
+      },
+      "items": [
+        {
+          "type": "plate",
+          "x": 3880,
+          "y": 4200
+        },
+        {
+          "type": "scrap",
+          "x": 3900,
+          "y": 4300
+        }
+      ],
+      "rocks": [
+        {
+          "size": 3,
+          "x": 4350,
+          "y": 4200,
+          "vx": 0,
+          "vy": 0,
+          "veined": false
+        }
+      ],
+      "wrecks": [],
+      "inputs": [
+        {
+          "n": 30,
+          "keys": []
+        },
+        {
+          "n": 200,
+          "keys": [
+            "fire"
+          ]
+        },
+        {
+          "n": 40,
+          "keys": []
+        }
+      ],
+      "actions": [
+        {
+          "at": 0,
+          "do": "hook"
+        },
+        {
+          "at": 1,
+          "do": "hook"
+        },
+        {
+          "at": 10,
+          "do": "grind"
+        },
+        {
+          "at": 20,
+          "do": "grind"
+        },
+        {
+          "at": 25,
+          "do": "grind"
+        }
+      ]
+    },
+    {
+      "name": "scoop",
+      "mounted": {
+        "w1": "cannon",
+        "w2": null,
+        "mod": null,
+        "u1": "scoop",
+        "u2": null
+      },
+      "ship": {
+        "x": 1200,
+        "y": 1200,
+        "angle": 0
+      },
+      "items": [
+        {
+          "type": "scrap",
+          "x": 1380,
+          "y": 1250
+        },
+        {
+          "type": "ore",
+          "x": 1250,
+          "y": 1050
+        },
+        {
+          "type": "plate",
+          "x": 1150,
+          "y": 1380
+        }
+      ],
+      "rocks": [
+        {
+          "size": 1,
+          "x": 1050,
+          "y": 1100,
+          "vx": 0,
+          "vy": 0,
+          "veined": false
+        },
+        {
+          "size": 2,
+          "x": 1400,
+          "y": 1000,
+          "vx": 0,
+          "vy": 0,
+          "veined": false
+        }
+      ],
+      "wrecks": [],
+      "inputs": [
+        {
+          "n": 180,
+          "keys": []
+        },
+        {
+          "n": 60,
+          "keys": [
+            "thrust"
+          ]
+        }
+      ],
+      "actions": []
+    },
+    {
+      "name": "loadout",
+      "mounted": {
+        "w1": "cannon",
+        "w2": null,
+        "mod": "twin",
+        "u1": "armor",
+        "u2": "winch"
+      },
+      "levels": {
+        "cannon": 4,
+        "armor": 3,
+        "thrust": 2,
+        "shield": 2
+      },
+      "tugClass": 2,
+      "ship": {
+        "x": 3000,
+        "y": 1600,
+        "angle": 0,
+        "invuln": 0
+      },
+      "items": [
+        {
+          "type": "engine",
+          "x": 2860,
+          "y": 1600
+        },
+        {
+          "type": "engine",
+          "x": 2900,
+          "y": 1720
+        },
+        {
+          "type": "engine",
+          "x": 2900,
+          "y": 1480
+        }
+      ],
+      "rocks": [
+        {
+          "size": 3,
+          "x": 3400,
+          "y": 1600,
+          "vx": 0,
+          "vy": 0,
+          "veined": false
+        },
+        {
+          "size": 2,
+          "x": 3350,
+          "y": 1450,
+          "vx": 0,
+          "vy": 0,
+          "veined": false
+        }
+      ],
+      "wrecks": [],
+      "inputs": [
+        {
+          "n": 160,
+          "keys": [
+            "fire"
+          ]
+        },
+        {
+          "n": 90,
+          "keys": [
+            "thrust",
+            "left"
+          ]
+        },
+        {
+          "n": 60,
+          "keys": [
+            "fire",
+            "right"
+          ]
+        }
+      ],
+      "actions": [
+        {
+          "at": 0,
+          "do": "hook"
+        },
+        {
+          "at": 0,
+          "do": "hook"
+        },
+        {
+          "at": 0,
+          "do": "hook"
+        }
+      ]
     }
   ]
 }

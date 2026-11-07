@@ -5,6 +5,8 @@
 use cj_sim::consts::{rock_size, Variant, STEP};
 use cj_sim::entities::{make_crab, Body, CrabState, JumperState, Rock, Wreck};
 use cj_sim::items::ItemType;
+use cj_sim::mods::compute_mods;
+use cj_sim::parts::{Levels, Mounted, Part, SLOTS, SYSTEMS};
 use cj_sim::rng::Rng;
 use cj_sim::world::Camera;
 use cj_sim::{Action, Input, World};
@@ -39,6 +41,28 @@ fn build(sc: &Value, init: &Value) -> World {
         Rng::Constant(0.5),
         (view[0].as_f64().unwrap(), view[1].as_f64().unwrap()),
     );
+    // An optional loadout, applied as the exporter does: the career's
+    // levels (all 1 for a new career) overridden by the scenario's.
+    if let Some(m) = sc.get("mounted") {
+        let mut mounted: Mounted = [None; 5];
+        for (i, s) in SLOTS.iter().enumerate() {
+            mounted[i] = m[s.key].as_str().and_then(Part::from_key);
+        }
+        let mut levels = Levels::default();
+        for s in SYSTEMS {
+            if let Some(v) = sc["levels"][s.key()].as_u64() {
+                levels.set(s, v as u8);
+            }
+        }
+        w.mods = compute_mods(
+            &mounted,
+            &levels,
+            sc["tugClass"].as_u64().unwrap_or(0) as usize,
+        );
+        w.ship.b.mass = w.mods.mass;
+        w.ship.hp = w.mods.max_hp;
+        w.ship.shield = w.mods.shield_max;
+    }
     let s = &sc["ship"];
     let ship = &mut w.ship;
     ship.b.x = num(s, "x", ship.b.x);
@@ -160,6 +184,7 @@ fn input_for(keys: &[Value]) -> Input {
         thrust: on(held("thrust")),
         reverse: on(held("brake")),
         turn: on(held("right")) - on(held("left")),
+        strafe: on(held("strafeR")) - on(held("strafeL")),
         fire: held("fire"),
         ..Input::default()
     }
@@ -225,6 +250,7 @@ fn check_step(w: &World, want: &Value) -> Result<(), String> {
             s.fire_t,
             s.spin_meter,
             on(s.alive),
+            f64::from(s.slugs),
         ],
     )?;
     let types: Vec<&str> = w.items.iter().map(|it| it.kind.key()).collect();
@@ -409,6 +435,7 @@ fn run(name: &str) {
                 "hook" => Action::Hook,
                 "drop" => Action::Drop,
                 "cut" => Action::Cut,
+                "grind" => Action::Grind,
                 other => panic!("unknown action {other}"),
             };
             (a["at"].as_u64().unwrap(), act)
@@ -483,4 +510,20 @@ fn crabs() {
 #[test]
 fn reactor() {
     run("reactor");
+}
+#[test]
+fn strafe() {
+    run("strafe");
+}
+#[test]
+fn grinder() {
+    run("grinder");
+}
+#[test]
+fn scoop() {
+    run("scoop");
+}
+#[test]
+fn loadout() {
+    run("loadout");
 }

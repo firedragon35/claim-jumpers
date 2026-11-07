@@ -4,6 +4,7 @@
 //! that arrive in later milestones are noted where they slot in, so the
 //! order stays faithful as they are added.
 
+use crate::career::{tier, Career, Rep, Tier};
 use crate::consts::*;
 use crate::entities::*;
 use crate::events::{Event, Radio, Sfx, Tint};
@@ -90,6 +91,10 @@ pub struct World {
     pub diff_jumper_rate: f64,
     pub diff_jumper_cap: f64,
     pub belt_rivals: f64,
+    /// Standing changes earned this shift, applied when it ends.
+    pub rep_delta: Rep,
+    /// Rival crews respect you: half as many hunters come.
+    pub rivals_good: bool,
     pub cam: Camera,
     /// Viewport size in logical pixels; the camera's zoom depends on it.
     pub view: (f64, f64),
@@ -144,6 +149,8 @@ impl World {
             diff_jumper_rate: 1.0,
             diff_jumper_cap: 0.0,
             belt_rivals: 1.0,
+            rep_delta: Rep::default(),
+            rivals_good: false,
             cam: Camera {
                 x: BAY_X,
                 y: BAY_Y,
@@ -162,12 +169,40 @@ impl World {
     /// A new shift: the field is seeded and Marge opens the channel.
     pub fn new_shift(rng: Rng, view: (f64, f64)) -> World {
         let mut w = World::empty(rng, view);
+        w.start_shift();
+        w
+    }
+
+    /// The next shift of a career (newGame): its loadout, difficulty,
+    /// shift number and carried-over rival grudge. (Belts, conditions,
+    /// contracts, crews and the rest of newGame's setup arrive with their
+    /// systems in milestones 4 and 5; this is the Hollis Belt.)
+    pub fn for_career(rng: Rng, view: (f64, f64), c: &Career) -> World {
+        let mut w = World::empty(rng, view);
+        w.mods = c.mods();
+        w.ship = Ship::new(&w.mods);
+        w.shift_no = c.shift;
+        let d = c.mode.def();
+        w.diff_damage = d.damage;
+        w.diff_fees = d.fees;
+        w.diff_jumper_rate = d.jumper_rate;
+        w.diff_jumper_cap = d.jumper_cap;
+        // Crews who hate you start the shift already annoyed.
+        let bad = tier(c.rep.rivals) == Tier::Bad;
+        w.grudge = c.grudge + if bad { 2.0 } else { 0.0 };
+        w.rivals_good = tier(c.rep.rivals) == Tier::Good;
+        w.start_shift();
+        w
+    }
+
+    /// Arm the spawn timers, seed the field and open the radio channel.
+    fn start_shift(&mut self) {
+        let w = self;
         w.jumper_timer = first_jumper_delay(w.shift_no);
         w.rock_timer = ROCK_REFILL_TIME;
         w.wreck_timer = WRECK_REFILL_TIME;
         w.populate();
         w.radio(Radio::Start, true, false);
-        w
     }
 
     pub(crate) fn emit(&mut self, e: Event) {
@@ -196,7 +231,8 @@ impl World {
         let id = self.next_id;
         self.next_id += 1;
         let stage = self.rival_stage();
-        make_jumper(&mut self.rng, id, x, y, variant, stage)
+        let hunter_mul = if self.rivals_good { 0.5 } else { 1.0 };
+        make_jumper(&mut self.rng, id, x, y, variant, stage, hunter_mul)
     }
 
     pub fn item_index(&self, id: u32) -> Option<usize> {
@@ -312,6 +348,7 @@ impl World {
             Action::Hook => self.try_hook(),
             Action::Drop => self.drop_last(),
             Action::Cut => self.cut_all(),
+            Action::Grind => self.grind_last(),
         }
     }
 
@@ -324,7 +361,8 @@ impl World {
         self.time_left -= dt;
 
         self.update_ship(input, dt);
-        // (Partner tug and magnetic scoop: milestones 5 and 3.)
+        // (The co-op partner tug updates here in milestone 5.)
+        self.update_scoop(dt);
         for j in 0..self.jumpers.len() {
             self.update_jumper(j, dt);
         }
@@ -393,6 +431,35 @@ impl World {
         if self.time_left <= 0.0 {
             self.shift_over = true;
         }
+    }
+
+    /// Behind the menus the field keeps drifting while the camera circles
+    /// the carrier (stepAmbient). Nothing collides and no rules run.
+    pub fn step_ambient(&mut self, dt: f64) {
+        self.t += dt;
+        for r in &mut self.rocks {
+            r.b.x += r.b.vx * dt;
+            r.b.y += r.b.vy * dt;
+            r.angle += r.spin * dt;
+        }
+        for w in &mut self.wrecks {
+            w.b.x += w.b.vx * dt;
+            w.b.y += w.b.vy * dt;
+            w.angle += w.spin * dt;
+        }
+        for it in &mut self.items {
+            it.b.x += it.b.vx * dt;
+            it.b.y += it.b.vy * dt;
+            it.angle += it.spin * dt;
+        }
+        // updateEffects runs too: shake, flash and the attack warning fade.
+        self.shake = (self.shake - dt * 30.0).max(0.0);
+        self.screen_flash = (self.screen_flash - dt * 1.6).max(0.0);
+        self.under_attack_t = (self.under_attack_t - dt).max(0.0);
+        let a = self.t * 0.05;
+        self.cam.x = CARRIER_X + a.cos() * 500.0;
+        self.cam.y = CARRIER_Y + a.sin() * 350.0;
+        self.cam.zoom = (self.view.0.min(self.view.1) / 1100.0).clamp(0.45, 0.9);
     }
 
     /// Tug flight: rotation and thrust, both blunted by the weight on the winch.
@@ -469,14 +536,53 @@ impl World {
         s.b.vy += (s.angle.sin() * force * throttle / s.b.mass) * dt;
         s.thrust_level = throttle.abs();
         s.throttle = throttle;
-        let (level, sputtering) = (s.thrust_level, s.sputtering);
-        // (Side thrusters arrive with the shop parts in milestone 3.)
+        let sputtering = s.sputtering;
 
-        // The cannon. (Grinder slugs, which fire instead of cutter rounds,
-        // arrive with the grinder in milestone 3.)
+        // Side thrusters push perpendicular to the heading (+ = starboard)
+        // and dump heat into the shared sink.
+        s.strafe = if mods.thrusters && !s.overheated {
+            input.strafe
+        } else {
+            0.0
+        };
+        let mut puff = None;
+        if s.strafe != 0.0 {
+            let (px, py) = (-s.angle.sin(), s.angle.cos());
+            s.b.vx += (px * STRAFE_FORCE * mods.strafe_mul * s.strafe / s.b.mass) * dt;
+            s.b.vy += (py * STRAFE_FORCE * mods.strafe_mul * s.strafe / s.b.mass) * dt;
+            s.heat += HEAT_STRAFE * mods.strafe_heat_mul * s.strafe.abs() * dt;
+            puff = Some(Event::Strafe {
+                x: s.b.x,
+                y: s.b.y,
+                vx: s.b.vx,
+                vy: s.b.vy,
+                px,
+                py,
+                side: -s.strafe.signum(),
+            });
+        }
+        let level = s.thrust_level.max(s.strafe.abs() * 0.6);
+
+        // The cannon. Grinder slugs fire instead of cutter rounds while any
+        // are left: slow, heavy, and they ignore heat.
         s.fire_t -= dt;
         let mut shots = 0;
-        if input.fire && s.fire_t <= 0.0 && mods.guns() > 0 && !s.overheated {
+        let mut slug = false;
+        if input.fire && s.fire_t <= 0.0 && s.slugs > 0 {
+            let (nx, ny) = (s.angle.cos(), s.angle.sin());
+            s.slugs -= 1;
+            s.fire_t = SLUG_INTERVAL;
+            self.bullets.push(Bullet {
+                x: s.b.x + nx * MUZZLE,
+                y: s.b.y + ny * MUZZLE,
+                vx: s.b.vx + nx * SLUG_SPEED,
+                vy: s.b.vy + ny * SLUG_SPEED,
+                life: SLUG_LIFE,
+                dmg: SLUG_DAMAGE,
+                slug: true,
+            });
+            slug = true;
+        } else if input.fire && s.fire_t <= 0.0 && mods.guns() > 0 && !s.overheated {
             let (nx, ny) = (s.angle.cos(), s.angle.sin());
             s.fire_t = FIRE_INTERVAL * mods.fire_mul;
             // Every barrel fires at once, in parallel.
@@ -489,6 +595,7 @@ impl World {
                     vy: s.b.vy + ny * BULLET_SPEED,
                     life: BULLET_LIFE,
                     dmg: mods.cannon_dmg,
+                    slug: false,
                 });
             }
             // Cannon levels add a fan of angled shots from the muzzle, in pairs.
@@ -502,6 +609,7 @@ impl World {
                         vy: s.b.vy + a.sin() * BULLET_SPEED,
                         life: BULLET_LIFE,
                         dmg: mods.cannon_dmg,
+                        slug: false,
                     });
                 }
             }
@@ -549,6 +657,12 @@ impl World {
         if overheat {
             self.radio(Radio::Overheat, true, false);
             self.sfx(Sfx::Deny);
+        }
+        if let Some(e) = puff {
+            self.emit(e);
+        }
+        if slug {
+            self.sfx(Sfx::Slug);
         }
         if shots > 0 {
             self.sfx(Sfx::Shoot(1));

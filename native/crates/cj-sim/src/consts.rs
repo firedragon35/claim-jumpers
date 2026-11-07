@@ -124,6 +124,20 @@ pub const FIRE_INTERVAL: f64 = 0.13;
 pub const BULLET_SPEED: f64 = 950.0;
 /// Seconds a cutter round lives.
 pub const BULLET_LIFE: f64 = 0.85;
+/// Grinder slugs: seconds between shots, speed, lifetime and damage.
+pub const SLUG_INTERVAL: f64 = 0.28;
+pub const SLUG_SPEED: f64 = 1050.0;
+pub const SLUG_LIFE: f64 = 1.1;
+pub const SLUG_DAMAGE: f64 = 4.0;
+/// Side-thruster force, and heat per second of full strafe.
+pub const STRAFE_FORCE: f64 = SHIP_THRUST * 0.7;
+pub const HEAT_STRAFE: f64 = 45.0;
+/// The magnetic scoop's reach, its pull on light salvage (at most
+/// SCOOP_MAX_MASS tonnes) and on pebbles.
+pub const SCOOP_RANGE: f64 = 230.0;
+pub const SCOOP_PULL: f64 = 320.0;
+pub const SCOOP_PEBBLE_PULL: f64 = 420.0;
+pub const SCOOP_MAX_MASS: f64 = 1.5;
 /// Distance ahead of the tug's centre at which rounds leave the muzzle.
 pub const MUZZLE: f64 = 24.0;
 /// Radians between angled spread shots (cannon levels 2 and up).

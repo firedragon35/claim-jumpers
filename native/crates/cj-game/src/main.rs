@@ -1,12 +1,17 @@
-//! Claim Jumpers, native Windows build. Milestone 2: the core slice
-//! (fly the tug, hook and tow salvage, collide with the field, bank cargo
-//! at the carrier's bay against the shift clock) plus combat: the cutting
-//! cannon and its heat, wrecks cut open, reactors, crabs and rival claim
-//! jumpers, with synthesized sound.
+//! Claim Jumpers, native Windows build. Milestone 3: the career. Fly the
+//! tug, tow and fight through five-minute shifts; after each, the shift
+//! report settles the loan installment, and the machine shop sells parts
+//! and system levels. The career is saved in %APPDATA%\ClaimJumpers.
 //!
-//! `--smoke` runs an unattended check: a scripted tow and firefight, one
-//! simulation step per frame, a screenshot to
-//! %TEMP%\claim-jumpers-m2-smoke.png, and a report on stdout.
+//! The app moves between the browser's screens (appState in
+//! src/js/14-game-state.js): title, play, paused, the shift report and the
+//! shop. Behind every menu the field keeps drifting.
+//!
+//! `--smoke` runs an unattended check through every screen: a scripted
+//! shift (tow and firefight, one simulation step per frame), the pause
+//! card, the report, a purchase in the shop, and the title, saving a
+//! screenshot of each to %TEMP%\claim-jumpers-m3-<screen>.png and printing
+//! a report. It uses a temporary save folder, never the player's.
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
@@ -16,13 +21,20 @@ mod draw;
 mod fx;
 mod hud;
 mod look;
+mod save;
+mod screens;
+mod tug;
+mod ui;
 
+use cj_sim::career::{Career, Mode, Outcome, Settlement};
 use cj_sim::consts::{Variant, BAY_X, BAY_Y, MAX_FRAME_DT, MAX_STEPS_PER_FRAME, STEP};
-use cj_sim::events::Event;
+use cj_sim::events::{Event, Sfx};
 use cj_sim::items::ItemType;
+use cj_sim::parts::Part;
 use cj_sim::rng::Rng;
 use cj_sim::{Action, Input, World};
 use macroquad::prelude::*;
+use screens::{Act, Report};
 
 fn window_conf() -> Conf {
     Conf {
@@ -41,163 +53,657 @@ fn view() -> (f32, f32) {
     (screen_width(), screen_height())
 }
 
-/// Frames the smoke test runs before taking its screenshot.
-const SMOKE_FRAMES: u32 = 150;
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Screen {
+    Title,
+    Play,
+    Paused,
+    Report,
+    Shop,
+}
 
-#[macroquad::main(window_conf)]
-async fn main() {
-    let smoke = std::env::args().any(|a| a == "--smoke");
-    // The smoke run is seeded so every run checks the same field.
-    let seed_rng = || {
-        if smoke {
+/// Everything the game keeps between frames.
+struct App {
+    store: save::Store,
+    bests: save::Bests,
+    /// Difficulty picked for the next new career.
+    mode: Mode,
+    /// The career being played (None on the title screen).
+    career: Option<Career>,
+    /// The saved career, as the title screen describes it.
+    saved: Option<Career>,
+    world: World,
+    fx: fx::Fx,
+    screen: Screen,
+    ui: ui::Ui,
+    report: Option<Report>,
+    title_tab: usize,
+    shop_tab: usize,
+    shop_msg: String,
+    /// Two-press confirmations: erase the save, quit a shift to the menu.
+    armed_new: bool,
+    armed_menu: bool,
+    accumulator: f64,
+    seeded: bool,
+    quit: bool,
+}
+
+/// True when the career goes on after this report (to the shop).
+fn continues(rep: Option<&Report>) -> bool {
+    matches!(
+        rep.map(|r| &r.settlement.outcome),
+        Some(Outcome::Continue | Outcome::TradedUp { .. })
+    )
+}
+
+impl App {
+    fn rng(&self) -> Rng {
+        if self.seeded {
             Rng::seeded(7)
         } else {
             Rng::from_time()
         }
-    };
+    }
 
+    fn open(&mut self, s: Screen) {
+        self.screen = s;
+        self.ui.reset();
+        self.armed_new = false;
+        self.armed_menu = false;
+        if s == Screen::Title {
+            self.saved = self.store.load_career();
+        }
+    }
+
+    /// startShift: a new world for the career's next shift.
+    fn start_shift(&mut self, audio: &mut audio::Audio) {
+        if self.career.is_none() {
+            let c = Career::new(self.mode);
+            self.store.save_career(&c);
+            self.career = Some(c);
+        }
+        let c = self.career.as_ref().expect("a career");
+        self.world = World::for_career(self.rng(), self.world.view, c);
+        self.fx = fx::Fx::new(self.rng());
+        self.accumulator = 0.0;
+        audio.set_thrust(0.0, 0.0, false);
+        self.open(Screen::Play);
+    }
+
+    /// endShift: settle the career and show the report.
+    fn end_shift(&mut self, audio: &mut audio::Audio) {
+        let Some(c) = self.career.as_mut() else {
+            return;
+        };
+        let mode = c.mode;
+        let st: Settlement = c.settle(&self.world);
+        let best = self.bests.get(mode).unwrap_or(0.0);
+        let is_best = st.earned > best;
+        if is_best {
+            self.bests.set(mode, st.earned);
+            self.store.save_bests(&self.bests);
+        }
+        match st.outcome {
+            Outcome::Continue | Outcome::TradedUp { .. } => self.store.save_career(c),
+            // A repossession or a paid-off fleet ends the career.
+            Outcome::Repossessed { .. } | Outcome::FleetPaid => self.store.clear_career(),
+        }
+        let best = self.bests.get(mode).unwrap_or(0.0);
+        self.report = Some(Report::new(st, &self.world, c, best, is_best));
+        audio.set_thrust(0.0, 0.0, false);
+        self.open(Screen::Report);
+    }
+
+    /// The loan was paid off from the shop: the report screen shows the
+    /// trade-up (or the won career), as showPaidOff does.
+    fn paid_off_in_shop(&mut self, outcome: Outcome) {
+        let c = self.career.as_ref().expect("a career");
+        if outcome == Outcome::FleetPaid {
+            self.store.clear_career();
+        } else {
+            self.store.save_career(c);
+        }
+        let mut rep = match self.report.take() {
+            Some(r) => r,
+            None => Report::new(
+                Settlement {
+                    earned: 0.0,
+                    due: 0.0,
+                    rep_delta: [0.0; 3],
+                    outcome: Outcome::Continue,
+                },
+                &self.world,
+                c,
+                self.bests.get(c.mode).unwrap_or(0.0),
+                false,
+            ),
+        };
+        rep.settlement.outcome = outcome;
+        rep.career = c.clone();
+        self.report = Some(rep);
+        self.open(Screen::Report);
+    }
+
+    /// goToTitle: the career is already saved, so drop the in-memory copy;
+    /// a fresh field drifts behind the title card.
+    fn go_to_title(&mut self) {
+        self.career = None;
+        self.report = None;
+        self.world = World::new_shift(self.rng(), self.world.view);
+        self.fx = fx::Fx::new(self.rng());
+        self.open(Screen::Title);
+    }
+
+    fn act(&mut self, a: Act, audio: &mut audio::Audio) {
+        match a {
+            Act::PickMode(m) => {
+                self.mode = m;
+                self.store.save_mode(m);
+                self.armed_new = false;
+            }
+            Act::StartOrContinue => match self.store.load_career() {
+                Some(c) => {
+                    let to_shop = c.shift > 1;
+                    self.career = Some(c);
+                    if to_shop {
+                        self.shop_msg.clear();
+                        self.open(Screen::Shop);
+                    } else {
+                        self.start_shift(audio);
+                    }
+                }
+                None => {
+                    self.career = None;
+                    self.start_shift(audio);
+                }
+            },
+            Act::NewCareer => {
+                if !self.armed_new {
+                    self.armed_new = true;
+                    return;
+                }
+                self.store.clear_career();
+                let c = Career::new(self.mode);
+                self.store.save_career(&c);
+                self.career = Some(c);
+                self.start_shift(audio);
+            }
+            Act::Quit => self.quit = true,
+            Act::Resume => self.open(Screen::Play),
+            Act::EndShiftNow => self.end_shift(audio),
+            Act::PauseToMenu => {
+                // Quitting mid-shift must not dodge the installment: it ends
+                // the shift (two presses). A repossession or payoff stays on
+                // the report so the player sees it.
+                if !self.armed_menu {
+                    self.armed_menu = true;
+                    return;
+                }
+                self.end_shift(audio);
+                if continues(self.report.as_ref()) {
+                    self.go_to_title();
+                }
+            }
+            Act::ReportNext => {
+                if continues(self.report.as_ref()) {
+                    self.shop_msg.clear();
+                    self.open(Screen::Shop);
+                } else {
+                    // A fresh career keeps the mode you were playing.
+                    let mode = self.career.as_ref().map_or(self.mode, |c| c.mode);
+                    let c = Career::new(mode);
+                    self.store.save_career(&c);
+                    self.career = Some(c);
+                    self.start_shift(audio);
+                }
+            }
+            Act::ToMenu => self.go_to_title(),
+            Act::StartShift => self.start_shift(audio),
+            Act::Pay(limit) => {
+                let c = self.career.as_mut().expect("a career");
+                match c.pay_extra(limit) {
+                    Ok((msg, None)) => {
+                        audio.sfx(Sfx::Bank);
+                        self.store.save_career(c);
+                        self.shop_msg = msg;
+                    }
+                    Ok((_, Some(outcome))) => {
+                        audio.sfx(Sfx::Bank);
+                        self.paid_off_in_shop(outcome);
+                    }
+                    Err(msg) => self.shop_msg = msg,
+                }
+            }
+            Act::Buy(p) | Act::Mount(p) | Act::Unmount(p) => {
+                let c = self.career.as_mut().expect("a career");
+                let (res, sound) = match a {
+                    Act::Buy(_) => (c.buy_part(p), Sfx::Bank),
+                    Act::Mount(_) => (c.mount(p), Sfx::Hook),
+                    _ => (c.unmount(p), Sfx::Drop),
+                };
+                self.finish_shop(res, sound, audio);
+            }
+            Act::Level(s) => {
+                let c = self.career.as_mut().expect("a career");
+                let res = c.buy_level(s);
+                self.finish_shop(res, Sfx::Bank, audio);
+            }
+        }
+    }
+
+    fn finish_shop(&mut self, res: Result<String, String>, sound: Sfx, audio: &mut audio::Audio) {
+        match res {
+            Ok(msg) => {
+                audio.sfx(sound);
+                self.store
+                    .save_career(self.career.as_ref().expect("a career"));
+                self.shop_msg = msg;
+            }
+            Err(msg) => self.shop_msg = msg,
+        }
+    }
+}
+
+#[macroquad::main(window_conf)]
+async fn main() {
+    let smoke = std::env::args().any(|a| a == "--smoke");
+    if smoke {
+        // A check run gets its own empty save folder.
+        let dir = std::env::temp_dir().join(format!("claim-jumpers-smoke-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::env::set_var("CLAIM_JUMPERS_DATA", &dir);
+    }
+    let seeded = |s: u32| {
+        if smoke {
+            Rng::seeded(s)
+        } else {
+            Rng::from_time()
+        }
+    };
     let look = look::Look::new();
     let mut audio = audio::Audio::start();
     if let Some(e) = &audio.error {
         eprintln!("sound is off: {e}");
     }
-    let mut sfx_count: u64 = 0;
     let mut controls = controls::Controls::new();
-    let mut fx_rng = seed_rng();
+    let mut fx_rng = seeded(7);
     let stars = draw::Stars::new(&mut fx_rng);
     let mut vignette = draw::Vignette::new();
-    let mut fx = fx::Fx::new(seed_rng());
+    let store = save::Store::open();
     let (vw, vh) = view();
-    let mut world = World::new_shift(seed_rng(), (f64::from(vw), f64::from(vh)));
-    let mut accumulator = 0.0f64;
-    let mut paused = false;
-    let mut frame: u32 = 0;
-    let mut steps: u64 = 0;
+    let mut app = App {
+        bests: store.load_bests(),
+        mode: store.load_mode(),
+        saved: store.load_career(),
+        store,
+        career: None,
+        world: World::new_shift(seeded(7), (f64::from(vw), f64::from(vh))),
+        fx: fx::Fx::new(seeded(7)),
+        screen: Screen::Title,
+        ui: ui::Ui::new(),
+        report: None,
+        title_tab: 0,
+        shop_tab: 0,
+        shop_msg: String::new(),
+        armed_new: false,
+        armed_menu: false,
+        accumulator: 0.0,
+        seeded: smoke,
+        quit: false,
+    };
+    let mut sm = Smoke::default();
+    if smoke {
+        app.act(Act::StartOrContinue, &mut audio);
+    }
     let start = get_time();
 
     loop {
         controls.poll();
         let (vw, vh) = view();
-        world.view = (f64::from(vw), f64::from(vh));
+        app.world.view = (f64::from(vw), f64::from(vh));
+        // Both readers run every frame so their button edges stay current.
         let presses = controls.presses();
+        let keys = controls.menu();
         if presses.mute {
             audio.toggle_mute();
         }
+        let menu_in = ui::MenuInput {
+            nav: app.ui.repeat(keys.dir),
+            activate: keys.activate,
+            tab: keys.tab,
+            back: false,
+            start: keys.start,
+        };
 
-        if world.shift_over {
-            // Placeholder until the end-of-shift report and career screens
-            // (milestone 3): Enter starts a fresh shift.
-            if is_key_pressed(KeyCode::Enter) {
-                world = World::new_shift(Rng::from_time(), world.view);
-                fx = fx::Fx::new(Rng::from_time());
-                accumulator = 0.0;
-            }
-        } else if presses.pause {
-            // Placeholder pause: freezes the shift. The pause menu
-            // arrives with the other menus in milestone 3.
-            paused = !paused;
-        }
-
-        if !paused && !world.shift_over {
-            // One-shot cable commands land before the next step, as the
-            // browser's key handlers run between frames.
-            for a in &presses.actions {
-                world.action(*a);
-            }
-            if smoke {
-                smoke_script(&mut world, frame);
-            }
-            let input = if smoke {
-                smoke_input(frame)
-            } else {
-                controls.sample()
-            };
-            // Fixed-step simulation; a long stall drops the backlog instead
-            // of spiralling (frame() in src/js/19-boot.js).
-            let n_max = if smoke { 1 } else { MAX_STEPS_PER_FRAME };
-            accumulator += if smoke {
-                STEP
-            } else {
-                f64::from(get_frame_time()).min(MAX_FRAME_DT)
-            };
-            let mut n = 0;
-            while accumulator >= STEP && n < n_max && !world.shift_over {
-                world.step(&input, STEP);
-                fx.absorb(&world.events);
-                audio.tick(STEP);
-                for e in &world.events {
-                    match e {
-                        Event::Sfx(s) => {
-                            audio.sfx(*s);
-                            sfx_count += 1;
-                        }
-                        Event::Thrust {
-                            level,
-                            load,
-                            sputtering,
-                        } => audio.set_thrust(*level, *load, *sputtering),
-                        _ => {}
+        // Simulation, or the drifting field behind the menus.
+        let dt = f64::from(get_frame_time()).min(MAX_FRAME_DT);
+        match app.screen {
+            Screen::Play => {
+                if presses.pause && !smoke {
+                    audio.set_thrust(0.0, 0.0, false);
+                    app.open(Screen::Paused);
+                } else {
+                    play_steps(
+                        &mut app,
+                        &presses,
+                        &mut controls,
+                        &mut audio,
+                        smoke,
+                        &mut sm,
+                    );
+                    if app.world.shift_over {
+                        app.end_shift(&mut audio);
                     }
                 }
-                world.events.clear();
-                fx.emit_ambient(&world);
-                fx.update(STEP);
-                accumulator -= STEP;
-                n += 1;
-                steps += 1;
             }
-            if n == MAX_STEPS_PER_FRAME {
-                accumulator = 0.0;
+            Screen::Paused => {}
+            _ => {
+                app.world.step_ambient(dt);
+                app.fx.update(dt);
+                audio.set_thrust(0.0, 0.0, false);
             }
         }
 
+        // Draw the field, then the HUD or the screen's card.
+        let dpi = screen_dpi_scale();
         draw::render(draw::Scene {
             look: &look,
-            world: &world,
-            fx: &fx,
+            world: &app.world,
+            fx: &app.fx,
             stars: &stars,
             vignette: &mut vignette,
             rng: &mut fx_rng,
             device: controls.last_device,
             view: (vw, vh),
-            dpi: screen_dpi_scale(),
+            dpi,
+            show_tug: app.screen != Screen::Title,
+            playing: app.screen == Screen::Play,
         });
-        hud::draw(&look, &world, (vw, vh), controls.last_device);
-        if world.shift_over {
-            let sub = format!(
-                "Banked {} cr. Press Enter for a new shift.",
-                cj_sim::world::fmt_credits(world.banked)
+        if matches!(app.screen, Screen::Play | Screen::Paused) {
+            hud::draw(
+                &look,
+                &app.world,
+                app.career.as_ref(),
+                (vw, vh),
+                controls.last_device,
             );
-            hud::banner(&look, (vw, vh), "SHIFT OVER", &sub);
-        } else if paused {
-            hud::banner(&look, (vw, vh), "PAUSED", "Press P or Esc to resume.");
         }
-        // The engine falls silent while the shift is frozen.
-        if paused || world.shift_over {
-            audio.set_thrust(0.0, 0.0, false);
+        let picked = match app.screen {
+            Screen::Play => None,
+            Screen::Paused => {
+                ui::backdrop((vw, vh));
+                let mut menu = menu_in;
+                menu.back = presses.pause; // P or Esc resumes
+                screens::pause(&look, &mut app.ui, &menu, (vw, vh), dpi, app.armed_menu)
+            }
+            Screen::Title => {
+                ui::backdrop((vw, vh));
+                let v = screens::TitleView {
+                    saved: app.saved.as_ref(),
+                    mode: app.mode,
+                    best: app.bests.get(app.mode),
+                    tab: &mut app.title_tab,
+                    armed_new: app.armed_new,
+                };
+                screens::title(&look, &mut app.ui, &menu_in, (vw, vh), dpi, v)
+            }
+            Screen::Report => {
+                ui::backdrop((vw, vh));
+                let rep = app.report.as_ref().expect("a report");
+                screens::report(&look, &mut app.ui, &menu_in, (vw, vh), dpi, rep)
+            }
+            Screen::Shop => {
+                ui::backdrop((vw, vh));
+                let v = screens::ShopView {
+                    career: app.career.as_ref().expect("a career"),
+                    tab: &mut app.shop_tab,
+                    msg: &app.shop_msg,
+                    t: get_time() as f32,
+                };
+                screens::shop(&look, &mut app.ui, &menu_in, (vw, vh), dpi, v, &mut fx_rng)
+            }
+        };
+        let picked = if smoke { sm.drive(&mut app) } else { picked };
+        if let Some(a) = picked {
+            app.act(a, &mut audio);
         }
-
-        if smoke && frame == SMOKE_FRAMES {
-            smoke_report(
-                &world,
-                &fx,
-                &audio,
-                sfx_count,
-                frame,
-                steps,
-                get_time() - start,
-            );
+        if smoke && sm.capture(&app, start) {
+            sm.finish(&app, &audio, get_time() - start);
+            // The check's save folder was its own; leave nothing behind.
+            if let Some(dir) = app.store.folder() {
+                let _ = std::fs::remove_dir_all(dir);
+            }
             std::process::exit(0);
         }
-        frame += 1;
+        if app.quit {
+            break;
+        }
         next_frame().await;
+    }
+}
+
+/// Run this frame's fixed simulation steps (frame() in src/js/19-boot.js).
+fn play_steps(
+    app: &mut App,
+    presses: &controls::Presses,
+    controls: &mut controls::Controls,
+    audio: &mut audio::Audio,
+    smoke: bool,
+    sm: &mut Smoke,
+) {
+    // One-shot cable commands land before the next step, as the browser's
+    // key handlers run between frames.
+    for a in &presses.actions {
+        app.world.action(*a);
+    }
+    if smoke {
+        smoke_script(&mut app.world, sm.frame);
+    }
+    let input = if smoke {
+        smoke_input(sm.frame)
+    } else {
+        controls.sample()
+    };
+    // Fixed-step; a long stall drops the backlog instead of spiralling.
+    let n_max = if smoke { 1 } else { MAX_STEPS_PER_FRAME };
+    app.accumulator += if smoke {
+        STEP
+    } else {
+        f64::from(get_frame_time()).min(MAX_FRAME_DT)
+    };
+    let mut n = 0;
+    while app.accumulator >= STEP && n < n_max && !app.world.shift_over {
+        app.world.step(&input, STEP);
+        app.fx.absorb(&app.world.events);
+        audio.tick(STEP);
+        for e in &app.world.events {
+            match e {
+                Event::Sfx(s) => {
+                    audio.sfx(*s);
+                    sm.sfx += 1;
+                }
+                Event::Thrust {
+                    level,
+                    load,
+                    sputtering,
+                } => audio.set_thrust(*level, *load, *sputtering),
+                _ => {}
+            }
+        }
+        app.world.events.clear();
+        app.fx.emit_ambient(&app.world);
+        app.fx.update(STEP);
+        app.accumulator -= STEP;
+        n += 1;
+        sm.steps += 1;
+    }
+    if n == MAX_STEPS_PER_FRAME {
+        app.accumulator = 0.0;
+    }
+}
+
+/* ------------------------------ Smoke run ------------------------------ */
+
+/// Frames of scripted flight before the shift is cut short.
+const SMOKE_FRAMES: u32 = 150;
+
+/// The unattended check's progress through the screens.
+#[derive(Default)]
+struct Smoke {
+    frame: u32,
+    steps: u64,
+    sfx: u64,
+    /// Frames spent on the current screen.
+    on_screen: u32,
+    last: Option<Screen>,
+    shots: Vec<String>,
+    lines: Vec<String>,
+    bought: bool,
+}
+
+impl Smoke {
+    /// The scripted player: fly, pause, end the shift, shop, go to the title.
+    fn drive(&mut self, app: &mut App) -> Option<Act> {
+        if self.last != Some(app.screen) {
+            self.last = Some(app.screen);
+            self.on_screen = 0;
+        }
+        self.on_screen += 1;
+        if app.screen == Screen::Play {
+            self.frame += 1;
+        }
+        // Each screen draws for a few frames, is captured on its third
+        // (capture runs after drawing), and is left on its fourth.
+        let leave = self.on_screen == 4;
+        match app.screen {
+            Screen::Play if self.frame == SMOKE_FRAMES => {
+                app.open(Screen::Paused);
+                None
+            }
+            Screen::Paused if leave => Some(Act::EndShiftNow),
+            Screen::Report if leave => {
+                if let Some(c) = app.career.as_mut() {
+                    // Enough in the wallet to show a purchase.
+                    c.wallet += 5000.0;
+                }
+                Some(Act::ReportNext)
+            }
+            Screen::Shop if self.on_screen == 2 && !self.bought => {
+                self.bought = true;
+                Some(Act::Buy(Part::Thrusters))
+            }
+            // Then the Parts tab, as LB / RB would switch to it.
+            Screen::Shop if leave => {
+                app.shop_tab = 1;
+                None
+            }
+            Screen::Shop if self.on_screen == 7 => {
+                let c = app.career.as_ref().expect("a career");
+                self.lines.push(format!(
+                    "  shop: {} wallet {} cr; thrusters mounted: {}",
+                    app.shop_msg,
+                    c.wallet,
+                    c.is_mounted(Part::Thrusters)
+                ));
+                Some(Act::ToMenu)
+            }
+            _ => None,
+        }
+    }
+
+    /// Save a screenshot of each screen once it has settled; true when the
+    /// tour is done.
+    fn capture(&mut self, app: &App, start: f64) -> bool {
+        let name = match app.screen {
+            Screen::Play if self.frame == SMOKE_FRAMES - 1 => "play",
+            Screen::Paused if self.on_screen == 3 => "pause",
+            Screen::Report if self.on_screen == 3 => "report",
+            Screen::Shop if self.on_screen == 3 => "shop",
+            Screen::Shop if self.on_screen == 6 => "parts",
+            Screen::Title if self.on_screen == 3 && self.shots.len() == 5 => "title",
+            _ => return false,
+        };
+        let path = std::env::temp_dir().join(format!("claim-jumpers-m3-{name}.png"));
+        // The framebuffer reads bottom row first and carries the alpha of
+        // the last blend; flip it and make it opaque.
+        let mut img = get_screen_data();
+        let row = usize::from(img.width) * 4;
+        let flipped: Vec<u8> = img.bytes.chunks(row).rev().flatten().copied().collect();
+        img.bytes = flipped;
+        for px in img.bytes.chunks_mut(4) {
+            px[3] = 255;
+        }
+        img.export_png(&path.to_string_lossy());
+        if name == "play" {
+            let w = &app.world;
+            let s = &w.ship;
+            self.lines.push(format!(
+                "  play: {} frames, {} steps in {:.2} s; tug ({:.1}, {:.1}) hull {:.1} shield {:.1}; chain {} ({:.1} t); {} shots, {} jumpers, {} crabs, {} rocks",
+                self.frame, self.steps, get_time() - start, s.b.x, s.b.y, s.hp, s.shield,
+                w.chain.len(), w.tow_mass(), w.shots_fired, w.jumpers.len(), w.crabs.len(), w.rocks.len()
+            ));
+        }
+        if name == "report" {
+            let r = app.report.as_ref().expect("a report");
+            let c = &r.career;
+            self.lines.push(format!(
+                "  report: earned {} cr, installment {} cr, wallet {} cr, loan {} cr, next shift {}, outcome {:?}",
+                r.settlement.earned, r.settlement.due, c.wallet, c.loan, c.shift, r.settlement.outcome
+            ));
+        }
+        self.shots.push(path.display().to_string());
+        name == "title"
+    }
+
+    fn finish(&self, app: &App, audio: &audio::Audio, secs: f64) {
+        println!("M3 SMOKE REPORT");
+        println!(
+            "  view: {:.0} x {:.0} logical px, dpi scale {:.2}",
+            app.world.view.0,
+            app.world.view.1,
+            screen_dpi_scale()
+        );
+        for l in &self.lines {
+            println!("{l}");
+        }
+        let saved = app.store.load_career();
+        println!(
+            "  save: folder {}; career on disk: {}",
+            app.store
+                .folder()
+                .map_or("none".into(), |p| p.display().to_string()),
+            saved.map_or("none".to_owned(), |c| format!(
+                "shift {}, wallet {} cr, {} parts owned",
+                c.shift,
+                c.wallet,
+                c.owned.len()
+            ))
+        );
+        println!(
+            "  title shows: {}",
+            app.saved
+                .as_ref()
+                .map_or("Start career".to_owned(), |c| format!(
+                    "Continue · shift {}",
+                    c.shift
+                ))
+        );
+        println!(
+            "  sound: {} ({} effects requested)",
+            audio.error.as_deref().unwrap_or("output stream open"),
+            self.sfx
+        );
+        println!("  total {secs:.2} s");
+        for s in &self.shots {
+            println!("  screenshot: {s}");
+        }
     }
 }
 
 /// Smoke script: put a piece of ore beside the tug and hook it, with a
 /// rival cutter and a riding crab close by so combat is on screen.
 fn smoke_script(w: &mut World, frame: u32) {
-    if frame == 0 {
+    if frame == 1 {
         // Start well clear of the bay, or the bay banks the ore at once.
         w.ship.b.x = BAY_X - 500.0;
         let it = w.new_item(ItemType::Ore, BAY_X - 500.0, BAY_Y + 110.0, 0.0, 0.0);
@@ -214,8 +720,10 @@ fn smoke_script(w: &mut World, frame: u32) {
         w.crabs.push(crab);
         let j = w.new_jumper(BAY_X - 1100.0, BAY_Y - 200.0, Some(Variant::Cutter));
         w.jumpers.push(j);
+        // Some salvage already banked, so the report has numbers in it.
+        w.banked = 1840.0;
     }
-    if frame == 2 {
+    if frame == 3 {
         w.action(Action::Hook);
     }
 }
@@ -229,84 +737,4 @@ fn smoke_input(frame: u32) -> Input {
         fire: true,
         ..Input::default()
     }
-}
-
-fn smoke_report(
-    w: &World,
-    fx: &fx::Fx,
-    audio: &audio::Audio,
-    sfx_count: u64,
-    frame: u32,
-    steps: u64,
-    secs: f64,
-) {
-    let shot = std::env::temp_dir().join("claim-jumpers-m2-smoke.png");
-    // The framebuffer reads bottom row first and carries the alpha of the
-    // last blend; flip it and make it opaque so the PNG shows the window.
-    let mut img = get_screen_data();
-    let row = usize::from(img.width) * 4;
-    let flipped: Vec<u8> = img.bytes.chunks(row).rev().flatten().copied().collect();
-    img.bytes = flipped;
-    for px in img.bytes.chunks_mut(4) {
-        px[3] = 255;
-    }
-    img.export_png(&shot.to_string_lossy());
-    let s = &w.ship;
-    let finite = s.b.x.is_finite()
-        && s.b.y.is_finite()
-        && w.items
-            .iter()
-            .all(|i| i.b.x.is_finite() && i.b.y.is_finite());
-    println!("M2 SMOKE REPORT");
-    println!(
-        "  frames: {frame} in {secs:.2} s ({:.0} fps), sim steps: {steps}",
-        f64::from(frame) / secs.max(1e-9)
-    );
-    println!(
-        "  view: {:.0} x {:.0} logical px, dpi scale {:.2}",
-        w.view.0,
-        w.view.1,
-        screen_dpi_scale()
-    );
-    println!(
-        "  field: {} rocks, {} wrecks, {} items",
-        w.rocks.len(),
-        w.wrecks.len(),
-        w.items.len()
-    );
-    println!(
-        "  tug: ({:.1}, {:.1}) speed {:.1}, hull {:.1}, shield {:.1}",
-        s.b.x,
-        s.b.y,
-        s.b.speed(),
-        s.hp,
-        s.shield
-    );
-    println!(
-        "  chain: {} item(s), {:.1} t; banked {} cr",
-        w.chain.len(),
-        w.tow_mass(),
-        w.banked
-    );
-    println!(
-        "  camera zoom {:.3}; particles {}",
-        w.cam.zoom,
-        fx.particles.len()
-    );
-    println!(
-        "  combat: {} shots fired, heat {:.1}, {} rounds and {} bolts in flight, {} jumpers, {} crabs, grudge {}",
-        w.shots_fired,
-        s.heat,
-        w.bullets.len(),
-        w.ebullets.len(),
-        w.jumpers.len(),
-        w.crabs.len(),
-        w.grudge
-    );
-    println!(
-        "  sound: {} ({sfx_count} effects requested)",
-        audio.error.as_deref().unwrap_or("output stream open")
-    );
-    println!("  positions finite: {finite}");
-    println!("  screenshot: {}", shot.display());
 }

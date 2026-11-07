@@ -46,18 +46,40 @@ pub struct Controls {
     gilrs: Option<Gilrs>,
     /// Buttons held last frame, for rising edges (holding Y must not hook every frame).
     prev: Vec<Button>,
+    /// The same for menu buttons, tracked separately so a press is seen by
+    /// both readers whichever screen is up.
+    menu_prev: Vec<Button>,
     pub last_device: Device,
 }
 
 /// Button → one-shot, as PAD_TAPS: Y hook, B drop last, LB cut all,
-/// Start pause, Back mute. (X grinds once the grinder arrives in milestone 3.)
-const PAD_TAPS: [(Button, Tap); 5] = [
+/// X grind, Start pause, Back mute.
+const PAD_TAPS: [(Button, Tap); 6] = [
     (Button::North, Tap::Act(Action::Hook)),
     (Button::East, Tap::Act(Action::Drop)),
     (Button::LeftTrigger, Tap::Act(Action::Cut)),
+    (Button::West, Tap::Act(Action::Grind)),
     (Button::Start, Tap::Pause),
     (Button::Select, Tap::Mute),
 ];
+
+/// Pad buttons the menus read: A press, LB / RB tabs, Start primary.
+const MENU_BUTTONS: [Button; 4] = [
+    Button::South,
+    Button::LeftTrigger,
+    Button::RightTrigger,
+    Button::Start,
+];
+
+/// One frame of menu controls, before key-repeat.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct MenuKeys {
+    /// Direction held (arrow keys, D-pad or left stick).
+    pub dir: Option<(f32, f32)>,
+    pub activate: bool,
+    pub tab: i32,
+    pub start: bool,
+}
 
 impl Controls {
     pub fn new() -> Controls {
@@ -65,6 +87,7 @@ impl Controls {
             // A machine without gamepad support still plays on the keyboard.
             gilrs: Gilrs::new().ok(),
             prev: Vec::new(),
+            menu_prev: Vec::new(),
             last_device: Device::Keyboard,
         }
     }
@@ -128,6 +151,9 @@ impl Controls {
         if key(KeyCode::X) {
             out.actions.push(Action::Cut);
         }
+        if key(KeyCode::G) {
+            out.actions.push(Action::Grind);
+        }
         out.pause = key(KeyCode::P) || key(KeyCode::Escape);
         out.mute = key(KeyCode::M);
         if !out.actions.is_empty() || out.pause || out.mute {
@@ -159,6 +185,75 @@ impl Controls {
             }
         }
         self.prev = now;
+        out
+    }
+
+    /// Menu controls this frame (menuNav): arrows, D-pad or the left stick
+    /// point, Enter / Space / A press, LB / RB step tabs, Start presses
+    /// the screen's primary button.
+    pub fn menu(&mut self) -> MenuKeys {
+        let mut out = MenuKeys::default();
+        let held = |k: KeyCode| is_key_down(k);
+        let mut dir = if held(KeyCode::Up) {
+            Some((0.0, -1.0))
+        } else if held(KeyCode::Down) {
+            Some((0.0, 1.0))
+        } else if held(KeyCode::Left) {
+            Some((-1.0, 0.0))
+        } else if held(KeyCode::Right) {
+            Some((1.0, 0.0))
+        } else {
+            None
+        };
+        out.activate = is_key_pressed(KeyCode::Enter)
+            || is_key_pressed(KeyCode::KpEnter)
+            || is_key_pressed(KeyCode::Space);
+        if dir.is_some() || out.activate {
+            self.last_device = Device::Keyboard;
+        }
+        let Some(g) = self.gilrs.as_mut() else {
+            out.dir = dir;
+            return out;
+        };
+        let mut now = Vec::new();
+        if let Some(id) = active_pad(g) {
+            let pad = g.gamepad(id);
+            let p = |b: Button| pad.is_pressed(b);
+            let (ax, ay) = (pad.value(Axis::LeftStickX), pad.value(Axis::LeftStickY));
+            // gilrs reports stick up as positive Y; the browser's axis 1 is down.
+            let pad_dir = if p(Button::DPadUp) || ay > 0.6 {
+                Some((0.0, -1.0))
+            } else if p(Button::DPadDown) || ay < -0.6 {
+                Some((0.0, 1.0))
+            } else if p(Button::DPadLeft) || ax < -0.6 {
+                Some((-1.0, 0.0))
+            } else if p(Button::DPadRight) || ax > 0.6 {
+                Some((1.0, 0.0))
+            } else {
+                None
+            };
+            if pad_dir.is_some() {
+                dir = pad_dir;
+                self.last_device = Device::Pad;
+            }
+            now = MENU_BUTTONS.iter().copied().filter(|b| p(*b)).collect();
+        }
+        let edge = |b: Button| now.contains(&b) && !self.menu_prev.contains(&b);
+        if edge(Button::South) {
+            out.activate = true;
+        }
+        if edge(Button::LeftTrigger) {
+            out.tab = -1;
+        }
+        if edge(Button::RightTrigger) {
+            out.tab = 1;
+        }
+        out.start = edge(Button::Start);
+        if now.iter().any(|b| edge(*b)) {
+            self.last_device = Device::Pad;
+        }
+        self.menu_prev = now;
+        out.dir = dir;
         out
     }
 
