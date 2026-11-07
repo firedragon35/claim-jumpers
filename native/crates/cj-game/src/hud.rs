@@ -1,0 +1,198 @@
+//! The in-flight HUD (the #hud panel in src/page.html, styled by
+//! src/styles.css and filled by updateHud). Drawn in logical pixels.
+//!
+//! Milestone 1 shows what the slice has: banked and on-the-line credits,
+//! the shift clock, shield, hull and winch. Wallet, contracts, wanted
+//! level, heat, engine heat and weapon counters join with their systems.
+
+use crate::controls::Device;
+use crate::look::{col, rgba, text_left, text_width, Look};
+use cj_sim::world::fmt_credits;
+use cj_sim::World;
+use macroquad::prelude::*;
+
+/// Uppercase, letter-spaced label (.label: 11px, 0.14em, muted).
+fn label(look: &Look, text: &str, x: f32, y: f32, color: Color) -> f32 {
+    let size = 11.0;
+    let spacing = size * 0.14;
+    let mut cx = x;
+    for ch in text.to_uppercase().chars() {
+        let s = ch.to_string();
+        cx += text_left(&s, cx, y, size, &look.fonts.mono_light, color) + spacing;
+    }
+    cx - x
+}
+
+fn label_width(look: &Look, text: &str) -> f32 {
+    let size = 11.0;
+    text.to_uppercase()
+        .chars()
+        .map(|c| text_width(&c.to_string(), size, &look.fonts.mono_light) + size * 0.14)
+        .sum()
+}
+
+/// A meter row: label column, then an 8 px bar with a 1 px edge.
+fn meter(look: &Look, name: &str, x: f32, y: f32, w: f32, frac: f32, fill: u32) {
+    label(look, name, x, y, Color::from_hex(col::MUTED));
+    let bx = x + 52.0 + 8.0;
+    let bw = w - 60.0;
+    let by = y + 2.0;
+    draw_rectangle(bx, by, bw, 8.0, Color::from_hex(0x141b2b));
+    draw_rectangle(
+        bx,
+        by,
+        bw * frac.clamp(0.0, 1.0),
+        8.0,
+        Color::from_hex(fill),
+    );
+    draw_rectangle_lines(bx, by, bw, 8.0, 1.0, Color::from_hex(col::PANEL_EDGE));
+}
+
+pub fn draw(look: &Look, w: &World, view: (f32, f32), device: Device) {
+    let (vw, vh) = view;
+    let (pad, top) = (16.0, 12.0);
+
+    // Left: banked credits and what's on the line.
+    label(look, "Banked", pad, top, Color::from_hex(col::MUTED));
+    text_left(
+        &fmt_credits(w.banked),
+        pad,
+        top + 16.0,
+        34.0,
+        &look.fonts.display,
+        Color::from_hex(col::HAZARD),
+    );
+    let line = format!("On the line {} cr", fmt_credits(w.line_value()));
+    text_left(
+        &line,
+        pad,
+        top + 54.0,
+        13.0,
+        &look.fonts.mono,
+        Color::from_hex(col::CABLE),
+    );
+
+    // Centre: shift and clock (red in the last 30 seconds).
+    let shift = format!("Shift {} · Hollis Belt", w.shift_no);
+    label(
+        look,
+        &shift,
+        (vw - label_width(look, &shift)) / 2.0,
+        top,
+        Color::from_hex(col::MUTED),
+    );
+    let secs = w.time_left.ceil().max(0.0) as i64;
+    let clock = format!("{}:{:02}", secs / 60, secs % 60);
+    let cw = text_width(&clock, 34.0, &look.fonts.display);
+    let cc = if secs <= 30 { col::DANGER } else { col::HAZARD };
+    text_left(
+        &clock,
+        (vw - cw) / 2.0,
+        top + 16.0,
+        34.0,
+        &look.fonts.display,
+        Color::from_hex(cc),
+    );
+
+    // Right: meters, 220 px wide (or 40% of a narrow window).
+    let mw = 220.0f32.min(vw * 0.4);
+    let mx = vw - pad - mw;
+    let s = &w.ship;
+    let m = &w.mods;
+    meter(
+        look,
+        "Shield",
+        mx,
+        top,
+        mw,
+        (s.shield / m.shield_max) as f32,
+        col::SHIELD,
+    );
+    let hull_c = if s.hp < 30.0 {
+        col::DANGER
+    } else {
+        col::HAZARD
+    };
+    meter(
+        look,
+        "Hull",
+        mx,
+        top + 20.0,
+        mw,
+        (s.hp / m.max_hp) as f32,
+        hull_c,
+    );
+    let load = w.tow_mass();
+    let frac = (load / m.winch_cap) as f32;
+    meter(
+        look,
+        "Winch",
+        mx,
+        top + 40.0,
+        mw,
+        frac,
+        if frac > 0.85 { col::JUMPER } else { col::CABLE },
+    );
+    let mass = if load.fract() != 0.0 {
+        format!("{load:.1}")
+    } else {
+        format!("{load:.0}")
+    };
+    let lt = format!("{mass} / {} t", m.winch_cap);
+    let tw = text_width(&lt, 11.0, &look.fonts.mono_light);
+    text_left(
+        &lt,
+        vw - pad - tw,
+        top + 54.0,
+        11.0,
+        &look.fonts.mono_light,
+        Color::from_hex(col::MUTED),
+    );
+
+    // Bottom right: the controls hint for the device in use.
+    let lines: &[&str] = match device {
+        Device::Keyboard => &[
+            "W thrust · A D turn · S brake",
+            "E hook · Q drop last · X cut all · P pause",
+        ],
+        Device::Pad => &[
+            "L-stick turn · RT thrust · LT brake",
+            "Y hook · B drop last · LB cut all · Start pause",
+        ],
+    };
+    for (i, l) in lines.iter().rev().enumerate() {
+        let tw = text_width(l, 11.0, &look.fonts.mono_light);
+        let y = vh - 16.0 - 17.6 * (i as f32 + 1.0);
+        text_left(
+            l,
+            vw - pad - tw,
+            y,
+            11.0,
+            &look.fonts.mono_light,
+            Color::from_hex(col::MUTED),
+        );
+    }
+}
+
+/// A centred title with a subtitle over a dimmed field (pause, shift end).
+pub fn banner(look: &Look, view: (f32, f32), title: &str, sub: &str) {
+    let (vw, vh) = view;
+    let tw = text_width(title, 64.0, &look.fonts.display);
+    text_left(
+        title,
+        (vw - tw) / 2.0,
+        vh * 0.36,
+        64.0,
+        &look.fonts.display,
+        Color::from_hex(col::HAZARD),
+    );
+    let sw = text_width(sub, 18.0, &look.fonts.body);
+    text_left(
+        sub,
+        (vw - sw) / 2.0,
+        vh * 0.36 + 76.0,
+        18.0,
+        &look.fonts.body,
+        rgba(col::TEXT, 0.9),
+    );
+}

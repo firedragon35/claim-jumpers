@@ -1,0 +1,17 @@
+[package]
+name = "cj-game"
+version = "0.1.0"
+description = "Claim Jumpers native Windows game: window, rendering and input around cj-sim."
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[[bin]]
+name = "claim-jumpers"
+path = "src/main.rs"
+
+[dependencies]
+cj-sim = { path = "../cj-sim" }
+# Audio is handled with cpal from milestone 2, so macroquad's own audio is off.
+macroquad = { version = "0.4.16", default-features = false }
+gilrs = "0.11.2"

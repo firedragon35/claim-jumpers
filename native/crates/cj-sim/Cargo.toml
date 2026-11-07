@@ -1,0 +1,13 @@
+[package]
+name = "cj-sim"
+version = "0.1.0"
+description = "Claim Jumpers gameplay simulation: pure, deterministic, no rendering or audio."
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+
+[dev-dependencies]
+# Only the golden-trace tests read JSON fixtures exported from the browser.
+serde_json = "1.0.145"
