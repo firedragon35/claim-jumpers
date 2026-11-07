@@ -1,0 +1,20 @@
+# Native Windows port of Claim Jumpers. The browser game in the repo root is
+# the reference implementation; this workspace must match its behaviour.
+#
+# Milestone 0 contains only the risk-test spike. The real crates (cj-sim for
+# the pure gameplay simulation, cj-game for the macroquad app) arrive in
+# Milestone 1.
+[workspace]
+resolver = "2"
+members = ["spikes/m0-spike"]
+
+[workspace.package]
+edition = "2021"
+rust-version = "1.85"
+
+[profile.release]
+# Small, fast release builds; the game ships as one executable.
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true

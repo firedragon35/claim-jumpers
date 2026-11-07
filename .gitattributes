@@ -1,0 +1,4 @@
+# Keep line endings consistent (LF) in the repo and the working tree;
+# the build output must match its sources byte for byte.
+* text=auto eol=lf
+*.png binary
