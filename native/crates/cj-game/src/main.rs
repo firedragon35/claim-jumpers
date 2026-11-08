@@ -428,11 +428,14 @@ async fn main() {
 
         // Simulation, or the drifting field behind the menus.
         let dt = f64::from(get_frame_time()).min(MAX_FRAME_DT);
+        // The press that opens the pause card must not also close it below.
+        let mut just_paused = false;
         match app.screen {
             Screen::Play => {
                 if presses.pause && !smoke {
                     audio.set_thrust(0.0, 0.0, false);
                     app.open(Screen::Paused);
+                    just_paused = true;
                 } else {
                     play_steps(
                         &mut app,
@@ -486,7 +489,7 @@ async fn main() {
             Screen::Paused => {
                 ui::backdrop((vw, vh));
                 let mut menu = menu_in;
-                menu.back = presses.pause; // P or Esc resumes
+                menu.back = presses.pause && !just_paused; // P or Esc resumes
                 screens::pause(&look, &mut app.ui, &menu, (vw, vh), dpi, app.armed_menu)
             }
             Screen::Title => {

@@ -132,7 +132,7 @@ impl Ui {
             (view.1 - size.1 * self.scale) / 2.0,
         );
         self.dpi = dpi;
-        set_camera(&Camera2D::from_display_rect(Rect::new(
+        set_camera(&crate::draw::display_camera(Rect::new(
             -self.origin.x / self.scale,
             -self.origin.y / self.scale,
             view.0 / self.scale,

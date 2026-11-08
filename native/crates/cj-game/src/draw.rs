@@ -1091,11 +1091,18 @@ impl Vignette {
     }
 }
 
+/// Camera that shows `r` on the window with Y pointing down, like the
+/// browser canvas. macroquad 0.4's `from_display_rect` points Y up (it is
+/// meant for render targets), which drew every screen upside down.
+pub fn display_camera(r: Rect) -> Camera2D {
+    let mut cam = Camera2D::from_display_rect(r);
+    cam.zoom.y = -cam.zoom.y;
+    cam
+}
+
 /// Logical-pixel camera over the whole window, for screen-space drawing.
 pub fn screen_camera(view: (f32, f32)) {
-    set_camera(&Camera2D::from_display_rect(Rect::new(
-        0.0, 0.0, view.0, view.1,
-    )));
+    set_camera(&display_camera(Rect::new(0.0, 0.0, view.0, view.1)));
 }
 
 /// Everything the scene needs from the game layer.
@@ -1140,7 +1147,7 @@ pub fn render(sc: Scene) {
         (0.0, 0.0)
     };
     let centre = v(w.cam.x + sx, w.cam.y + sy);
-    set_camera(&Camera2D::from_display_rect(Rect::new(
+    set_camera(&display_camera(Rect::new(
         centre.x - vw / 2.0 / z,
         centre.y - vh / 2.0 / z,
         vw / z,
@@ -1336,4 +1343,20 @@ fn ring_mesh(cx: f32, cy: f32, a: f32, b: f32, inner: Color, outer: Color) {
         indices,
         texture: None,
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The rect's top-left must land at the window's top-left (GL clip
+    /// space y = +1), not the bottom-left, or everything draws upside down.
+    #[test]
+    fn display_camera_keeps_y_down() {
+        let m = display_camera(Rect::new(0.0, 0.0, 800.0, 600.0)).matrix();
+        let top_left = m.project_point3(vec3(0.0, 0.0, 0.0));
+        let bottom_right = m.project_point3(vec3(800.0, 600.0, 0.0));
+        assert!((top_left.x + 1.0).abs() < 1e-5 && (top_left.y - 1.0).abs() < 1e-5, "{top_left:?}");
+        assert!((bottom_right.x - 1.0).abs() < 1e-5 && (bottom_right.y + 1.0).abs() < 1e-5, "{bottom_right:?}");
+    }
 }
