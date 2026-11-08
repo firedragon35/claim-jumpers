@@ -354,3 +354,9 @@ cargo run -p m0-spike --release -- --smoke
   1.0.0 in Explorer, and `dumpbin /dependents` lists only Windows system
   DLLs (no VCRUNTIME140.dll).
 - **Windows 10: not yet verified.**
+
+## License
+
+No license file is present and no license is granted for the code in this repository. It is a
+private repository. The bundled fonts keep their own SIL Open Font License terms (see
+`licenses/` in the release package).
