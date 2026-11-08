@@ -12,6 +12,7 @@ pub mod cable;
 pub mod career;
 pub mod combat;
 pub mod consts;
+pub mod coop;
 pub mod crabs;
 pub mod entities;
 pub mod events;
@@ -25,6 +26,7 @@ pub mod parts;
 pub mod physics;
 pub mod rivals;
 pub mod rng;
+pub mod tutorial;
 pub mod world;
 
 pub use events::Event;

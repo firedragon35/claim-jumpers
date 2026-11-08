@@ -6,6 +6,7 @@ use macroquad::miniquad::{BlendFactor, BlendState, BlendValue, Equation};
 use macroquad::prelude::*;
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Colour tokens from the browser's COL table, as 0xRRGGBB.
 pub mod col {
@@ -34,9 +35,64 @@ pub mod col {
     pub const PANEL_EDGE: u32 = 0x2a3550;
 }
 
+/// Colorblind-safe swaps (Okabe-Ito based, CB_PALETTE): they separate the
+/// red/green and pink/orange pairs the default neon palette leans on.
+const CB_PALETTE: [(u32, u32); 10] = [
+    (col::HAZARD, 0xe69f00),
+    (col::CABLE, 0x56b4e9),
+    (col::JUMPER, 0xcc79a7),
+    (col::DANGER, 0xd55e00),
+    (col::REACTOR, 0xf0e442),
+    (col::ORE, 0xe8c66a),
+    (col::MINER, 0x009e73),
+    (col::LAW, 0x0072b2),
+    (col::CRAB, 0xff9f6b),
+    (col::COLLECTOR, 0xb8a6ff),
+];
+
+static COLORBLIND: AtomicBool = AtomicBool::new(false);
+static REDUCE_MOTION: AtomicBool = AtomicBool::new(false);
+
+/// Switch the palette (Settings.apply); every colour is looked up per draw.
+pub fn set_colorblind(on: bool) {
+    COLORBLIND.store(on, Ordering::Relaxed);
+}
+
+pub fn set_reduce_motion(on: bool) {
+    REDUCE_MOTION.store(on, Ordering::Relaxed);
+}
+
+pub fn reduce_motion() -> bool {
+    REDUCE_MOTION.load(Ordering::Relaxed)
+}
+
+/// motionScale: screen shake and flashes at 20% with reduced motion.
+pub fn motion_scale() -> f64 {
+    if reduce_motion() {
+        0.2
+    } else {
+        1.0
+    }
+}
+
+/// The palette colour for 0xRRGGBB, swapped when the colorblind palette is on.
+pub fn pal(rgb: u32) -> u32 {
+    if COLORBLIND.load(Ordering::Relaxed) {
+        if let Some(&(_, cb)) = CB_PALETTE.iter().find(|p| p.0 == rgb) {
+            return cb;
+        }
+    }
+    rgb
+}
+
+/// 0xRRGGBB as a colour, through the palette.
+pub fn hex(rgb: u32) -> Color {
+    Color::from_hex(pal(rgb))
+}
+
 /// 0xRRGGBB plus alpha.
 pub fn rgba(rgb: u32, a: f32) -> Color {
-    let c = Color::from_hex(rgb);
+    let c = hex(rgb);
     Color::new(c.r, c.g, c.b, a)
 }
 
@@ -163,6 +219,8 @@ impl Look {
     /// The browser's glowSprite: a 64 px radial gradient. Hot sprites have
     /// a white core (sparks, flashes); soft ones fade evenly (nebulae).
     fn sprite(&self, rgb: u32, hot: bool) -> Texture2D {
+        // Cached by the colour actually drawn, so the palette swap applies.
+        let rgb = pal(rgb);
         if let Some(t) = self.sprites.borrow().get(&(rgb, hot)) {
             return t.clone();
         }

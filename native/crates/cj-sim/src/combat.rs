@@ -462,7 +462,25 @@ impl World {
             self.grudge = crate::field::grudge_one_stage_down(self.grudge);
             self.rep_delta.rivals += crate::career::REP_BOSS_KILL_RIVALS;
             self.boss_down = Some(b.name);
-            self.radio(Radio::BossDown, true, false);
+            self.emit(Event::Unlock("boss"));
+            self.emit(Event::HitStop(crate::consts::HITSTOP_BOSS));
+            self.emit(Event::SlowMo(crate::consts::SLOWMO_BOSS));
+            self.emit(Event::Highlight {
+                score: 2500.0,
+                text: format!("Took down {}", b.name),
+            });
+            let v = fmt_credits(b.bounty);
+            let text = format!(
+                "That was {}. {v} cr bounty, paid. Don't let it go to your head.",
+                b.name
+            );
+            self.radio_say(
+                Radio::BossDown,
+                true,
+                false,
+                text,
+                format!("Bounty paid. {v} cr."),
+            );
         }
         if smashed && !self.no_blame {
             self.scatter_rivals(j);
@@ -485,7 +503,14 @@ impl World {
         if smashed {
             self.popup(x, y - 24.0, "SMASHED".to_owned(), Tint::Cable);
             self.radio(Radio::Smash, true, false);
-            // (Hit-stop and the highlight reel: milestone 5.)
+            if !self.no_blame {
+                self.emit(Event::Unlock("smash"));
+                self.emit(Event::HitStop(crate::consts::HITSTOP_SMASH));
+                self.emit(Event::Highlight {
+                    score: 700.0,
+                    text: "Smashed a rival with cargo".to_owned(),
+                });
+            }
         } else {
             self.radio(Radio::Kill, false, false);
         }

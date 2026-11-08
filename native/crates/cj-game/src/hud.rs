@@ -35,19 +35,19 @@ fn label_width(look: &Look, text: &str) -> f32 {
 
 /// A meter row: label column, then an 8 px bar with a 1 px edge.
 fn meter(look: &Look, name: &str, x: f32, y: f32, w: f32, frac: f32, fill: u32) {
-    label(look, name, x, y, Color::from_hex(col::MUTED));
+    label(look, name, x, y, crate::look::hex(col::MUTED));
     let bx = x + 52.0 + 8.0;
     let bw = w - 60.0;
     let by = y + 2.0;
-    draw_rectangle(bx, by, bw, 8.0, Color::from_hex(0x141b2b));
+    draw_rectangle(bx, by, bw, 8.0, crate::look::hex(0x141b2b));
     draw_rectangle(
         bx,
         by,
         bw * frac.clamp(0.0, 1.0),
         8.0,
-        Color::from_hex(fill),
+        crate::look::hex(fill),
     );
-    draw_rectangle_lines(bx, by, bw, 8.0, 1.0, Color::from_hex(col::PANEL_EDGE));
+    draw_rectangle_lines(bx, by, bw, 8.0, 1.0, crate::look::hex(col::PANEL_EDGE));
 }
 
 pub fn draw(look: &Look, w: &World, career: Option<&Career>, view: (f32, f32), device: Device) {
@@ -55,14 +55,14 @@ pub fn draw(look: &Look, w: &World, career: Option<&Career>, view: (f32, f32), d
     let (pad, top) = (16.0, 12.0);
 
     // Left: banked credits and what's on the line.
-    label(look, "Banked", pad, top, Color::from_hex(col::MUTED));
+    label(look, "Banked", pad, top, crate::look::hex(col::MUTED));
     text_left(
         &fmt_credits(w.banked),
         pad,
         top + 16.0,
         34.0,
         &look.fonts.display,
-        Color::from_hex(col::HAZARD),
+        crate::look::hex(col::HAZARD),
     );
     // Sealed pods stay secret on the HUD too: their value shows as "+ ?".
     let chain = w
@@ -82,7 +82,7 @@ pub fn draw(look: &Look, w: &World, career: Option<&Career>, view: (f32, f32), d
     let line = format!("On the line {}{secret} cr", fmt_credits(known));
     let mut ly = top + 54.0;
     let online = |s: &str, y: f32, c: u32| {
-        text_left(s, pad, y, 13.0, &look.fonts.mono, Color::from_hex(c));
+        text_left(s, pad, y, 13.0, &look.fonts.mono, crate::look::hex(c));
     };
     online(&line, ly, col::CABLE);
     // Carried-over money from earlier shifts (this shift's haul is "Banked").
@@ -133,7 +133,7 @@ pub fn draw(look: &Look, w: &World, career: Option<&Career>, view: (f32, f32), d
             ly,
             13.0,
             &look.fonts.mono,
-            Color::from_hex(col::HAZARD),
+            crate::look::hex(col::HAZARD),
         );
         let rack = w.mods.missile_rack as usize;
         let n = (w.ship.missiles as usize).min(rack);
@@ -143,7 +143,7 @@ pub fn draw(look: &Look, w: &World, career: Option<&Career>, view: (f32, f32), d
             n,
             rack,
             13.0,
-            Color::from_hex(col::HAZARD),
+            crate::look::hex(col::HAZARD),
         );
     }
     if w.mods.drone_bay {
@@ -170,7 +170,7 @@ pub fn draw(look: &Look, w: &World, career: Option<&Career>, view: (f32, f32), d
         &shift,
         (vw - label_width(look, &shift)) / 2.0,
         top,
-        Color::from_hex(col::MUTED),
+        crate::look::hex(col::MUTED),
     );
     // The rivals' mood once they hold a grudge, and the under-attack
     // warning, stack between the shift label and the clock. (The wanted
@@ -191,9 +191,9 @@ pub fn draw(look: &Look, w: &World, career: Option<&Career>, view: (f32, f32), d
         let color = if w.wanted == 0 {
             crate::look::rgba(col::MUTED, 0.55)
         } else if tier.is_some_and(|t| t.swat) || flash {
-            Color::from_hex(col::DANGER)
+            crate::look::hex(col::DANGER)
         } else {
-            Color::from_hex(col::LAW)
+            crate::look::hex(col::LAW)
         };
         let font = if w.wanted == 0 {
             &look.fonts.mono_light
@@ -224,7 +224,7 @@ pub fn draw(look: &Look, w: &World, career: Option<&Career>, view: (f32, f32), d
             cy,
             11.0,
             &look.fonts.mono,
-            Color::from_hex(col::JUMPER),
+            crate::look::hex(col::JUMPER),
         );
         cy += 15.0;
     }
@@ -237,7 +237,7 @@ pub fn draw(look: &Look, w: &World, career: Option<&Career>, view: (f32, f32), d
             cy,
             13.0,
             &look.fonts.mono,
-            Color::from_hex(col::DANGER),
+            crate::look::hex(col::DANGER),
         );
         cy += 17.0;
     }
@@ -251,7 +251,7 @@ pub fn draw(look: &Look, w: &World, career: Option<&Career>, view: (f32, f32), d
         cy,
         34.0,
         &look.fonts.display,
-        Color::from_hex(cc),
+        crate::look::hex(cc),
     );
 
     // Right: meters, 220 px wide (or 40% of a narrow window).
@@ -329,7 +329,7 @@ pub fn draw(look: &Look, w: &World, career: Option<&Career>, view: (f32, f32), d
         top + 94.0,
         11.0,
         &look.fonts.mono_light,
-        Color::from_hex(col::MUTED),
+        crate::look::hex(col::MUTED),
     );
 
     // Bottom right: the controls hint for the device in use.
@@ -352,7 +352,7 @@ pub fn draw(look: &Look, w: &World, career: Option<&Career>, view: (f32, f32), d
             y,
             11.0,
             &look.fonts.mono_light,
-            Color::from_hex(col::MUTED),
+            crate::look::hex(col::MUTED),
         );
     }
 }

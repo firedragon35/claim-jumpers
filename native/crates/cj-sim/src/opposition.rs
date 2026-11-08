@@ -674,7 +674,8 @@ impl World {
                 if left == 0 {
                     self.radio(Radio::Armed, true, false);
                 } else {
-                    self.radio(Radio::Seated, true, false);
+                    let text = format!("Charge seated. {left} to go. Steady hands, kiddo.");
+                    self.radio_say(Radio::Seated, true, false, text, format!("{left} to go."));
                 }
             }
             i += 1;
@@ -687,6 +688,11 @@ impl World {
         r.state = RefineryState::Open;
         r.wake_t = 2.5;
         self.vault_opened = true;
+        self.emit(Event::Unlock("vault"));
+        self.emit(Event::Highlight {
+            score: 1800.0,
+            text: "Cracked the Kessler vault".to_owned(),
+        });
         for k in 0..3 {
             let (px, py) = self.refinery.as_ref().expect("refinery").socket_pos(k);
             self.explode(px, py, 200.0, 40.0);
@@ -760,7 +766,12 @@ impl World {
         }
         self.explosion_fx(mx, my, 200.0, Tint::Danger);
         self.shake = 18.0;
+        self.emit(Event::HitStop(HITSTOP_BOSS));
         self.sfx(Sfx::Boom);
+        self.emit(Event::Highlight {
+            score: 1500.0,
+            text: "Wrecked the Kessler jaws".to_owned(),
+        });
         self.popup(mx, my - 40.0, "JAWS WRECKED".to_owned(), Tint::Danger);
         self.radio(Radio::JawsWrecked, true, false);
     }
@@ -1069,7 +1080,21 @@ impl World {
         };
         self.popup(x, y - 34.0, text, Tint::Collector);
         self.sfx(Sfx::Confiscated);
-        self.radio(Radio::Jacked, true, false);
+        let (text, say) = if value > 0.0 {
+            (
+                format!(
+                    "They jacked the whole haul. {} cr of cargo, and not a credit off your loan. Greedy bastards.",
+                    fmt_credits(value)
+                ),
+                "They jacked the haul. Greedy bastards.",
+            )
+        } else {
+            (
+                "They dragged you out for nothing. Your line was empty. Ha.".to_owned(),
+                "Nothing to take. Ha.",
+            )
+        };
+        self.radio_say(Radio::Jacked, true, false, text, say.to_owned());
     }
 
     /// Remove every piece on the line, with a burst each (seizures).
@@ -1362,6 +1387,11 @@ impl World {
         if by_item.is_some_and(|m| m >= 3.0) {
             self.popup(b.x, b.y - 26.0, "SMASHED".to_owned(), Tint::Cable);
             self.radio(Radio::Smash, true, false);
+            self.emit(Event::HitStop(HITSTOP_SMASH));
+            self.emit(Event::Highlight {
+                score: 800.0,
+                text: "Smashed a debt collector with cargo".to_owned(),
+            });
         } else {
             let line = if self.wanted > 1 {
                 Radio::WantedMore
@@ -1400,7 +1430,13 @@ impl World {
             Tint::Collector,
         );
         self.sfx(Sfx::Confiscated);
-        self.radio(Radio::Confiscated, true, false);
+        let text = format!(
+            "They took the whole load as \"payment\". {} cr of cargo, credited at {}. Liquidation prices. Thieves with paperwork, sugar.",
+            fmt_credits(value),
+            fmt_credits(credit)
+        );
+        let say = "They took the load. Thieves.".to_owned();
+        self.radio_say(Radio::Confiscated, true, false, text, say);
     }
 
     /// The collector got the tug off the field: impound fee, shift over.
@@ -1438,6 +1474,7 @@ impl World {
         self.reinforce_t = Some(self.reinforce_t.unwrap_or(10.0).min(soon));
         if self.wanted == WANTED_MAX && before < WANTED_MAX {
             self.radio(Radio::Swat, true, false);
+            self.emit(Event::Unlock("fiveStar"));
         }
     }
 
@@ -1752,6 +1789,11 @@ impl World {
         self.add_wanted(2, b.x, b.y);
         if by_item.is_some_and(|m| m >= 3.0) {
             self.popup(b.x, b.y - 26.0, "SMASHED".to_owned(), Tint::Cable);
+            self.emit(Event::HitStop(HITSTOP_SMASH));
+            self.emit(Event::Highlight {
+                score: 900.0,
+                text: "Smashed a law cruiser with cargo".to_owned(),
+            });
         }
         self.radio(Radio::SheriffKill, true, false);
     }
@@ -1800,7 +1842,25 @@ impl World {
         s.invuln = 2.0;
         s.stun_t = 0.0;
         self.sfx(Sfx::Arrest);
-        self.radio(Radio::Arrested, true, false);
+        let paid = if cargo <= 0.0 {
+            format!("{} cr out of your earnings", fmt_credits(from_earnings))
+        } else if from_earnings > 0.0 {
+            format!(
+                "your cargo covered {} cr and {} cr came out of your earnings",
+                fmt_credits(from_cargo),
+                fmt_credits(from_earnings)
+            )
+        } else if cargo > fine {
+            "your cargo covered it, and they kept the change".to_owned()
+        } else {
+            "your cargo covered it".to_owned()
+        };
+        let text = format!(
+            "Arrested. {stars}-star fine of {} cr: {paid}. Your record is clean. My nerves are not.",
+            fmt_credits(fine)
+        );
+        let say = "Arrested. Your record is clean. My nerves are not.".to_owned();
+        self.radio_say(Radio::Arrested, true, false, text, say);
     }
 
     /// A crooked shakedown: no fine, no stars; he takes the cargo on your
@@ -1821,7 +1881,12 @@ impl World {
             format!("SHAKEN DOWN · −{} CR", fmt_credits(cargo)),
             Tint::Law,
         );
-        self.radio(Radio::ShookDown, true, false);
+        let text = format!(
+            "He took {} cr of cargo \"as evidence.\" No charge, no receipt. That is not how evidence works, hotshot.",
+            fmt_credits(cargo)
+        );
+        let say = "He took your cargo as evidence. That is not how evidence works.".to_owned();
+        self.radio_say(Radio::ShookDown, true, false, text, say);
     }
 
     /* --------------------------- Missiles --------------------------- */
@@ -2451,10 +2516,16 @@ impl World {
             let it = self.new_item(ItemType::Core, x, y, vx, vy);
             self.items.push(it);
             self.radio(Radio::RogueDown, false, false);
+            if !self.no_blame {
+                self.emit(Event::Unlock("rogue"));
+            }
             self.count_kill(|k| k.rogue += 1);
             return;
         }
-        self.radio(Radio::SentryLost, true, false);
+        let left = self.sentries.iter().filter(|x| !x.dead && !x.rogue).count();
+        let text = format!("Lost a sentry drone. {left} left. Those are not free, hotshot.");
+        let say = "Lost a sentry. Those are not free.".to_owned();
+        self.radio_say(Radio::SentryLost, true, false, text, say);
     }
 
     /* ---------------------------- Mining drones ---------------------------- */
@@ -2745,7 +2816,12 @@ impl World {
                     .map_or(0.0, |c| c.due(0) - (c.wallet + self.banked));
                 if short > 0.0 && self.collectors.is_empty() {
                     self.collector_queue.push(self.t + 6.0);
-                    self.radio(Radio::LowWallet, true, false);
+                    let v = fmt_credits(short);
+                    let text = format!(
+                        "Kessler Mutual ran your numbers, hon. You're {v} cr short of this shift's installment, so they're sending somebody. Bank something. Today."
+                    );
+                    let say = format!("{v} cr short, hon. Bank something.");
+                    self.radio_say(Radio::LowWallet, true, false, text, say);
                 }
             }
             // Fat cable: a rich load draws a collector (once a minute at most).

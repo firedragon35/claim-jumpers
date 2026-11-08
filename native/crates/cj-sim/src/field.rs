@@ -697,7 +697,7 @@ impl World {
                 self.radio(Radio::IonClear, true, false);
             }
         }
-        if self.event_done || !self.ship.alive {
+        if self.tut.is_some() || self.event_done || !self.ship.alive {
             return;
         }
         self.event_t -= dt;
@@ -707,7 +707,10 @@ impl World {
         self.event_done = true;
         // A belt condition or the belt itself can force the event; a convoy
         // is only offered when no escort is already running.
-        let forced = self.cond.def().event.or(self.belt.def().event);
+        let forced = self
+            .forced_event
+            .or(self.cond.def().event)
+            .or(self.belt.def().event);
         let kind = match forced {
             Some(k) => k,
             None => {
@@ -771,7 +774,17 @@ impl World {
                 let bounty = js::round(base * self.cond.def().bounty);
                 j.boss = Some(Boss { name, bounty });
                 self.jumpers.push(j);
-                self.radio(Radio::Boss, true, false);
+                let v = crate::world::fmt_credits(bounty);
+                let text = format!(
+                    "That's {name}'s crew. Bounty of {v} cr on them, and they're coming for you, not the cargo."
+                );
+                self.radio_say(
+                    Radio::Boss,
+                    true,
+                    false,
+                    text,
+                    format!("{name}. {v} cr bounty."),
+                );
             }
         }
     }
@@ -894,6 +907,10 @@ impl World {
         self.sfx(Sfx::Jackpot);
         self.break_wreck(w);
         self.hold_opened = true;
+        self.emit(crate::events::Event::Highlight {
+            score: 1600.0,
+            text: "Opened a sealed hold".to_owned(),
+        });
         self.radio(Radio::HoldOpen, true, false);
     }
 

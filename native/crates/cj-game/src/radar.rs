@@ -15,7 +15,7 @@ use macroquad::prelude::*;
 const HUD_BOTTOM: f32 = 128.0;
 
 fn c(rgb: u32) -> Color {
-    Color::from_hex(rgb)
+    crate::look::hex(rgb)
 }
 
 /// The sheriff in pursuit blinks between danger and law colours (200 ms).
@@ -210,5 +210,22 @@ pub fn indicators(look: &Look, w: &World, view: (f32, f32), dpi: f32) {
             if chasing { "SHERIFF" } else { "" },
             44.0,
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cj_sim::rng::Rng;
+
+    /// Night shifts shorten radar range (the browser's test).
+    #[test]
+    fn night_shortens_radar_range() {
+        let mut w = World::new_shift(Rng::seeded(1), (1280.0, 720.0));
+        let (x, y) = (w.ship.b.x, w.ship.b.y);
+        assert!(sees(&w, x + 3000.0, y));
+        w.cond = cj_sim::field::Condition::Night;
+        assert!(!sees(&w, x + 3000.0, y));
+        assert!(sees(&w, x + 400.0, y));
     }
 }

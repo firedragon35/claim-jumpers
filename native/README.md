@@ -5,7 +5,7 @@ in the repository root (`claim-jumpers.html`, built from `src/`) is the
 reference implementation; the port must match its gameplay, rules,
 controls, balance and look unless a change is explicitly approved.
 
-**Status: Milestone 5, part 1 (the career's field systems).** A career of
+**Status: Milestone 6, release 1.0.0 (all systems ported, packaged for Windows).** A career of
 five-minute shifts: fly the tug, tow and fight for salvage, and bank it at
 the carrier, against rival crews, debt collectors who net and tow the tug
 (or confiscate a fat load, or impound it), the law (wanted stars, patrols,
@@ -28,8 +28,30 @@ unique parts, and four co-pilots with a wage and a perk), and the map and
 standing (bank, law and rivals, and a truce with the crews). The report
 settles the contract and the wage with the installment. The HUD shows the
 contract, the belt and its condition, and the radar minimap and off-screen
-arrows are in. Title, pause, report and shop work with keyboard, mouse or
-gamepad. The rest of milestone 5 follows (see "Known differences" below).
+arrows are in.
+
+Marge is on the radio: every line from the browser, shown in the
+bottom-left panel with its throttle and once-per-shift rules, and spoken
+through the Windows speech synthesizer (her low, dry delivery, the
+punchline lower and slower, and the cockpit callouts in a second voice
+after a caution chime). Adaptive music plays under everything, with drums
+and a lead coming in as danger rises. A career's first shift runs the
+guided training (five steps; T skips it), cargo smashes and boss kills
+hit-stop and slow the action, fast cargo leaves trails, and the shift's
+best moment is replayed on the report. Marge also comments on your last
+shift in the shop.
+
+The title screen has the rest of the browser's menus: a pilot name, the
+leaderboard (best shifts on this PC per difficulty, and the daily
+challenge), the sound test, the daily challenge (one seeded field per UTC
+day, with a fixed loadout, that leaves the career alone), replaying the
+training, records (lifetime stats, the kill tally and thirteen
+achievements, which unlock eight paint jobs for the tug), and settings
+(music, reduced shake and flashing, a colorblind-safe palette, local
+co-op and key rebinding). With co-op on, a second player flies a partner
+tug from the numpad or a second gamepad and can latch onto the tail of
+the cable to haul together. Every menu works with keyboard, mouse or
+gamepad (typing the pilot name needs a keyboard).
 
 | Folder | What it is |
 |---|---|
@@ -66,8 +88,41 @@ From the `native` folder:
 cargo run -p cj-game --release
 ```
 
-The executable is `target\release\claim-jumpers.exe`. It is self-contained
-(fonts are embedded), so it can be copied anywhere and run without Rust.
+The executable is `target\release\claim-jumpers.exe`. It is self-contained:
+fonts and the icon are embedded, and the C runtime is linked statically
+(`.cargo/config.toml`), so it needs only DLLs that ship with Windows and can
+be copied anywhere and run without Rust or the Visual C++ Redistributable.
+
+## Release package
+
+From the `native` folder:
+
+```bash
+powershell -ExecutionPolicy Bypass -File tools/package.ps1
+```
+
+It builds the release exe, runs the `--smoke` check from an unrelated
+folder (stopping if it fails), and writes
+`dist\ClaimJumpers-<version>-windows-x64.zip` with:
+
+- `claim-jumpers.exe`;
+- `README.txt`, the player's guide (from `packaging/README.txt`):
+  requirements, how to run it (including the SmartScreen prompt for an
+  unsigned exe), controls, where saves live, uninstalling and
+  troubleshooting;
+- `licenses/`, the fonts' SIL Open Font Licence texts and their sources;
+- `THIRD-PARTY-NOTICES.txt`, every crate compiled into the exe with its
+  licence and licence files (written by `tools/third_party.py` from
+  `cargo metadata`).
+
+The version is `crates/cj-game/Cargo.toml`'s; `build.rs` puts it, with the
+icon, into the exe's Windows resources (Details tab), using the Windows
+SDK's `rc.exe` (installed with the C++ build tools; without it the build
+warns and leaves the icon out). The icon is drawn by `tools/make_icon.py`
+(the Mk I tug, standard library only), which writes
+`assets/icon/claim-jumpers.ico` and the raw window-icon images. There is no
+installer: the zip unpacks and runs in place, and the saves live in
+`%APPDATA%\ClaimJumpers`. The exe is not code-signed.
 
 | Action | Keyboard | Gamepad |
 |---|---|---|
@@ -83,13 +138,24 @@ The executable is `target\release\claim-jumpers.exe`. It is self-contained
 | Afterburner | Shift | LT + RT together |
 | Pause | P or Esc | Start |
 | Mute | M | Back |
+| Marge's voice on / off | V | |
+| Music on / off | N | |
+| Skip training | T | |
+
+The flight keys can be rebound in Settings. With local co-op on, P2 flies
+from the numpad (8 thrust, 4 / 6 turn, 5 or 2 brake, 0 fire, Enter latch)
+or from the last connected gamepad (left stick turn, RT or A thrust, LT
+brake, RB fire, Y latch), and player 1 leaves that gamepad alone.
 
 In menus: arrow keys, D-pad or left stick move between buttons; Enter,
 Space or A press; LB / RB switch tabs; Start presses the screen's main
 button. The mouse works too.
 
 The career, best shifts and chosen difficulty are saved in
-`%APPDATA%\ClaimJumpers` (`career.json`, `best.json`, `mode.txt`), in the
+`%APPDATA%\ClaimJumpers` (`career.json`, `best.json`, `mode.txt`), with
+the settings (`settings.json`), the profile of records and achievements
+(`profile.json`), the local leaderboard (`board.json`), the pilot name
+(`pilot.txt`) and whether training is done (`training.txt`), all in the
 browser's field names. Saves are written atomically, and a malformed save
 is repaired on load the way the browser repairs one. Set
 `CLAIM_JUMPERS_DATA` to use another folder.
@@ -100,7 +166,8 @@ collector, a mining crew, two wanted stars, an ion storm, a boss crew, an
 escorted hauler, a sealed hold and its keycard and a contract, then the
 pause card, the shift report, a purchase in the shop, the shop's Parts
 tab, accepting a contract and hiring a co-pilot on Jobs & crew, buying a
-truce on Map & standing, and the title, with a screenshot of each in
+truce on Map & standing, the title, settings, records, the leaderboard
+and the sound test (playing one sound), with a screenshot of each in
 `%TEMP%\claim-jumpers-m5-<screen>.png` and a report. It uses (and then
 deletes) its own temporary save folder, never the player's. The release
 build has no console window, so redirect the report to a file:
@@ -157,7 +224,8 @@ cargo test
   escorted hauler reaching the bay meets the escort contract; a sealed hold
   ignores damage and opens with its keycard; and a rogue sentry's core is
   stored and reprogrammed into a sentry. It also checks that the awarded
-  self-sealing hull mounts and repairs the hull.
+  self-sealing hull mounts and repairs the hull, and that training holds
+  the rivals and the field event back and advances on each action.
 - `tests/rules.rs` checks hooking, winch capacity, reeling, drop and cut,
   banking and deliveries, bay repair, shields, losing the tug, the shift
   clock, seeded field generation, and for combat gun heat and overheating,
@@ -165,7 +233,20 @@ cargo test
   rival cap, grudge stages and bounties, the bay and banking killing crabs,
   the under-attack alarm's rate limit and wreck contents.
 - The game crate's own tests check the sound engine's filter and
-  compressor, the save files on disk, and menu focus movement.
+  compressor, the save files on disk, menu focus movement, how Marge's
+  lines are tidied and split into sentences for speech, settings loading
+  (validation, round trip) and key rebinding (swaps and reserved keys),
+  the profile (validation, unlocking once, paint jobs needing their
+  achievement), pilot-name cleaning, the local board (top 20 per mode,
+  the last three dailies), the daily field being the same twice for one
+  day and the browser's FNV-1a seed, and night shifts shortening radar.
+- `tests/field.rs` also ports the browser's co-op test (the partner
+  latches onto the cable's tail and pulls) and checks that a cargo smash
+  raises hit-stop, a highlight and the achievement.
+
+Marge's lines are generated from the browser's tables by
+`node tools/gen_lines.cjs ..` (run from `native`), which writes
+`crates/cj-game/src/lines.rs`.
 
 To re-record the traces and career answers after changing the browser game
 (needs Docker; run from the repository root, after rebuilding
@@ -175,19 +256,23 @@ To re-record the traces and career answers after changing the browser game
 docker run --rm -v "$PWD:/work" -v /work/tests/node_modules -w /work/tests mcr.microsoft.com/playwright:v1.49.1-noble sh -c "npm ci --no-audit --no-fund && node /work/native/tools/golden/export.mjs && node /work/native/tools/golden/career.mjs"
 ```
 
-## Known differences from the browser version (Milestone 5, part 1)
+## Known differences from the browser version
 
-Not yet ported (the rest of milestone 5): the tutorial, music, Marge's
-radio and voice (radio lines are raised but not yet shown or spoken), her
-shop commentary, paint jobs, hit-stop, the highlight reel, settings and
-key rebinding, records and achievements, the leaderboard and pilot name,
-the sound test, daily shifts and co-op. Placeholders, clearly temporary:
+Everything in the browser game is ported. Deliberate differences:
 
-- The title screen leaves out the leaderboard, sound test, daily
-  challenge, training, records and settings buttons until their screens
-  exist.
-
-Deliberate differences:
+- The leaderboard is this PC's only (the browser can also post to a
+  shared online board). The browser's save export and import are left
+  out: the save folder above is plain files that can be copied.
+- The in-play key hint and the title's keyboard guide show the default
+  keys; rebound keys show in Settings.
+- Lifetime kills and stats are added to the profile when a shift ends
+  (the browser adds each kill as it happens), so a shift abandoned by
+  closing the window doesn't count.
+- The daily field is the same for every player of this port on a given
+  day, but not the same field the browser generates that day (the two
+  draw their random numbers in different orders).
+- Marge's voice setting is kept in `settings.json` (the browser keeps it
+  in its own localStorage key).
 
 - Contract offers are drawn with a Fisher-Yates shuffle. The browser
   shuffles with `sort(() => Math.random() - 0.5)`, whose bias depends on
@@ -198,6 +283,14 @@ Deliberate differences:
   outline too).
 - The night shift's darkness is a vertex-coloured ring rather than a
   canvas radial gradient; the radii and colours are the browser's.
+- Marge's voice is the Windows speech synthesizer, not the browser's;
+  she prefers the same voices by name (Hazel, Susan and so on, then Zira),
+  with the browser's pitch and rate. Which voices exist depends on the
+  Windows language packs installed.
+- The music's kick drum falls in pitch over its whole 0.2 s note; the
+  browser's reaches 40 Hz at 0.15 s.
+- Whether training has been done is kept in `training.txt` in the save
+  folder (the browser keeps it in localStorage).
 - None of the game's fonts has the ★ and ☆ glyphs (the browser falls back
   to a system font), so wanted stars are drawn as star shapes.
 - Added for the desktop: a Quit button on the title screen, and arrow
@@ -239,6 +332,25 @@ cargo run -p m0-spike --release -- --smoke
   crew, an escorted hauler, a sealed hold and its keycard and a contract
   live; the report settles the missed contract; the shop accepts a
   contract, hires a co-pilot and buys a truce; and all eight screenshots
-  look as expected. Hands-on keyboard, mouse and gamepad play, gamepad
-  menu navigation, and listening to the sound have not yet been verified.
+  look as expected.
+- Windows 11 Pro (build 26300): the M5 part 2 release build's `--smoke`
+  tour, from an unrelated folder, exits cleanly with training running
+  (it reached step 3 of 5), Marge's radio panel showing her lines, the
+  speech synthesizer found (3 English voices; speech is off for the check
+  run), and the report replaying a highlight.
+- Windows 11 Pro (build 26300): the M5 part 3 release build's `--smoke`
+  tour, from an unrelated folder, exits cleanly through the new title
+  menu, settings, records, the leaderboard (with the tour's own shift on
+  it) and the sound test, and all twelve screenshots look as expected.
+  Not yet verified: hands-on keyboard, mouse and gamepad play, gamepad
+  menu navigation, rebinding a key by hand, two-player co-op on real
+  controllers, flying a daily challenge, the colorblind palette and
+  reduced motion on screen, and listening to the sound, music and
+  Marge's voice.
+- Windows 11 Pro (build 26300): the 1.0.0 package, built by
+  `tools/package.ps1`, unzipped into a fresh folder and run from an
+  unrelated working directory, passes the `--smoke` tour (exit 0, twelve
+  screens, sound and speech found). The exe shows its icon and version
+  1.0.0 in Explorer, and `dumpbin /dependents` lists only Windows system
+  DLLs (no VCRUNTIME140.dll).
 - **Windows 10: not yet verified.**

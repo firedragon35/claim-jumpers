@@ -16,7 +16,7 @@ use macroquad::prelude::*;
 use std::f32::consts::{PI, TAU};
 
 fn c(rgb: u32) -> Color {
-    Color::from_hex(rgb)
+    crate::look::hex(rgb)
 }
 
 /// drawTag: a small label on a dark plate, in world space.

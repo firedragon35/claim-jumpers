@@ -41,10 +41,32 @@ pub enum Act {
     Truce,
     SellCore,
     ReprogramCore,
+    OpenSettings,
+    OpenRecords,
+    OpenBoard,
+    OpenSounds,
+    Daily,
+    ReplayTraining,
+    /// Start or finish editing the pilot name.
+    EditName,
+    ToggleVoice,
+    SetMusic,
+    SetMotion,
+    SetPalette,
+    CycleCoop,
+    Rebind(crate::settings::Bind),
+    ResetKeys,
+    /// Leave a menu screen for the one it was opened from.
+    Back,
+    BoardTab(usize),
+    PlaySound(usize),
+    PlayAll,
+    StopSounds,
+    Paint(usize),
 }
 
 fn c(rgb: u32) -> Color {
-    Color::from_hex(rgb)
+    crate::look::hex(rgb)
 }
 
 fn cr(n: f64) -> String {
@@ -59,6 +81,10 @@ fn neg(n: f64) -> String {
 /* ------------------------------- Title -------------------------------- */
 
 pub struct TitleView<'a> {
+    /// The pilot name, and the text being typed while it is edited.
+    pub pilot: &'a str,
+    pub editing: Option<&'a str>,
+    pub name_msg: &'a str,
     pub saved: Option<&'a Career>,
     pub mode: Mode,
     pub best: Option<f64>,
@@ -78,12 +104,12 @@ pub fn title(
     dpi: f32,
     v: TitleView,
 ) -> Option<Act> {
-    let (w, h) = (1200.0, 540.0);
+    let (w, h) = (1200.0, 660.0);
     u.begin(input, (w, h), view, dpi);
     if input.tab != 0 {
         *v.tab = (*v.tab as i32 + input.tab).rem_euclid(4) as usize;
     }
-    let r = Rect::new(20.0, 20.0, 1160.0, 500.0);
+    let r = Rect::new(20.0, 20.0, 1160.0, 620.0);
     card(r);
     let mut act = None;
     let (x, mut y) = (r.x + 36.0, r.y + 34.0);
@@ -119,7 +145,73 @@ pub fn title(
         Which::Body,
         c(col::TEXT),
         1.45,
-    ) + 22.0;
+    ) + 16.0;
+
+    // Pilot name (shown on the leaderboard): a field edited in place.
+    label(
+        look,
+        u,
+        "Pilot name (shown on the leaderboard)",
+        x,
+        y,
+        c(col::MUTED),
+    );
+    y += 18.0;
+    let shown = match v.editing {
+        Some(t) => format!("{t}_"),
+        None => v.pilot.to_owned(),
+    };
+    let nr = Rect::new(x, y, 300.0, 34.0);
+    if u.button(
+        look,
+        "pilot",
+        nr,
+        Style::Belt {
+            picked: v.editing.is_some(),
+        },
+        "",
+        true,
+    ) {
+        act = Some(Act::EditName);
+    }
+    text(
+        look,
+        u,
+        &shown,
+        nr.x + 10.0,
+        nr.y + 8.0,
+        15.0,
+        Which::Body,
+        c(col::TEXT),
+    );
+    let edit = if v.editing.is_some() {
+        "Save name"
+    } else {
+        "Edit name"
+    };
+    let (p, er) = u.button_at(
+        look,
+        "name-save",
+        nr.x + nr.w + 8.0,
+        y,
+        Style::Ghost,
+        edit,
+        true,
+    );
+    if p {
+        act = Some(Act::EditName);
+    }
+    text(
+        look,
+        u,
+        v.name_msg,
+        er.x + er.w + 10.0,
+        y + 11.0,
+        12.0,
+        Which::MonoLight,
+        c(col::CABLE),
+    );
+    y += 46.0;
 
     label(
         look,
@@ -192,7 +284,30 @@ pub fn title(
     {
         act = Some(Act::Quit);
     }
-    y += sr.h + 12.0;
+    y += sr.h + 10.0;
+    // The other screens: the browser's row of ghost buttons.
+    let mut mx = x;
+    let mut my = y;
+    for (id, lbl, a) in [
+        ("board", "Leaderboard", Act::OpenBoard),
+        ("sounds", "Sound test", Act::OpenSounds),
+        ("daily", "Daily challenge", Act::Daily),
+        ("training", "Replay training", Act::ReplayTraining),
+        ("records", "Records", Act::OpenRecords),
+        ("settings", "Settings", Act::OpenSettings),
+    ] {
+        let br = ui::button_rect(look, mx, my, Style::Ghost, lbl);
+        if mx + br.w > x + 580.0 {
+            mx = x;
+            my += br.h + 8.0;
+        }
+        let (p, br) = u.button_at(look, id, mx, my, Style::Ghost, lbl, true);
+        if p {
+            act = Some(a);
+        }
+        mx += br.w + 8.0;
+    }
+    y = my + 45.0;
     if let Some(b) = v.best {
         let s = format!("Best {} shift: {}", v.mode.def().label, cr(b));
         text(look, u, &s, x, y, 12.0, Which::MonoLight, c(col::MUTED));
@@ -331,10 +446,11 @@ pub fn pause(
     view: (f32, f32),
     dpi: f32,
     armed_menu: bool,
+    voice_on: bool,
 ) -> Option<Act> {
-    let (w, h) = (680.0, 300.0);
+    let (w, h) = (900.0, 360.0);
     u.begin(input, (w, h), view, dpi);
-    let r = Rect::new(20.0, 20.0, 640.0, 260.0);
+    let r = Rect::new(20.0, 20.0, 860.0, 320.0);
     card(r);
     let (x, mut y) = (r.x + 36.0, r.y + 34.0);
     label(look, u, "Shift paused", x, y, c(col::MUTED));
@@ -367,10 +483,36 @@ pub fn pause(
         act = Some(Act::Resume);
     }
     let by = y + (rr.h - 37.0) / 2.0;
+    let vl = format!("Marge's voice: {}", if voice_on { "on" } else { "off" });
+    let (p, vr) = u.button_at(
+        look,
+        "voice",
+        rr.x + rr.w + 12.0,
+        by,
+        Style::Ghost,
+        &vl,
+        true,
+    );
+    if p {
+        act = Some(Act::ToggleVoice);
+    }
+    let (p, _) = u.button_at(
+        look,
+        "settings",
+        vr.x + vr.w + 12.0,
+        by,
+        Style::Ghost,
+        "Settings",
+        true,
+    );
+    if p {
+        act = Some(Act::OpenSettings);
+    }
+    let by = by + 50.0;
     let (p, er) = u.button_at(
         look,
         "end",
-        rr.x + rr.w + 12.0,
+        r.x + 36.0,
         by,
         Style::Ghost,
         "End shift now",
@@ -429,6 +571,11 @@ pub struct Report {
     pub mode: Mode,
     pub best: f64,
     pub is_best: bool,
+    /// The day of a daily challenge (its report reads differently).
+    pub daily: Option<String>,
+    /// The shift's highlight clip, and when the report opened (it loops).
+    pub highlight: Option<crate::replay::Highlight>,
+    pub shown_at: f64,
 }
 
 impl Report {
@@ -467,6 +614,9 @@ impl Report {
             mode: career.mode,
             best,
             is_best,
+            daily: None,
+            highlight: None,
+            shown_at: get_time(),
         }
     }
 
@@ -475,6 +625,22 @@ impl Report {
         let c = &self.career;
         let earned = self.settlement.earned;
         let rank = rank_for(earned).to_owned();
+        if let Some(day) = &self.daily {
+            let new = if self.is_best {
+                "New best for today. "
+            } else {
+                ""
+            };
+            let note = format!(
+                "{new}Everyone flew the same field today. See where you rank under Leaderboard, Daily. Your career is exactly where you left it."
+            );
+            return (
+                format!("Daily challenge · {day}"),
+                rank,
+                note,
+                "Back to title",
+            );
+        }
         match &self.settlement.outcome {
             Outcome::Continue => {
                 let shift = c.shift - 1;
@@ -780,6 +946,18 @@ pub fn report(
             col::TEXT,
         ),
     ];
+    // A daily run touches no career: the career rows read "Not used".
+    let rows: Vec<(&str, String, u32)> = if rep.daily.is_some() {
+        rows.into_iter()
+            .map(|(l, v, colr)| match l {
+                "Contract" | "Standing" | "Crew wages" | "Loan installment" | "Wallet"
+                | "Loan remaining" => (l, "Not used".to_owned(), col::TEXT),
+                _ => (l, v, colr),
+            })
+            .collect()
+    } else {
+        rows
+    };
     ui::ledger(look, u, x, y, &rows);
 
     // The side column: the note and the buttons.
@@ -797,7 +975,25 @@ pub fn report(
         Which::Body,
         self::c(col::TEXT),
         1.45,
-    ) + 24.0;
+    ) + 16.0;
+    // The shift highlight (#end-replay): a 420 x 236 clip, scaled to the column.
+    if let Some(h) = &rep.highlight {
+        let rh = sw * 236.0 / 420.0;
+        crate::replay::draw(h, Rect::new(sx, sy, sw, rh), get_time() - rep.shown_at);
+        let cap = format!("Shift highlight · {}", h.text);
+        text(
+            look,
+            u,
+            &cap,
+            sx,
+            sy + rh + 4.0,
+            12.0,
+            Which::Body,
+            self::c(col::MUTED),
+        );
+        sy += rh + 26.0;
+    }
+    sy += 8.0;
     let mut act = None;
     let (p, pr) = u.button_at(look, "again", sx, sy, Style::Primary, primary, true);
     if p {
@@ -816,11 +1012,15 @@ pub fn report(
     {
         act = Some(Act::ToMenu);
     }
-    let best = format!(
-        "Best single shift ({}): {}",
-        rep.mode.def().label,
-        cr(rep.best)
-    );
+    let best = if rep.daily.is_some() {
+        format!("Your best today: {}", cr(rep.best))
+    } else {
+        format!(
+            "Best single shift ({}): {}",
+            rep.mode.def().label,
+            cr(rep.best)
+        )
+    };
     text(
         look,
         u,
@@ -838,6 +1038,7 @@ pub fn report(
 
 pub struct ShopView<'a> {
     pub career: &'a Career,
+    pub profile: &'a crate::profile::Profile,
     /// 0 = Tug, 1 = Parts, 2 = Jobs & crew, 3 = Map & standing.
     pub tab: &'a mut usize,
     pub msg: &'a str,
@@ -884,7 +1085,12 @@ pub fn shop(
         Which::Display,
         c(col::HAZARD),
     );
-    // (Marge's shop commentary arrives with her radio in milestone 5.)
+    marge_box(
+        look,
+        u,
+        career,
+        Rect::new(x + 330.0, y0 + 20.0, 560.0, 64.0),
+    );
     let wallet = if career.wallet < 0.0 {
         format!(
             "{} (limit {})",
@@ -943,7 +1149,7 @@ pub fn shop(
     draw_line(x, body_y, r.x + r.w - 24.0, body_y, 1.0, c(col::PANEL_EDGE));
     let body = Rect::new(x, body_y + 12.0, r.w - 48.0, 470.0);
     let picked = match *v.tab {
-        0 => tug_tab(look, u, career, body, v.t, rng),
+        0 => tug_tab(look, u, career, v.profile, body, v.t, rng),
         1 => parts_tab(look, u, career, body),
         2 => jobs_tab(look, u, career, body),
         _ => map_tab(look, u, career, body),
@@ -1013,6 +1219,7 @@ fn tug_tab(
     look: &Look,
     u: &mut Ui,
     career: &Career,
+    profile: &crate::profile::Profile,
     r: Rect,
     t: f32,
     rng: &mut Rng,
@@ -1020,7 +1227,7 @@ fn tug_tab(
     let mut act = None;
     // The bench: a floor grid with the tug turning slowly on it.
     let bw = 380.0;
-    let pv = Rect::new(r.x, r.y, bw, 190.0);
+    let pv = Rect::new(r.x, r.y, bw, 150.0);
     draw_rectangle(pv.x, pv.y, pv.w, pv.h, c(0x070a12));
     let grid = rgba(col::PANEL_EDGE, 0.6);
     let mut gx = pv.x;
@@ -1044,6 +1251,7 @@ fn tug_tab(
     let st = TugState {
         t,
         sentries: career.sentries,
+        paint: profile.paint_colours(),
         ..TugState::default()
     };
     tug::draw_tug(look, &f, &career.mods(), &st, rng);
@@ -1105,7 +1313,7 @@ fn tug_tab(
         }
     }
     let note = "Select a filled hardpoint to unmount it. Parts you own stay in the shop for free.";
-    paragraph(
+    let note_h = paragraph(
         look,
         u,
         note,
@@ -1117,6 +1325,9 @@ fn tug_tab(
         c(col::MUTED),
         1.4,
     );
+    if let Some(a) = paint_row(look, u, profile, r.x, sy + 4.0 + note_h + 8.0, bw) {
+        act = Some(a);
+    }
 
     // Systems columns.
     let cw = (r.w - bw - 48.0) / 2.0;
@@ -1898,5 +2109,758 @@ fn cores_row(look: &Look, u: &mut Ui, career: &Career, x: f32, y: &mut f32, w: f
         act = Some(Act::SellCore);
     }
     *y += h + 6.0;
+    act
+}
+
+/* ------------------------------ Marge ------------------------------ */
+
+/// Marge between shifts (margeVerdict): one line on the shift just flown,
+/// from the career's lastShift record.
+fn marge_verdict(career: &Career) -> String {
+    let Some(ls) = career.extra.get("lastShift").filter(|v| v.is_object()) else {
+        return "First shift's on the house, hotshot. Well, it's on the loan. Everything is on the loan.".to_owned();
+    };
+    let num = |k: &str| ls.get(k).and_then(serde_json::Value::as_f64).unwrap_or(0.0);
+    let truthy = |k: &str| match ls.get(k) {
+        Some(serde_json::Value::Bool(b)) => *b,
+        Some(serde_json::Value::Number(n)) => n.as_f64().is_some_and(|v| v != 0.0),
+        Some(serde_json::Value::String(t)) => !t.is_empty(),
+        _ => false,
+    };
+    let contract = ls.get("contract").and_then(serde_json::Value::as_str);
+    if truthy("tradedUp") {
+        "New tug, new loan, same pilot. The bank loves you. That is not a compliment.".to_owned()
+    } else if num("wallet") < 0.0 {
+        "You're in overdraft, hon. The bank calls that a relationship. I call it a leash."
+            .to_owned()
+    } else if num("deaths") >= 2.0 {
+        format!(
+            "{} wrecks in one shift. The insurance people know my voice now.",
+            num("deaths")
+        )
+    } else if let Some(b) = ls
+        .get("boss")
+        .and_then(serde_json::Value::as_str)
+        .filter(|b| !b.is_empty())
+    {
+        format!("You took down {b}. The other crews are being polite about you now. It's creepy.")
+    } else if truthy("arrests") {
+        "Spent part of your shift in cuffs. The fine came out of your cargo. Very efficient of you."
+            .to_owned()
+    } else if truthy("hold") {
+        "You cracked a sealed hold. I didn't ask whose. I never ask whose.".to_owned()
+    } else if num("earned") >= 6000.0 {
+        "That's a real haul. I'm writing it in the logbook. In pencil.".to_owned()
+    } else if contract == Some("done") {
+        "Client is happy. Happy clients pay. Remember that feeling; it is rare.".to_owned()
+    } else if contract == Some("missed") {
+        "You missed the contract. The client called. I let it ring.".to_owned()
+    } else if num("kills") >= 5.0 {
+        format!(
+            "{} crews scrapped. You're not a salvager, you're weather.",
+            num("kills")
+        )
+    } else if truthy("escort") {
+        "The hauler made it. Their captain sent flowers. I ate them. Long shift.".to_owned()
+    } else if num("earned") < 500.0 {
+        "That was a shift. Technically.".to_owned()
+    } else {
+        "Decent shift. Not great. Decent. Like my coffee.".to_owned()
+    }
+}
+
+/// The shop's Marge box (#shop-marge): her portrait and her verdict.
+fn marge_box(look: &Look, u: &Ui, career: &Career, r: Rect) {
+    draw_rectangle(r.x, r.y, r.w, r.h, c(0x0c1220));
+    draw_rectangle_lines(r.x, r.y, r.w, r.h, 1.0, c(col::PANEL_EDGE));
+    let face = Rect::new(r.x + 10.0, r.y + 6.0, 52.0, 52.0);
+    draw_marge(face);
+    let tx = face.x + face.w + 12.0;
+    let tw = r.x + r.w - 10.0 - tx;
+    label(look, u, "Marge · dispatch", tx, r.y + 8.0, c(col::MUTED));
+    let line = marge_verdict(career);
+    let size = if paragraph_h(look, &line, tw, 14.0, Which::Body, 1.4) > 40.0 {
+        12.5
+    } else {
+        14.0
+    };
+    paragraph(
+        look,
+        u,
+        &line,
+        tx,
+        r.y + 24.0,
+        tw,
+        size,
+        Which::Body,
+        c(col::TEXT),
+        1.4,
+    );
+}
+
+/// drawMarge: grey bun, cat-eye glasses, a headset with a boom mic, and
+/// the mug, in a square `r`.
+fn draw_marge(r: Rect) {
+    let (x0, y0, w, h) = (r.x, r.y, r.w, r.h);
+    let p = |fx: f32, fy: f32| vec2(x0 + w * fx, y0 + h * fy);
+    draw_rectangle(x0, y0, w, h, c(0x0c1220));
+    let hair = c(0x9aa0a8);
+    draw_circle(x0 + w * 0.5, y0 + h * 0.2, h * 0.13, hair); // bun
+                                                             // Hair: the top half of a circle.
+    let (cx, cy, hr) = (x0 + w * 0.5, y0 + h * 0.42, h * 0.27);
+    for i in 0..24 {
+        let a0 = std::f32::consts::PI * (1.0 + i as f32 / 24.0);
+        let a1 = std::f32::consts::PI * (1.0 + (i + 1) as f32 / 24.0);
+        draw_triangle(
+            vec2(cx, cy),
+            vec2(cx + hr * a0.cos(), cy + hr * a0.sin()),
+            vec2(cx + hr * a1.cos(), cy + hr * a1.sin()),
+            hair,
+        );
+    }
+    draw_ellipse(
+        x0 + w * 0.5,
+        y0 + h * 0.52,
+        h * 0.22,
+        h * 0.26,
+        0.0,
+        c(0xc99d78),
+    ); // face
+    let ink = c(0x1b1b22);
+    for sx in [-1.0f32, 1.0] {
+        // Cat-eye glasses.
+        let q = [
+            p(0.5 + sx * 0.02, 0.47),
+            p(0.5 + sx * 0.2, 0.44),
+            p(0.5 + sx * 0.18, 0.53),
+            p(0.5 + sx * 0.04, 0.53),
+        ];
+        for k in 0..4 {
+            draw_line(q[k].x, q[k].y, q[(k + 1) % 4].x, q[(k + 1) % 4].y, 2.0, ink);
+        }
+    }
+    let quad = |a: Vec2, b: Vec2, e: Vec2, width: f32, colr: Color| {
+        let mut prev = a;
+        for i in 1..=12 {
+            let t = i as f32 / 12.0;
+            let q = a * (1.0 - t) * (1.0 - t) + b * 2.0 * t * (1.0 - t) + e * t * t;
+            draw_line(prev.x, prev.y, q.x, q.y, width, colr);
+            prev = q;
+        }
+    };
+    quad(p(0.42, 0.66), p(0.52, 0.69), p(0.6, 0.63), 2.0, ink); // smirk
+    let hz = c(col::HAZARD);
+    // Headset band.
+    let (bx, by, br) = (x0 + w * 0.5, y0 + h * 0.5, h * 0.3);
+    let mut prev = vec2(
+        bx + br * (std::f32::consts::PI * 1.05).cos(),
+        by + br * (std::f32::consts::PI * 1.05).sin(),
+    );
+    for i in 1..=16 {
+        let a = std::f32::consts::PI * (1.05 + 0.9 * i as f32 / 16.0);
+        let q = vec2(bx + br * a.cos(), by + br * a.sin());
+        draw_line(prev.x, prev.y, q.x, q.y, 2.5, hz);
+        prev = q;
+    }
+    quad(p(0.23, 0.55), p(0.28, 0.78), p(0.44, 0.74), 2.5, hz); // boom mic
+    draw_circle(x0 + w * 0.45, y0 + h * 0.74, 2.2, hz);
+    draw_rectangle(
+        x0 + w * 0.66,
+        y0 + h * 0.78,
+        h * 0.16,
+        h * 0.16,
+        c(0xd24b3c),
+    ); // the mug
+    draw_rectangle_lines(x0, y0, w, h, 1.0, hz);
+}
+
+/* ------------------------- Settings, records, board ------------------------- */
+
+pub struct SettingsView<'a> {
+    pub settings: &'a crate::settings::Settings,
+    pub rebinding: Option<crate::settings::Bind>,
+    pub msg: &'a str,
+}
+
+/// The settings screen (#screen-settings): toggles on the left, the key
+/// map on the right.
+pub fn settings(
+    look: &Look,
+    u: &mut Ui,
+    input: &MenuInput,
+    view: (f32, f32),
+    dpi: f32,
+    v: SettingsView,
+) -> Option<Act> {
+    use crate::settings::{key_label, KEY_ACTIONS};
+    let (w, h) = (1040.0, 600.0);
+    u.begin(input, (w, h), view, dpi);
+    let r = Rect::new(20.0, 20.0, 1000.0, 560.0);
+    card(r);
+    let (x, mut y) = (r.x + 36.0, r.y + 34.0);
+    label(look, u, "Hollis-3 · cockpit settings", x, y, c(col::MUTED));
+    y += 22.0;
+    text(
+        look,
+        u,
+        "Settings",
+        x,
+        y,
+        56.0,
+        Which::Display,
+        c(col::HAZARD),
+    );
+    y += 72.0;
+    let s = v.settings;
+    let mut act = None;
+    let onoff = |b: bool| if b { "on" } else { "off" };
+    let toggles = [
+        (
+            "set-music",
+            format!("Music: {}", onoff(s.music)),
+            Act::SetMusic,
+        ),
+        (
+            "set-motion",
+            format!("Reduce shake and flashing: {}", onoff(s.reduce_motion)),
+            Act::SetMotion,
+        ),
+        (
+            "set-palette",
+            format!("Colorblind-safe palette: {}", onoff(s.colorblind)),
+            Act::SetPalette,
+        ),
+        (
+            "set-coop",
+            format!("Local co-op (P2): {}", s.coop.label()),
+            Act::CycleCoop,
+        ),
+        (
+            "set-voice",
+            format!("Marge's voice: {}", onoff(s.voice)),
+            Act::ToggleVoice,
+        ),
+    ];
+    let mut ty = y;
+    for (id, lbl, a) in toggles {
+        let (p, br) = u.button_at(look, id, x, ty, Style::Ghost, &lbl, true);
+        if p {
+            act = Some(a);
+        }
+        ty += br.h + 8.0;
+    }
+    let note = "Co-op: P2 flies a partner tug from the numpad (8 thrust, 4/6 turn, 5 brake, 0 fire, Enter latch) or the last connected gamepad (stick, RT, LT, RB, Y latch). Latch onto the tail of the cable to haul together.";
+    paragraph(
+        look,
+        u,
+        note,
+        x,
+        ty + 4.0,
+        420.0,
+        12.0,
+        Which::MonoLight,
+        c(col::MUTED),
+        1.4,
+    );
+
+    let kx = r.x + 520.0;
+    let kw = r.x + r.w - 36.0 - kx;
+    section(look, u, "Controls", kx, &mut y);
+    let help = "Select an action, then press the new key. Esc cancels. P, M, V, N, T and Enter are reserved.";
+    y += paragraph(
+        look,
+        u,
+        help,
+        kx,
+        y,
+        kw,
+        12.0,
+        Which::MonoLight,
+        c(col::MUTED),
+        1.4,
+    ) + 8.0;
+    let col_w = (kw - 8.0) / 2.0;
+    for (i, (b, id, lbl, _)) in KEY_ACTIONS.iter().enumerate() {
+        let bx = kx + (i % 2) as f32 * (col_w + 8.0);
+        let by = y + (i / 2) as f32 * 40.0;
+        let br = Rect::new(bx, by, col_w, 34.0);
+        let listening = v.rebinding == Some(*b);
+        let keys = if listening {
+            "press a key".to_owned()
+        } else {
+            s.codes_for(*b)
+                .iter()
+                .map(|c| key_label(c))
+                .collect::<Vec<_>>()
+                .join(" / ")
+        };
+        if u.button(look, &format!("bind-{id}"), br, Style::Ghost, "", true) {
+            act = Some(Act::Rebind(*b));
+        }
+        if listening {
+            draw_rectangle_lines(br.x, br.y, br.w, br.h, 2.0, c(col::HAZARD));
+        }
+        text(
+            look,
+            u,
+            lbl,
+            br.x + 10.0,
+            br.y + 9.0,
+            13.0,
+            Which::Mono,
+            c(col::TEXT),
+        );
+        let kwid = text_w(look, &keys, 13.0, Which::Mono);
+        let kc = if listening { col::HAZARD } else { col::CABLE };
+        text(
+            look,
+            u,
+            &keys,
+            br.x + br.w - 10.0 - kwid,
+            br.y + 9.0,
+            13.0,
+            Which::Mono,
+            c(kc),
+        );
+    }
+    let my = y + 6.0 * 40.0 + 4.0;
+    paragraph(
+        look,
+        u,
+        v.msg,
+        kx,
+        my,
+        kw,
+        12.0,
+        Which::MonoLight,
+        c(col::CABLE),
+        1.4,
+    );
+
+    let ay = r.y + r.h - 70.0;
+    let (p, br) = u.button_at(look, "back", x, ay, Style::Primary, "Back", true);
+    if p || input.back {
+        act = Some(Act::Back);
+    }
+    let by = ay + (br.h - 37.0) / 2.0;
+    if u.button_at(
+        look,
+        "keys-reset",
+        br.x + br.w + 12.0,
+        by,
+        Style::Ghost,
+        "Reset controls",
+        true,
+    )
+    .0
+    {
+        act = Some(Act::ResetKeys);
+    }
+    act
+}
+
+/// Records (#screen-records): lifetime stats, the kill tally, and the
+/// achievements with how to earn each.
+pub fn records(
+    look: &Look,
+    u: &mut Ui,
+    input: &MenuInput,
+    view: (f32, f32),
+    dpi: f32,
+    p: &crate::profile::Profile,
+) -> Option<Act> {
+    use crate::profile::{ACHIEVEMENTS, KILL_KINDS, PROFILE_STATS};
+    let (w, h) = (1040.0, 660.0);
+    u.begin(input, (w, h), view, dpi);
+    let r = Rect::new(20.0, 20.0, 1000.0, 620.0);
+    card(r);
+    let (x, mut y) = (r.x + 36.0, r.y + 34.0);
+    label(
+        look,
+        u,
+        "Across every career on this PC",
+        x,
+        y,
+        c(col::MUTED),
+    );
+    y += 22.0;
+    text(
+        look,
+        u,
+        "Records",
+        x,
+        y,
+        56.0,
+        Which::Display,
+        c(col::HAZARD),
+    );
+    y += 72.0;
+    let stats: Vec<(&str, String, u32)> = PROFILE_STATS
+        .iter()
+        .zip(p.stats)
+        .map(|((_, l), v)| (*l, fmt_credits(v), col::TEXT))
+        .collect();
+    let (_, sh) = ui::ledger(look, u, x, y, &stats);
+    let mut ky = y + sh + 14.0;
+    section(look, u, "Kill tally", x, &mut ky);
+    let kills: Vec<(&str, String, u32)> = KILL_KINDS
+        .iter()
+        .zip(p.kills)
+        .map(|((_, l), v)| (*l, fmt_credits(f64::from(v)), col::TEXT))
+        .collect();
+    ui::ledger(look, u, x, ky, &kills);
+
+    let ax = r.x + 480.0;
+    let aw = r.x + r.w - 36.0 - ax;
+    let got = ACHIEVEMENTS.iter().filter(|a| p.has(a.0)).count();
+    let mut ay = y;
+    section(
+        look,
+        u,
+        &format!("Achievements {got} / {}", ACHIEVEMENTS.len()),
+        ax,
+        &mut ay,
+    );
+    for (id, title, how) in ACHIEVEMENTS {
+        let has = p.has(id);
+        let t = if has {
+            title.to_owned()
+        } else {
+            format!("{title} (locked)")
+        };
+        text(
+            look,
+            u,
+            &t,
+            ax,
+            ay,
+            15.0,
+            Which::Body,
+            c(if has { col::HAZARD } else { col::MUTED }),
+        );
+        ay += 18.0;
+        text(look, u, how, ax, ay, 12.0, Which::Body, c(col::MUTED));
+        ay += 18.0;
+    }
+    let _ = aw;
+    let by = r.y + r.h - 70.0;
+    let (pr, _) = u.button_at(look, "back", x, by, Style::Primary, "Back", true);
+    (pr || input.back).then_some(Act::Back)
+}
+
+pub struct BoardView<'a> {
+    pub rows: &'a [crate::profile::Score],
+    /// 0..3 the difficulties, 3 the daily challenge.
+    pub tab: usize,
+    pub pilot: &'a str,
+    pub day: &'a str,
+}
+
+/// The leaderboard (#screen-board): this PC's best shifts per difficulty,
+/// and today's daily challenge.
+pub fn board(
+    look: &Look,
+    u: &mut Ui,
+    input: &MenuInput,
+    view: (f32, f32),
+    dpi: f32,
+    v: BoardView,
+) -> Option<Act> {
+    let (w, h) = (760.0, 660.0);
+    u.begin(input, (w, h), view, dpi);
+    let r = Rect::new(20.0, 20.0, 720.0, 620.0);
+    card(r);
+    let (x, mut y) = (r.x + 36.0, r.y + 34.0);
+    label(
+        look,
+        u,
+        "Hollis Belt · best single shift",
+        x,
+        y,
+        c(col::MUTED),
+    );
+    y += 22.0;
+    text(
+        look,
+        u,
+        "Leaderboard",
+        x,
+        y,
+        56.0,
+        Which::Display,
+        c(col::HAZARD),
+    );
+    y += 72.0;
+    let mut act = None;
+    let names = ["Relaxed", "Standard", "Hard", "Daily"];
+    let bw = 160.0;
+    for (i, n) in names.iter().enumerate() {
+        let br = Rect::new(x + i as f32 * bw, y, bw, 38.0);
+        if u.button(
+            look,
+            &format!("board-{i}"),
+            br,
+            Style::Mode {
+                pressed: v.tab == i,
+            },
+            n,
+            true,
+        ) {
+            act = Some(Act::BoardTab(i));
+        }
+    }
+    y += 50.0;
+    let status = format!(
+        "Scores on this PC. Your best runs post here as {}.",
+        v.pilot
+    );
+    text(
+        look,
+        u,
+        &status,
+        x,
+        y,
+        12.0,
+        Which::MonoLight,
+        c(col::MUTED),
+    );
+    y += 24.0;
+    if v.rows.is_empty() {
+        let empty = if v.tab == 3 {
+            format!(
+                "No daily runs for {} yet. Fly today's challenge to set the first one.",
+                v.day
+            )
+        } else {
+            format!(
+                "No {} runs yet. Finish a shift to set the first one.",
+                names[v.tab]
+            )
+        };
+        text(look, u, &empty, x, y, 15.0, Which::Body, c(col::MUTED));
+    }
+    let lw = r.w - 72.0;
+    for (i, row) in v.rows.iter().take(20).enumerate() {
+        let me = row.name == v.pilot;
+        let ry = y + i as f32 * 21.0;
+        let fg = c(if me { col::HAZARD } else { col::TEXT });
+        text(
+            look,
+            u,
+            &format!("{}", i + 1),
+            x,
+            ry,
+            13.0,
+            Which::Mono,
+            c(col::MUTED),
+        );
+        let who = if me {
+            format!("{} (you)", row.name)
+        } else {
+            row.name.clone()
+        };
+        text(look, u, &who, x + 36.0, ry, 13.0, Which::Mono, fg);
+        if row.shift > 0 {
+            let m = format!("shift {}", row.shift);
+            text(
+                look,
+                u,
+                &m,
+                x + 330.0,
+                ry,
+                12.0,
+                Which::MonoLight,
+                c(col::MUTED),
+            );
+        }
+        let pts = cr(row.score);
+        let pw = text_w(look, &pts, 13.0, Which::Mono);
+        text(look, u, &pts, x + lw - pw, ry, 13.0, Which::Mono, fg);
+    }
+    let by = r.y + r.h - 70.0;
+    let (pr, _) = u.button_at(look, "back", x, by, Style::Primary, "Back", true);
+    if pr || input.back {
+        act = Some(Act::Back);
+    }
+    act
+}
+
+/// The sound test (#screen-sounds).
+#[allow(clippy::too_many_arguments)]
+pub fn sounds(
+    look: &Look,
+    u: &mut Ui,
+    input: &MenuInput,
+    view: (f32, f32),
+    dpi: f32,
+    groups: &[(&str, Vec<crate::sounds::Item>)],
+    lit: Option<usize>,
+    now_playing: &str,
+) -> Option<Act> {
+    let (w, h) = (1240.0, 720.0);
+    u.begin(input, (w, h), view, dpi);
+    let r = Rect::new(20.0, 20.0, 1200.0, 680.0);
+    card(r);
+    let (x, mut y) = (r.x + 30.0, r.y + 26.0);
+    label(look, u, "Hollis-3 audio bench", x, y, c(col::MUTED));
+    y += 20.0;
+    text(
+        look,
+        u,
+        "Sound test",
+        x,
+        y,
+        48.0,
+        Which::Display,
+        c(col::HAZARD),
+    );
+    y += 58.0;
+    let help = "Every sound in the game. Select one to hear it, or play them all in order. Mind your volume; the alarms are alarms.";
+    text(look, u, help, x, y, 13.0, Which::Body, c(col::MUTED));
+    y += 26.0;
+    let mut act = None;
+    // Groups in three columns.
+    let cw = (r.w - 60.0 - 2.0 * 16.0) / 3.0;
+    let mut cols = [y; 3];
+    let mut flat = 0;
+    for (gi, (name, items)) in groups.iter().enumerate() {
+        let ci = (0..3)
+            .min_by(|a, b| cols[*a].total_cmp(&cols[*b]))
+            .unwrap_or(gi % 3);
+        let gx = x + ci as f32 * (cw + 16.0);
+        let gy = &mut cols[ci];
+        section(look, u, name, gx, gy);
+        for (i, item) in items.iter().enumerate() {
+            let bx = gx + (i % 2) as f32 * (cw / 2.0 + 2.0);
+            let br = Rect::new(bx, *gy, cw / 2.0 - 2.0, 26.0);
+            let on = lit == Some(flat);
+            if u.button(
+                look,
+                &format!("snd-{flat}"),
+                br,
+                Style::Slot { filled: on },
+                "",
+                true,
+            ) {
+                act = Some(Act::PlaySound(flat));
+            }
+            text(
+                look,
+                u,
+                item.label,
+                br.x + 8.0,
+                br.y + 6.0,
+                12.0,
+                Which::Body,
+                c(if on { col::HAZARD } else { col::TEXT }),
+            );
+            if i % 2 == 1 || i + 1 == items.len() {
+                *gy += 30.0;
+            }
+            flat += 1;
+        }
+        *gy += 8.0;
+    }
+    let ay = r.y + r.h - 64.0;
+    let (p, br) = u.button_at(look, "all", x, ay, Style::Primary, "Play all", true);
+    if p {
+        act = Some(Act::PlayAll);
+    }
+    let by = ay + (br.h - 37.0) / 2.0;
+    let (p, sr) = u.button_at(
+        look,
+        "stop",
+        br.x + br.w + 12.0,
+        by,
+        Style::Ghost,
+        "Stop",
+        true,
+    );
+    if p {
+        act = Some(Act::StopSounds);
+    }
+    let (p, bk) = u.button_at(
+        look,
+        "back",
+        sr.x + sr.w + 12.0,
+        by,
+        Style::Ghost,
+        "Back",
+        true,
+    );
+    if p || input.back {
+        act = Some(Act::Back);
+    }
+    if !now_playing.is_empty() {
+        let s = format!("Now playing: {now_playing}");
+        text(
+            look,
+            u,
+            &s,
+            bk.x + bk.w + 16.0,
+            by + 10.0,
+            12.0,
+            Which::MonoLight,
+            c(col::CABLE),
+        );
+    }
+    act
+}
+
+/// The Tug tab's paint picker (renderPaint): each job unlocks with an
+/// achievement; the choice follows the pilot across careers.
+fn paint_row(
+    look: &Look,
+    u: &mut Ui,
+    p: &crate::profile::Profile,
+    x: f32,
+    y: f32,
+    w: f32,
+) -> Option<Act> {
+    use crate::profile::PAINTS;
+    let mut yy = y;
+    section(look, u, "Paint", x, &mut yy);
+    let mut act = None;
+    let bw = (w - 6.0) / 2.0;
+    for (i, (id, name, hull, trim, needs)) in PAINTS.iter().enumerate() {
+        let open = needs.is_none_or(|a| p.has(a));
+        let picked = p.paint == *id;
+        let br = Rect::new(
+            x + (i % 2) as f32 * (bw + 6.0),
+            yy + (i / 2) as f32 * 24.0,
+            bw,
+            21.0,
+        );
+        if u.button(
+            look,
+            &format!("paint-{id}"),
+            br,
+            Style::Belt { picked },
+            "",
+            open,
+        ) {
+            act = Some(Act::Paint(i));
+        }
+        let a = if open { 1.0 } else { 0.45 };
+        if *hull != 0 {
+            draw_rectangle(br.x + 6.0, br.y + 5.0, 11.0, 11.0, rgba(*hull, a));
+            draw_rectangle_lines(br.x + 6.0, br.y + 5.0, 11.0, 11.0, 1.0, rgba(*trim, a));
+        }
+        let lbl = if open {
+            (*name).to_owned()
+        } else {
+            format!("{name} (locked)")
+        };
+        text(
+            look,
+            u,
+            &lbl,
+            br.x + 22.0,
+            br.y + 4.0,
+            11.0,
+            Which::Body,
+            rgba(col::TEXT, a),
+        );
+    }
     act
 }

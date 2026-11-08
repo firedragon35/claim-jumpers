@@ -199,6 +199,7 @@ impl World {
         if self.chain.is_empty() {
             return;
         }
+        self.threw_cargo = true;
         for i in self.chain_indices() {
             self.items[i].thrown_t = 1.2;
         }
@@ -241,7 +242,6 @@ impl World {
             .and_then(|n| self.collector_index(n.by))
             .filter(|&c| !self.collectors[c].dead);
         // Multiple passes let corrections propagate down a long train.
-        // (The co-op partner latch joins these passes in milestone 5.)
         for _ in 0..CABLE_ITERATIONS {
             if self.ship.alive {
                 for (k, &i) in links.iter().enumerate() {
@@ -265,6 +265,7 @@ impl World {
                 let cl = &mut self.collectors[c];
                 rope_constraint(&mut cl.b, &mut self.ship.b, cl.tether);
             }
+            self.partner_constraint();
         }
         for c in &mut self.collectors {
             if c.state == crate::opposition::CollectorState::Tow && c.tether > 160.0 {

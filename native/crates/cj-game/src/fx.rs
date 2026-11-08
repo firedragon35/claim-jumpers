@@ -50,6 +50,8 @@ pub struct Fx {
     rng: Rng,
     pub particles: Vec<Particle>,
     pub popups: Vec<Popup>,
+    /// Recent positions of fast towed or thrown cargo, by item id (updateTrail).
+    pub trails: std::collections::HashMap<u32, std::collections::VecDeque<(f64, f64)>>,
 }
 
 impl Fx {
@@ -58,6 +60,7 @@ impl Fx {
             rng,
             particles: Vec::new(),
             popups: Vec::new(),
+            trails: Default::default(),
         }
     }
 
@@ -264,6 +267,28 @@ impl Fx {
 
     /// Per-step visual emitters that the browser runs inside gameplay code:
     /// engine exhaust and rare-item glints.
+    /// Keep a short position history on fast cargo so swings and throws
+    /// read: cargo faster than 220 px/s keeps its last 8 positions, and a
+    /// slowed piece's trail shrinks a point a step.
+    pub fn update_trails(&mut self, w: &World) {
+        const TRAIL_SPEED: f64 = 220.0;
+        const TRAIL_LEN: usize = 8;
+        self.trails
+            .retain(|id, _| w.items.iter().any(|it| it.id == *id && !it.dead));
+        for it in &w.items {
+            let fast = (it.towed || it.thrown_t > 0.0) && it.b.vx.hypot(it.b.vy) > TRAIL_SPEED;
+            if fast {
+                let tr = self.trails.entry(it.id).or_default();
+                tr.push_back((it.b.x, it.b.y));
+                if tr.len() > TRAIL_LEN {
+                    tr.pop_front();
+                }
+            } else if let Some(tr) = self.trails.get_mut(&it.id) {
+                tr.pop_front();
+            }
+        }
+    }
+
     pub fn emit_ambient(&mut self, w: &World) {
         let s = &w.ship;
         // Exhaust: visibly choked while sputtering. Only forward thrust smokes.

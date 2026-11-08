@@ -65,6 +65,8 @@ pub struct TugState {
     pub burn: bool,
     /// Missiles in the rack (None shows a full rack, as in the shop).
     pub missiles: Option<u32>,
+    /// A paint job's (hull, trim), overriding the class colours.
+    pub paint: Option<(u32, u32)>,
 }
 
 fn fill_rect(f: &Frame, x: f32, y: f32, w: f32, h: f32, c: Color) {
@@ -87,26 +89,26 @@ pub fn draw_tug(look: &Look, f: &Frame, m: &Mods, st: &TugState, rng: &mut Rng) 
             (-16.0, -18.0),
             (16.0, -17.0),
         ]);
-        fill_fan(f.o, &shell, Color::from_hex(0x3a3f4a));
-        polyline(&shell, true, 1.5 * k, Color::from_hex(col::STEEL));
+        fill_fan(f.o, &shell, crate::look::hex(0x3a3f4a));
+        polyline(&shell, true, 1.5 * k, crate::look::hex(col::STEEL));
         for x in [-12.0, 0.0, 12.0] {
-            fill_rect(f, x - 1.0, -17.0, 2.0, 2.0, Color::from_hex(col::STEEL));
-            fill_rect(f, x - 1.0, 15.0, 2.0, 2.0, Color::from_hex(col::STEEL));
+            fill_rect(f, x - 1.0, -17.0, 2.0, 2.0, crate::look::hex(col::STEEL));
+            fill_rect(f, x - 1.0, 15.0, 2.0, 2.0, crate::look::hex(col::STEEL));
         }
     }
     // Side thruster pods on both flanks, puffing on the side opposite the strafe.
     if m.thrusters {
         for side in [-1.0f32, 1.0] {
             let pod = f.rect(-8.0, side * 15.0 - 3.0 + side * 3.0, 14.0, 6.0);
-            fill_fan((pod[0] + pod[2]) / 2.0, &pod, Color::from_hex(0x16303a));
-            polyline(&pod, true, 1.5 * k, Color::from_hex(col::CABLE));
+            fill_fan((pod[0] + pod[2]) / 2.0, &pod, crate::look::hex(0x16303a));
+            polyline(&pod, true, 1.5 * k, crate::look::hex(col::CABLE));
             if st.strafe != 0.0 && st.strafe.signum() == -side {
                 let reach = rng.range(4.0, 10.0) as f32;
                 draw_triangle(
                     f.p(-4.0, side * 21.0),
                     f.p(-1.0, side * (26.0 + reach)),
                     f.p(2.0, side * 21.0),
-                    Color::from_hex(col::CABLE),
+                    crate::look::hex(col::CABLE),
                 );
             }
         }
@@ -128,11 +130,11 @@ pub fn draw_tug(look: &Look, f: &Frame, m: &Mods, st: &TugState, rng: &mut Rng) 
             f.p(-20.0, -3.0),
             f.p(-20.0 - len * 0.55, 0.0),
             f.p(-20.0, 3.0),
-            Color::from_hex(0xfff3d0),
+            crate::look::hex(0xfff3d0),
         );
     }
     // Gun barrels, red while the guns are overheated.
-    let barrel_c = Color::from_hex(if st.overheated {
+    let barrel_c = crate::look::hex(if st.overheated {
         col::DANGER
     } else {
         col::TEXT
@@ -143,16 +145,16 @@ pub fn draw_tug(look: &Look, f: &Frame, m: &Mods, st: &TugState, rng: &mut Rng) 
     // Magnetic scoop: a horseshoe magnet under the nose with a pulsing field.
     if m.scoop {
         let horseshoe = f.arc(24.0, 0.0, 9.0, -PI / 2.0 - 0.9, -PI / 2.0 + 0.9 - PI, 16);
-        polyline(&horseshoe, false, 3.0 * k, Color::from_hex(col::DANGER));
+        polyline(&horseshoe, false, 3.0 * k, crate::look::hex(col::DANGER));
         let a = 0.35 + (t * 6.0).sin() * 0.2;
         let field = f.arc(28.0, 0.0, 16.0 + (t * 20.0) % 10.0, -0.9, 0.9, 16);
         polyline(&field, false, k, rgba(col::CABLE, a));
     }
     // Class hardware behind the hull: each trade-up adds a visible feature.
-    // (Custom paint jobs arrive with records in milestone 5.)
     let tier = m.tug_class;
     let cls = &TUG_CLASSES[tier];
-    let (hull_c, trim_c) = (Color::from_hex(cls.hull), Color::from_hex(cls.trim));
+    let (hull_rgb, trim_rgb) = st.paint.unwrap_or((cls.hull, cls.trim));
+    let (hull_c, trim_c) = (crate::look::hex(hull_rgb), crate::look::hex(trim_rgb));
     let hardware = |pts: Vec<Vec2>| {
         fill_poly(&pts, hull_c);
         polyline(&pts, true, 1.5 * k, trim_c);
@@ -201,14 +203,14 @@ pub fn draw_tug(look: &Look, f: &Frame, m: &Mods, st: &TugState, rng: &mut Rng) 
                 c.x,
                 c.y,
                 (12.0 + (t * 5.0).sin() * 2.0) * k,
-                cls.trim,
+                trim_rgb,
                 true,
                 1.0,
             )
         });
     }
-    fill_rect(f, 6.0, -5.0, 9.0, 10.0, Color::from_hex(col::CABLE)); // cab window
-    let amber = Color::from_hex(col::HAZARD);
+    fill_rect(f, 6.0, -5.0, 9.0, 10.0, crate::look::hex(col::CABLE)); // cab window
+    let amber = crate::look::hex(col::HAZARD);
     polyline(
         &f.pts(&[(-6.0, -14.0), (-6.0, 14.0)]),
         false,
@@ -236,11 +238,11 @@ pub fn draw_tug(look: &Look, f: &Frame, m: &Mods, st: &TugState, rng: &mut Rng) 
     // Drone bay: a small hangar on the stern with a light per sentry aboard.
     if m.drone_bay {
         let bay = f.rect(-15.0, -6.0, 9.0, 12.0);
-        fill_fan((bay[0] + bay[2]) / 2.0, &bay, Color::from_hex(0x1a2a30));
-        polyline(&bay, true, 1.2 * k, Color::from_hex(col::CABLE));
+        fill_fan((bay[0] + bay[2]) / 2.0, &bay, crate::look::hex(0x1a2a30));
+        polyline(&bay, true, 1.2 * k, crate::look::hex(col::CABLE));
         for i in 0..SENTRY_MAX {
             let lit = i < st.sentries;
-            let c = Color::from_hex(if lit { col::CABLE } else { 0x14161c });
+            let c = crate::look::hex(if lit { col::CABLE } else { 0x14161c });
             fill_rect(f, -13.0, -4.0 + i as f32 * 3.2, 5.0, 2.0, c);
         }
     }
@@ -252,11 +254,11 @@ pub fn draw_tug(look: &Look, f: &Frame, m: &Mods, st: &TugState, rng: &mut Rng) 
         let loaded = cj_sim::js::round(full * 4.0) as u32;
         for side in [-1.0f32, 1.0] {
             let pod = f.rect(-2.0, side * 9.0 - 2.5, 12.0, 5.0);
-            fill_fan((pod[0] + pod[2]) / 2.0, &pod, Color::from_hex(0x2b2f38));
+            fill_fan((pod[0] + pod[2]) / 2.0, &pod, crate::look::hex(0x2b2f38));
             polyline(&pod, true, 1.2 * k, amber);
             for i in 0..2u32 {
                 let slot = if side < 0.0 { 0 } else { 2 } + i;
-                let c = Color::from_hex(if slot < loaded { col::DANGER } else { 0x14161c });
+                let c = crate::look::hex(if slot < loaded { col::DANGER } else { 0x14161c });
                 fill_rect(f, 1.0 + i as f32 * 5.0, side * 9.0 - 1.2, 3.0, 2.4, c);
             }
         }
@@ -272,8 +274,8 @@ pub fn draw_tug(look: &Look, f: &Frame, m: &Mods, st: &TugState, rng: &mut Rng) 
                 c + vec2(a.cos(), a.sin()) * r
             })
             .collect();
-        fill_fan(c, &teeth, Color::from_hex(0x2b2f38));
-        polyline(&teeth, true, 1.2 * k, Color::from_hex(col::STEEL));
+        fill_fan(c, &teeth, crate::look::hex(0x2b2f38));
+        polyline(&teeth, true, 1.2 * k, crate::look::hex(col::STEEL));
     }
 }
 

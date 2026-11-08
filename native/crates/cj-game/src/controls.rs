@@ -1,7 +1,8 @@
 //! Keyboard and gamepad, merged into one [`Input`] like readInput and
-//! pollGamepad in src/js/12-input.js. Default key bindings only; rebinding
-//! comes with the settings screen in milestone 5.
+//! pollGamepad in src/js/12-input.js, with the key bindings from Settings.
 
+use crate::settings::{Bind, Coop, Settings, KEY_ACTIONS};
+use cj_sim::coop::P2Input;
 use cj_sim::{Action, Input};
 use gilrs::{Axis, Button, Gilrs};
 use macroquad::prelude::*;
@@ -32,6 +33,12 @@ pub struct Presses {
     pub pause: bool,
     /// Toggle sound (M, or the pad's Back button).
     pub mute: bool,
+    /// Toggle Marge's voice (V).
+    pub voice: bool,
+    /// Skip the guided training (T).
+    pub skip_training: bool,
+    /// Toggle the music (N).
+    pub music: bool,
 }
 
 /// What a pad button tap does.
@@ -50,6 +57,10 @@ pub struct Controls {
     /// both readers whichever screen is up.
     menu_prev: Vec<Button>,
     pub last_device: Device,
+    /// Keys held for each rebindable action, in KEY_ACTIONS order.
+    binds: Vec<Vec<KeyCode>>,
+    /// Who flies the co-op partner (with "pad", player 1 ignores that pad).
+    coop: Coop,
 }
 
 /// Button → one-shot, as PAD_TAPS: Y hook, B drop last, LB cut all,
@@ -89,7 +100,69 @@ impl Controls {
             prev: Vec::new(),
             menu_prev: Vec::new(),
             last_device: Device::Keyboard,
+            binds: Vec::new(),
+            coop: Coop::Off,
         }
+        .bound(&Settings::default())
+    }
+
+    fn bound(mut self, s: &Settings) -> Controls {
+        self.bind(s);
+        self
+    }
+
+    /// Take the key bindings from the settings (rebuildKeyIndex).
+    pub fn bind(&mut self, s: &Settings) {
+        self.binds = KEY_ACTIONS.iter().map(|a| s.keys_for(a.0)).collect();
+        self.coop = s.coop;
+    }
+
+    /// readP2: P2's controls from the numpad, or from the last connected
+    /// gamepad (stick turn, RT or A thrust, LT brake, RB fire, Y latch).
+    pub fn p2(&mut self) -> P2Input {
+        let on = |k: KeyCode| if is_key_down(k) { 1.0 } else { 0.0 };
+        match self.coop {
+            Coop::Off => P2Input::default(),
+            Coop::Numpad => P2Input {
+                thrust: on(KeyCode::Kp8),
+                brake: on(KeyCode::Kp5).max(on(KeyCode::Kp2)),
+                turn: on(KeyCode::Kp6) - on(KeyCode::Kp4),
+                fire: is_key_down(KeyCode::Kp0),
+                latch: is_key_down(KeyCode::KpEnter),
+            },
+            Coop::Pad => {
+                let Some(g) = self.gilrs.as_ref() else {
+                    return P2Input::default();
+                };
+                let Some(id) = p2_pad(g) else {
+                    return P2Input::default();
+                };
+                let pad = g.gamepad(id);
+                let val = |b: Button| f64::from(pad.button_data(b).map_or(0.0, |d| d.value()));
+                P2Input {
+                    thrust: val(Button::RightTrigger2).max(if pad.is_pressed(Button::South) {
+                        1.0
+                    } else {
+                        0.0
+                    }),
+                    brake: val(Button::LeftTrigger2),
+                    turn: f64::from(deadzone(pad.value(Axis::LeftStickX))),
+                    fire: pad.is_pressed(Button::RightTrigger),
+                    latch: pad.is_pressed(Button::North),
+                }
+            }
+        }
+    }
+
+    /// The pad player 1 may use: with gamepad co-op, never P2's.
+    fn exclude(&self) -> Option<gilrs::GamepadId> {
+        let g = self.gilrs.as_ref()?;
+        (self.coop == Coop::Pad).then(|| p2_pad(g)).flatten()
+    }
+
+    fn keys(&self, b: Bind) -> &[KeyCode] {
+        let i = KEY_ACTIONS.iter().position(|a| a.0 == b).expect("listed");
+        &self.binds[i]
     }
 
     /// Drain gamepad events once per frame, before reading anything, so
@@ -102,15 +175,16 @@ impl Controls {
 
     /// Held controls right now, from keyboard and the most recently used pad.
     pub fn sample(&mut self) -> Input {
-        let held = |keys: &[KeyCode]| keys.iter().any(|k| is_key_down(*k));
+        let held = |b: Bind| self.keys(b).iter().any(|k| is_key_down(*k));
         let on = |b: bool| if b { 1.0f32 } else { 0.0 };
-        let kb_turn =
-            on(held(&[KeyCode::D, KeyCode::Right])) - on(held(&[KeyCode::A, KeyCode::Left]));
-        let kb_strafe = on(held(&[KeyCode::C])) - on(held(&[KeyCode::Z]));
-        let kb_thrust = on(held(&[KeyCode::W, KeyCode::Up]));
-        let kb_reverse = on(held(&[KeyCode::S, KeyCode::Down]));
-        let kb_fire = held(&[KeyCode::Space, KeyCode::J]);
-        let kb_burn = held(&[KeyCode::LeftShift, KeyCode::RightShift]);
+        let kb_turn = on(held(Bind::Right)) - on(held(Bind::Left));
+        let kb_strafe = on(held(Bind::StrafeR)) - on(held(Bind::StrafeL));
+        let kb_thrust = on(held(Bind::Thrust));
+        let kb_reverse = on(held(Bind::Brake));
+        let kb_fire = held(Bind::Fire);
+        let kb_burn = [KeyCode::LeftShift, KeyCode::RightShift]
+            .iter()
+            .any(|k| is_key_down(*k));
         if kb_turn != 0.0 || kb_thrust > 0.0 || kb_reverse > 0.0 || kb_fire || kb_strafe != 0.0 {
             self.last_device = Device::Keyboard;
         }
@@ -142,28 +216,31 @@ impl Controls {
     pub fn presses(&mut self) -> Presses {
         let mut out = Presses::default();
         let key = |k: KeyCode| is_key_pressed(k);
-        if key(KeyCode::E) || key(KeyCode::K) {
-            out.actions.push(Action::Hook);
-        }
-        if key(KeyCode::Q) {
-            out.actions.push(Action::Drop);
-        }
-        if key(KeyCode::X) {
-            out.actions.push(Action::Cut);
-        }
-        if key(KeyCode::G) {
-            out.actions.push(Action::Grind);
+        let tapped = |b: Bind| self.keys(b).iter().any(|k| is_key_pressed(*k));
+        for (b, a) in [
+            (Bind::Hook, Action::Hook),
+            (Bind::Drop, Action::Drop),
+            (Bind::Cut, Action::Cut),
+            (Bind::Grind, Action::Grind),
+        ] {
+            if tapped(b) {
+                out.actions.push(a);
+            }
         }
         out.pause = key(KeyCode::P) || key(KeyCode::Escape);
         out.mute = key(KeyCode::M);
+        out.voice = key(KeyCode::V);
+        out.skip_training = key(KeyCode::T);
+        out.music = key(KeyCode::N);
         if !out.actions.is_empty() || out.pause || out.mute {
             self.last_device = Device::Keyboard;
         }
 
+        let skip = self.exclude();
         let Some(g) = self.gilrs.as_mut() else {
             return out;
         };
-        let now: Vec<Button> = match active_pad(g) {
+        let now: Vec<Button> = match active_pad(g, skip) {
             Some(id) => {
                 let pad = g.gamepad(id);
                 PAD_TAPS
@@ -211,12 +288,13 @@ impl Controls {
         if dir.is_some() || out.activate {
             self.last_device = Device::Keyboard;
         }
+        let skip = self.exclude();
         let Some(g) = self.gilrs.as_mut() else {
             out.dir = dir;
             return out;
         };
         let mut now = Vec::new();
-        if let Some(id) = active_pad(g) {
+        if let Some(id) = active_pad(g, skip) {
             let pad = g.gamepad(id);
             let p = |b: Button| pad.is_pressed(b);
             let (ax, ay) = (pad.value(Axis::LeftStickX), pad.value(Axis::LeftStickY));
@@ -258,8 +336,9 @@ impl Controls {
     }
 
     fn pad_state(&mut self) -> Option<PadState> {
+        let skip = self.exclude();
         let g = self.gilrs.as_mut()?;
-        let id = active_pad(g)?;
+        let id = active_pad(g, skip)?;
         let pad = g.gamepad(id);
         let val = |b: Button| pad.button_data(b).map(|d| d.value()).unwrap_or(0.0);
         let pressed = |b: Button| pad.is_pressed(b);
@@ -303,10 +382,19 @@ struct PadState {
     any_button: bool,
 }
 
-/// The connected pad used most recently (the browser sorts by timestamp).
-fn active_pad(g: &Gilrs) -> Option<gilrs::GamepadId> {
+/// The last connected gamepad (P2's in gamepad co-op).
+fn p2_pad(g: &Gilrs) -> Option<gilrs::GamepadId> {
     g.gamepads()
         .filter(|(_, p)| p.is_connected())
+        .map(|(id, _)| id)
+        .max_by_key(|id| usize::from(*id))
+}
+
+/// The connected pad used most recently (the browser sorts by timestamp),
+/// leaving out `exclude`.
+fn active_pad(g: &Gilrs, exclude: Option<gilrs::GamepadId>) -> Option<gilrs::GamepadId> {
+    g.gamepads()
+        .filter(|(id, p)| p.is_connected() && Some(*id) != exclude)
         .max_by_key(|(_, p)| {
             p.state()
                 .buttons()

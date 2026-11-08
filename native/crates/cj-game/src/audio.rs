@@ -31,7 +31,7 @@ const SFX_GAIN: f32 = 1.9;
 const FLOOR: f32 = 0.0001;
 
 #[derive(Clone, Copy, PartialEq)]
-enum Wave {
+pub(crate) enum Wave {
     Sine,
     Square,
     Triangle,
@@ -87,7 +87,9 @@ const NOISE: NoiseOpts = NoiseOpts {
     sweep_to: 0.0,
 };
 
-/// A sounding voice, in seconds since it was queued.
+/// A sounding voice, in seconds since it was queued. `music` voices play
+/// on the music bus (its own gain, no effects gain), as the browser routes
+/// the sequencer through Music.gain.
 enum Voice {
     Tone {
         freq: f32,
@@ -96,12 +98,17 @@ enum Voice {
         t: f32,
         phase: f32,
         lfo: f32,
+        music: bool,
+        /// Low-pass cutoff in Hz (0 = none), and its filter.
+        cut: f32,
+        bq: Biquad,
     },
     Noise {
         dur: f32,
         o: NoiseOpts,
         t: f32,
         bq: Biquad,
+        music: bool,
     },
 }
 
@@ -110,6 +117,8 @@ enum Cmd {
     /// Engine loop targets: gain and low-pass cutoff in Hz.
     Thrust(f32, f32),
     Mute(bool),
+    /// Music bus target gain (glides with a 0.3 s time constant).
+    MusicGain(f32),
 }
 
 /// RBJ cookbook biquad, configured the way WebAudio's BiquadFilterNode is
@@ -235,12 +244,15 @@ struct Mixer {
     eng_n: u32,
     /// Compressor gain reduction envelope, in dB.
     comp_db: f32,
+    music_gain: f32,
+    music_gain_to: f32,
 }
 
 impl Mixer {
     fn sample(&mut self) -> f32 {
         let dt = 1.0 / self.sr;
         let mut s = 0.0;
+        let mut m = 0.0;
         for v in &mut self.voices {
             match v {
                 Voice::Tone {
@@ -250,6 +262,9 @@ impl Mixer {
                     t,
                     phase,
                     lfo,
+                    music,
+                    cut,
+                    bq,
                 } => {
                     let lt = *t - o.delay;
                     *t += dt;
@@ -270,15 +285,33 @@ impl Mixer {
                     *phase = (*phase + inc).fract();
                     // Attack to the peak, then decay to the floor at `dur`.
                     let att = o.attack.min(*dur / 2.0);
-                    let vol = (o.vol * SFX_GAIN).min(1.0);
+                    let vol = if *music {
+                        o.vol
+                    } else {
+                        (o.vol * SFX_GAIN).min(1.0)
+                    };
                     let env = if lt < att {
                         exp_ramp(FLOOR, vol, lt / att)
                     } else {
                         exp_ramp(vol, FLOOR, (lt - att) / (*dur - att))
                     };
-                    s += osc(o.wave, *phase, inc) * env;
+                    let mut x = osc(o.wave, *phase, inc);
+                    if *cut > 0.0 {
+                        x = bq.run(x);
+                    }
+                    if *music {
+                        m += x * env;
+                    } else {
+                        s += x * env;
+                    }
                 }
-                Voice::Noise { dur, o, t, bq } => {
+                Voice::Noise {
+                    dur,
+                    o,
+                    t,
+                    bq,
+                    music,
+                } => {
                     let lt = *t - o.delay;
                     *t += dt;
                     if lt < 0.0 {
@@ -288,8 +321,17 @@ impl Mixer {
                     if o.sweep_to != 0.0 {
                         bq.set(o.filter, exp_ramp(o.freq, o.sweep_to, k), self.sr);
                     }
-                    let vol = (o.vol * SFX_GAIN).min(1.0);
-                    s += bq.run(self.noise.next()) * exp_ramp(vol, FLOOR, k);
+                    let vol = if *music {
+                        o.vol
+                    } else {
+                        (o.vol * SFX_GAIN).min(1.0)
+                    };
+                    let x = bq.run(self.noise.next()) * exp_ramp(vol, FLOOR, k);
+                    if *music {
+                        m += x;
+                    } else {
+                        s += x;
+                    }
                 }
             }
         }
@@ -308,6 +350,8 @@ impl Mixer {
                 .set(Filter::Lowpass, self.eng_cut.max(20.0), self.sr);
         }
         s += self.eng_bq.run(self.noise.next()) * self.eng_gain;
+        self.music_gain += (self.music_gain_to - self.music_gain) * (1.0 - (-dt / 0.3).exp());
+        s += m * self.music_gain;
 
         if self.muted {
             return 0.0;
@@ -338,11 +382,16 @@ impl Mixer {
         while let Ok(cmd) = self.rx.try_recv() {
             match cmd {
                 Cmd::Play(mut v) => {
-                    if let Voice::Noise { o, bq, .. } = &mut v {
-                        bq.set(o.filter, o.freq, self.sr);
+                    match &mut v {
+                        Voice::Noise { o, bq, .. } => bq.set(o.filter, o.freq, self.sr),
+                        Voice::Tone { cut, bq, .. } if *cut > 0.0 => {
+                            bq.set(Filter::Lowpass, *cut, self.sr);
+                        }
+                        Voice::Tone { .. } => {}
                     }
                     self.voices.push(v);
                 }
+                Cmd::MusicGain(g) => self.music_gain_to = g,
                 Cmd::Thrust(g, c) => {
                     self.eng_gain_to = g;
                     self.eng_cut_to = c;
@@ -400,6 +449,38 @@ impl Audio {
         self.send(Cmd::Mute(self.muted));
     }
 
+    pub fn is_muted(&self) -> bool {
+        self.muted
+    }
+
+    /// The radio's two-tone blip as a line comes in.
+    pub fn radio_blip(&self) {
+        let o = |delay: f32| ToneOpts {
+            vol: 0.03,
+            delay,
+            ..TONE
+        };
+        self.tone(1500.0, 0.035, o(0.0));
+        self.tone(1100.0, 0.035, o(0.05));
+    }
+
+    /// A master-caution chime, played before a spoken callout.
+    pub fn caution(&self) {
+        for (i, d) in [0.0, 0.16].into_iter().enumerate() {
+            let f = if i > 0 { 740.0 } else { 988.0 };
+            self.tone(
+                f,
+                0.13,
+                ToneOpts {
+                    wave: Wave::Sine,
+                    vol: 0.12,
+                    delay: d,
+                    ..TONE
+                },
+            );
+        }
+    }
+
     fn send(&self, c: Cmd) {
         if let Some(tx) = &self.tx {
             let _ = tx.send(c);
@@ -422,7 +503,78 @@ impl Audio {
             t: 0.0,
             phase: 0.0,
             lfo: 0.0,
+            music: false,
+            cut: 0.0,
+            bq: Biquad::default(),
         }));
+    }
+
+    /// A music note (Music.playStep's note()): a 10 ms attack, an
+    /// exponential decay over `len`, optionally low-passed.
+    pub(crate) fn note(&self, freq: f32, wave: Wave, delay: f32, len: f32, vol: f32, cutoff: f32) {
+        self.send(Cmd::Play(Voice::Tone {
+            freq,
+            dur: len,
+            o: ToneOpts {
+                wave,
+                vol,
+                delay,
+                attack: 0.01,
+                ..TONE
+            },
+            t: 0.0,
+            phase: 0.0,
+            lfo: 0.0,
+            music: true,
+            cut: cutoff,
+            bq: Biquad::default(),
+        }));
+    }
+
+    /// The music's kick: a sine falling from 130 Hz to 40 Hz.
+    // shortcut: the pitch falls over the whole 0.2 s note, where the browser
+    // reaches 40 Hz at 0.15 s; upgrade with a separate slide time if it matters.
+    pub(crate) fn kick(&self, delay: f32) {
+        self.send(Cmd::Play(Voice::Tone {
+            freq: 130.0,
+            dur: 0.2,
+            o: ToneOpts {
+                wave: Wave::Sine,
+                vol: 0.28,
+                slide: 40.0 / 130.0,
+                delay,
+                attack: 0.001,
+                ..TONE
+            },
+            t: 0.0,
+            phase: 0.0,
+            lfo: 0.0,
+            music: true,
+            cut: 0.0,
+            bq: Biquad::default(),
+        }));
+    }
+
+    /// High-passed music noise (hats and snares).
+    pub(crate) fn music_noise(&self, delay: f32, len: f32, vol: f32, hp: f32) {
+        self.send(Cmd::Play(Voice::Noise {
+            dur: len,
+            o: NoiseOpts {
+                vol,
+                freq: hp,
+                filter: Filter::Highpass,
+                delay,
+                sweep_to: 0.0,
+            },
+            t: 0.0,
+            bq: Biquad::default(),
+            music: true,
+        }));
+    }
+
+    /// Where the music bus should settle (Music.gain's target).
+    pub fn set_music_gain(&self, g: f32) {
+        self.send(Cmd::MusicGain(g));
     }
 
     fn noise(&self, dur: f32, o: NoiseOpts) {
@@ -434,6 +586,7 @@ impl Audio {
             o,
             t: 0.0,
             bq: Biquad::default(),
+            music: false,
         }));
     }
 
@@ -1039,6 +1192,8 @@ fn open() -> Result<(Sender<Cmd>, cpal::Stream), String> {
         eng_bq: Biquad::default(),
         eng_n: 0,
         comp_db: 0.0,
+        music_gain: 0.0,
+        music_gain_to: 0.0,
     };
     let stream = match format {
         cpal::SampleFormat::F32 => build::<f32>(&device, &config, mixer),
@@ -1121,6 +1276,8 @@ mod tests {
             eng_bq: Biquad::default(),
             eng_n: 0,
             comp_db: 0.0,
+            music_gain: 0.0,
+            music_gain_to: 0.0,
         };
         let mut last = 0.0;
         for i in 0..48_000 {

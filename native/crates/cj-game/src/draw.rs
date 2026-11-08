@@ -309,7 +309,7 @@ const CARRIER_HULL_PTS: [(f32, f32); 14] = [
 fn draw_carrier(look: &Look, t: f32, scale: f32) {
     let xf = Xf::new(CARRIER_X, CARRIER_Y, 0.0);
     let hull = xf.pts(&CARRIER_HULL_PTS);
-    fill_poly(&hull, Color::from_hex(0x121722));
+    fill_poly(&hull, crate::look::hex(0x121722));
     glow_stroke(&hull, true, col::HAZARD, 2.0, 1.0);
     // Panel lines.
     let mut x = -180.0;
@@ -348,9 +348,9 @@ fn draw_carrier(look: &Look, t: f32, scale: f32) {
             p.y,
             6.0,
             if on {
-                Color::from_hex(col::DANGER)
+                crate::look::hex(col::DANGER)
             } else {
-                Color::from_hex(0x3a1410)
+                crate::look::hex(0x3a1410)
             },
         );
     }
@@ -383,13 +383,13 @@ fn draw_wreck(wr: &Wreck, t: f32) {
     fill_fan(
         xf.o,
         &pts,
-        Color::from_hex(if flash { 0x1c3337 } else { col::WRECK_FILL }),
+        crate::look::hex(if flash { 0x1c3337 } else { col::WRECK_FILL }),
     );
     polyline(
         &pts,
         true,
         2.5,
-        Color::from_hex(if flash { col::TEXT } else { col::WRECK }),
+        crate::look::hex(if flash { col::TEXT } else { col::WRECK }),
     );
     // Ribs: broken frame lines across the hull.
     let r = wr.b.r as f32;
@@ -422,7 +422,7 @@ fn draw_wreck(wr: &Wreck, t: f32) {
     // A dying emergency light.
     if (t * 2.0 + wr.light as f32).sin() > 0.6 {
         let p = xf.p(r * 0.9, 0.0);
-        draw_circle(p.x, p.y, 4.0, Color::from_hex(col::DANGER));
+        draw_circle(p.x, p.y, 4.0, crate::look::hex(col::DANGER));
     }
 }
 
@@ -436,7 +436,7 @@ fn draw_rock(look: &Look, rk: &Rock) {
     fill_fan(
         xf.o,
         &pts,
-        Color::from_hex(if flash { 0x2b3448 } else { col::ROCK_FILL }),
+        crate::look::hex(if flash { 0x2b3448 } else { col::ROCK_FILL }),
     );
     // The browser fills a radial gradient clipped to the outline. Without
     // clipping, a smaller soft highlight keeps the light inside the rock.
@@ -464,7 +464,7 @@ fn draw_rock(look: &Look, rk: &Rock) {
         &pts,
         true,
         2.0,
-        Color::from_hex(if flash { col::TEXT } else { col::ROCK }),
+        crate::look::hex(if flash { col::TEXT } else { col::ROCK }),
     );
     if rk.veined {
         // Gold seams mark ore-bearing rock.
@@ -515,7 +515,7 @@ fn draw_item(look: &Look, it: &Item, t: f32, scale: f32) {
     match it.kind {
         ItemType::Scrap => {
             let pts = shape_pts(&xf, &it.shape, it.b.r);
-            fill_fan(xf.o, &pts, Color::from_hex(0x1a2130));
+            fill_fan(xf.o, &pts, crate::look::hex(0x1a2130));
             if it.rare {
                 glow_stroke(&pts, true, it.tint.unwrap_or(col::STEEL), 2.0, 1.0);
             } else {
@@ -537,21 +537,21 @@ fn draw_item(look: &Look, it: &Item, t: f32, scale: f32) {
         ItemType::Plate => {
             let c = it.tint.unwrap_or(col::STEEL);
             let body = rect_pts(&xf, -r, -r * 0.6, r * 2.0, r * 1.2);
-            fill_convex(&body, Color::from_hex(0x18202e));
+            fill_convex(&body, crate::look::hex(0x18202e));
             if it.rare {
                 glow_stroke(&body, true, c, 2.5, 1.0);
             } else {
-                polyline(&body, true, 2.0, Color::from_hex(c));
+                polyline(&body, true, 2.0, crate::look::hex(c));
             }
             // Rivets.
             for (x, y) in [(-0.75, -0.4), (0.75, -0.4), (-0.75, 0.4), (0.75, 0.4)] {
                 let rv = rect_pts(&xf, x * r - 1.5, y * r - 1.5, 3.0, 3.0);
-                fill_convex(&rv, Color::from_hex(c));
+                fill_convex(&rv, crate::look::hex(c));
             }
             if it.grade == 0 {
                 // A dent across the cheapest grade.
                 let dent = xf.pts(&[(-r * 0.3, -r * 0.6), (0.0, 0.0), (r * 0.2, r * 0.6)]);
-                polyline(&dent, false, 1.0, Color::from_hex(c));
+                polyline(&dent, false, 1.0, crate::look::hex(c));
             }
         }
         ItemType::Engine => {
@@ -563,8 +563,8 @@ fn draw_item(look: &Look, it: &Item, t: f32, scale: f32) {
                 (r, r * 0.55),
                 (r * 0.4, r * 0.35),
             ]);
-            fill_convex(&block, Color::from_hex(0x121b2c));
-            fill_convex(&nozzle, Color::from_hex(0x121b2c));
+            fill_convex(&block, crate::look::hex(0x121b2c));
+            fill_convex(&nozzle, crate::look::hex(0x121b2c));
             glow_stroke(&block, true, c, 2.5, 1.0);
             glow_stroke(&nozzle, false, c, 2.5, 1.0);
             for i in -2..=1 {
@@ -590,23 +590,23 @@ fn draw_item(look: &Look, it: &Item, t: f32, scale: f32) {
                 let a = i as f32 / 3.0 * TAU;
                 let mut blade = vec![xf.o];
                 blade.extend(arc_pts(&xf, 0.0, 0.0, r * 0.7, a, a + 0.7, 6));
-                fill_convex(&blade, Color::from_hex(c));
+                fill_convex(&blade, crate::look::hex(c));
             }
-            draw_circle(xf.o.x, xf.o.y, r * 0.18, Color::from_hex(col::VOID));
+            draw_circle(xf.o.x, xf.o.y, r * 0.18, crate::look::hex(col::VOID));
             // A red ring once it is primed or damaged.
             if it.fuse > 0.0 || it.hp.is_some_and(|hp| hp < 3.0) {
-                draw_circle_lines(xf.o.x, xf.o.y, r + 6.0, 2.0, Color::from_hex(col::DANGER));
+                draw_circle_lines(xf.o.x, xf.o.y, r + 6.0, 2.0, crate::look::hex(col::DANGER));
             }
         }
         ItemType::Blackbox => {
             // Flight recorder: a small hazard-orange box with a beacon light.
             let body = rect_pts(&xf, -10.0, -7.0, 20.0, 14.0);
-            fill_convex(&body, Color::from_hex(0x3a2208));
+            fill_convex(&body, crate::look::hex(0x3a2208));
             glow_stroke(&body, true, col::HAZARD, 2.0, 1.0);
             for x in [-6.0, 2.0] {
                 fill_convex(
                     &rect_pts(&xf, x, -7.0, 2.5, 14.0),
-                    Color::from_hex(col::HAZARD),
+                    crate::look::hex(col::HAZARD),
                 );
             }
             let beacon = xf.p(8.0, -9.0);
@@ -615,7 +615,7 @@ fn draw_item(look: &Look, it: &Item, t: f32, scale: f32) {
                 beacon.x,
                 beacon.y,
                 2.5,
-                Color::from_hex(if lit { col::DANGER } else { 0x401510 }),
+                crate::look::hex(if lit { col::DANGER } else { 0x401510 }),
             );
         }
         ItemType::Pod => {
@@ -623,7 +623,7 @@ fn draw_item(look: &Look, it: &Item, t: f32, scale: f32) {
             let half = std::f32::consts::FRAC_PI_2;
             let mut capsule = arc_pts(&xf, -r * 0.45, 0.0, r * 0.55, half, 3.0 * half, 10);
             capsule.extend(arc_pts(&xf, r * 0.45, 0.0, r * 0.55, -half, half, 10));
-            fill_convex(&capsule, Color::from_hex(0x1c1a2c));
+            fill_convex(&capsule, crate::look::hex(0x1c1a2c));
             glow_stroke(&capsule, true, col::COLLECTOR, 2.0, 1.0);
             text_centered(
                 "?",
@@ -631,7 +631,7 @@ fn draw_item(look: &Look, it: &Item, t: f32, scale: f32) {
                 xf.o.y + 1.0,
                 16.0,
                 &look.fonts.display,
-                Color::from_hex(col::TEXT),
+                crate::look::hex(col::TEXT),
                 scale,
             );
         }
@@ -653,17 +653,17 @@ fn draw_item(look: &Look, it: &Item, t: f32, scale: f32) {
                 &xf.pts(&[(-r * 0.4, -r * 0.1), (r * 0.4, -r * 0.1)]),
                 false,
                 1.0,
-                Color::from_hex(c),
+                crate::look::hex(c),
             );
         }
         ItemType::Keycard => {
             // A small card with a magnetic stripe, blinking so it can be spotted.
             let body = rect_pts(&xf, -r, -r * 0.65, r * 2.0, r * 1.3);
-            fill_convex(&body, Color::from_hex(0x0e2230));
+            fill_convex(&body, crate::look::hex(0x0e2230));
             glow_stroke(&body, true, col::CABLE, 2.0, 1.0);
             fill_convex(
                 &rect_pts(&xf, -r, -2.0, r * 2.0, 3.0),
-                Color::from_hex(col::CABLE),
+                crate::look::hex(col::CABLE),
             );
             let p = xf.o;
             look.additive(|| {
@@ -685,7 +685,7 @@ fn draw_item(look: &Look, it: &Item, t: f32, scale: f32) {
                     xf.p(a.cos() * r, a.sin() * r)
                 })
                 .collect();
-            fill_fan(xf.o, &hex, Color::from_hex(0x2a0b0b));
+            fill_fan(xf.o, &hex, crate::look::hex(0x2a0b0b));
             glow_stroke(&hex, true, col::DANGER, 2.0, 1.0);
             if (t * 19.0 + it.b.x as f32).sin() > -0.5 {
                 let p = xf.o;
@@ -726,7 +726,7 @@ fn draw_jumper(look: &Look, w: &World, j: &Jumper) {
             6.0,
             0.0,
             1.5,
-            Color::from_hex(col::JUMPER),
+            crate::look::hex(col::JUMPER),
         );
     }
     let k = if j.boss.is_some() { 1.4 } else { 1.0 };
@@ -766,25 +766,28 @@ fn draw_jumper(look: &Look, w: &World, j: &Jumper) {
         Variant::Cutter => &[(18.0, 0.0), (-11.0, -12.0), (-5.0, 0.0), (-11.0, 12.0)],
     };
     let pts = xf.pts(outline);
-    fill_poly(&pts, Color::from_hex(def.hull));
+    fill_poly(&pts, crate::look::hex(def.hull));
     glow_stroke(&pts, true, edge, 2.0, 1.0);
     match j.variant {
         Variant::Gunship => {
             fill_convex(
                 &rect_pts(&xf, -8.0, -18.0, 10.0, 3.0),
-                Color::from_hex(edge),
+                crate::look::hex(edge),
             );
-            fill_convex(&rect_pts(&xf, -8.0, 15.0, 10.0, 3.0), Color::from_hex(edge));
+            fill_convex(
+                &rect_pts(&xf, -8.0, 15.0, 10.0, 3.0),
+                crate::look::hex(edge),
+            );
         }
         Variant::Brute => fill_convex(
             &rect_pts(&xf, -12.0, -3.0, 18.0, 6.0),
-            Color::from_hex(edge),
+            crate::look::hex(edge),
         ),
         _ => {}
     }
     if j.hunter {
         // Hunters wear red war paint and run hot: they are here for you.
-        let red = Color::from_hex(col::DANGER);
+        let red = crate::look::hex(col::DANGER);
         polyline(&xf.pts(&[(6.0, -4.0), (-6.0, -8.0)]), false, 2.0, red);
         polyline(&xf.pts(&[(6.0, 4.0), (-6.0, 8.0)]), false, 2.0, red);
         let p = xf.p(-8.0, 0.0);
@@ -804,20 +807,20 @@ fn draw_jumper(look: &Look, w: &World, j: &Jumper) {
             top + TAU * frac,
             48,
         );
-        polyline(&ring, false, 3.0, Color::from_hex(col::JUMPER));
+        polyline(&ring, false, 3.0, crate::look::hex(col::JUMPER));
     }
 }
 
 fn draw_crab(c: &Crab) {
     let o = v(c.x, c.y);
-    let leg = Color::from_hex(col::CRAB);
+    let leg = crate::look::hex(col::CRAB);
     for i in 0..6 {
         let a = i as f32 / 6.0 * TAU + (c.leg_t as f32 + i as f32).sin() * 0.3;
         let e = o + vec2(a.cos(), a.sin()) * 13.0;
         draw_line(o.x, o.y, e.x, e.y, 1.5, leg);
     }
     draw_ellipse(o.x, o.y, 7.0, 5.5, 0.0, leg);
-    let eye = Color::from_hex(col::VOID);
+    let eye = crate::look::hex(col::VOID);
     draw_rectangle(o.x - 3.0, o.y - 2.0, 2.0, 2.0, eye);
     draw_rectangle(o.x + 1.0, o.y - 2.0, 2.0, 2.0, eye);
 }
@@ -885,7 +888,7 @@ fn draw_cable(w: &World) {
 }
 
 /// The stock Mk I tug (drawTug with the cannon mounted and no other parts).
-fn draw_ship(look: &Look, w: &World, t: f32, rng: &mut Rng) {
+fn draw_ship(look: &Look, w: &World, t: f32, rng: &mut Rng, paint: Option<(u32, u32)>) {
     let s = &w.ship;
     if !s.alive || (s.invuln > 0.0 && ((t * 12.0).floor() as i64) % 2 == 1) {
         return; // respawn flicker
@@ -901,6 +904,7 @@ fn draw_ship(look: &Look, w: &World, t: f32, rng: &mut Rng) {
         sentries: 0,
         burn: s.burn_t > 0.0,
         missiles: Some(s.missiles),
+        paint,
     };
     tug::draw_tug(look, &f, &w.mods, &st, rng);
     tug::draw_shield(
@@ -940,7 +944,7 @@ fn draw_hook_target(look: &Look, w: &World, t: f32, device: Device, scale: f32) 
         6.0,
         t * 30.0,
         2.0,
-        Color::from_hex(c),
+        crate::look::hex(c),
     );
     let key = if device == Device::Pad { "Y" } else { "E" };
     let line1 = if too_heavy {
@@ -954,7 +958,7 @@ fn draw_hook_target(look: &Look, w: &World, t: f32, device: Device, scale: f32) 
         p.y - r - 34.0,
         13.0,
         &look.fonts.mono,
-        Color::from_hex(c),
+        crate::look::hex(c),
         scale,
     );
     let worth = if it.hidden {
@@ -980,7 +984,7 @@ fn draw_hook_target(look: &Look, w: &World, t: f32, device: Device, scale: f32) 
         p.y - r - 20.0,
         13.0,
         &look.fonts.mono,
-        Color::from_hex(c2),
+        crate::look::hex(c2),
         scale,
     );
 }
@@ -1122,13 +1126,15 @@ pub struct Scene<'a> {
     pub show_tug: bool,
     /// The hook target only shows while flying.
     pub playing: bool,
+    /// The pilot's paint job, if one is chosen and unlocked.
+    pub paint: Option<(u32, u32)>,
 }
 
 pub fn render(sc: Scene) {
     let w = sc.world;
     let t = w.t as f32;
     let (vw, vh) = sc.view;
-    clear_background(Color::from_hex(col::VOID));
+    clear_background(crate::look::hex(col::VOID));
     screen_camera(sc.view);
     if let Some((rgb, a)) = w.belt.def().tint {
         draw_rectangle(0.0, 0.0, vw, vh, rgba(rgb, a));
@@ -1137,7 +1143,8 @@ pub fn render(sc: Scene) {
 
     // World camera, with screen shake.
     let z = w.cam.zoom as f32;
-    let shake = w.shake;
+    // Reduced motion keeps a fifth of the shake (motionScale).
+    let shake = w.shake * crate::look::motion_scale();
     let (sx, sy) = if shake > 0.0 {
         (
             sc.rng.range(-1.0, 1.0) * shake,
@@ -1192,6 +1199,18 @@ pub fn render(sc: Scene) {
     }
     for it in &w.items {
         if visible(it.b.x, it.b.y, it.b.r) {
+            // drawTrail: fading cable-coloured strokes, thicker toward the piece.
+            if let Some(tr) = sc.fx.trails.get(&it.id).filter(|tr| tr.len() >= 2) {
+                let n = tr.len() as f32;
+                for i in 1..tr.len() {
+                    let k = i as f32 / n;
+                    let (a, b) = (tr[i - 1], tr[i]);
+                    let wdt = it.b.r as f32 * k * 1.2;
+                    let c = rgba(col::CABLE, k * 0.5);
+                    draw_line(a.0 as f32, a.1 as f32, b.0 as f32, b.1 as f32, wdt, c);
+                    draw_circle(b.0 as f32, b.1 as f32, wdt / 2.0, c);
+                }
+            }
             draw_item(sc.look, it, t, scale);
             if it.kind == ItemType::Keycard && !it.towed {
                 let (x, y) = (it.b.x as f32, it.b.y as f32 - 22.0);
@@ -1221,7 +1240,8 @@ pub fn render(sc: Scene) {
         }
     }
     if sc.show_tug {
-        draw_ship(sc.look, w, t, sc.rng);
+        draw_ship(sc.look, w, t, sc.rng, sc.paint);
+        draw_partner(sc.look, w, t, sc.rng, scale);
         crate::foes::net_on_ship(sc.look, w, t, sc.device, scale);
         crate::foes::cuff_meter(sc.look, w, t, scale);
     }
@@ -1255,7 +1275,12 @@ pub fn render(sc: Scene) {
             0.0,
             vw,
             vh,
-            Color::new(1.0, 244.0 / 255.0, 220.0 / 255.0, w.screen_flash as f32),
+            Color::new(
+                1.0,
+                244.0 / 255.0,
+                220.0 / 255.0,
+                (w.screen_flash * crate::look::motion_scale()) as f32,
+            ),
         );
     }
     // The ion storm: a flickering violet wash and static streaks.
@@ -1269,7 +1294,8 @@ pub fn render(sc: Scene) {
             Color::new(150.0 / 255.0, 90.0 / 255.0, 1.0, a),
         );
         let streak = Color::new(200.0 / 255.0, 170.0 / 255.0, 1.0, 0.35);
-        for _ in 0..4 {
+        let streaks = if crate::look::reduce_motion() { 0 } else { 4 };
+        for _ in 0..streaks {
             let y = sc.rng.range(0.0, f64::from(vh)) as f32;
             let dy = sc.rng.range(-20.0, 20.0) as f32;
             draw_line(0.0, y, vw, y + dy, 1.0, streak);
@@ -1277,7 +1303,12 @@ pub fn render(sc: Scene) {
     }
     // Under attack: a red edge pulses around the screen while the warning holds.
     if w.under_attack_t > 0.0 && sc.playing && !w.shift_over {
-        let a = 0.3 * (0.5 + 0.5 * (t * 10.0).sin()) * (w.under_attack_t as f32).min(1.0);
+        let pulse = if crate::look::reduce_motion() {
+            0.18
+        } else {
+            0.3 * (0.5 + 0.5 * (t * 10.0).sin())
+        };
+        let a = pulse * (w.under_attack_t as f32).min(1.0);
         draw_rectangle_lines(
             0.0,
             0.0,
@@ -1343,6 +1374,59 @@ fn ring_mesh(cx: f32, cy: f32, a: f32, b: f32, inner: Color, outer: Color) {
         indices,
         texture: None,
     });
+}
+
+/// drawPartner: P2's tug, a Mk II with a cutter at 0.8 scale in its class
+/// colours, a dashed line while latched to the cable's tail, and its tag.
+fn draw_partner(look: &Look, w: &World, t: f32, rng: &mut Rng, scale: f32) {
+    use cj_sim::parts::{Levels, Part};
+    let Some(p) = &w.p2 else { return };
+    let tail = w
+        .chain
+        .last()
+        .and_then(|id| w.items.iter().find(|it| it.id == *id));
+    if let Some(it) = tail.filter(|_| p.linked) {
+        let pts = [v(it.b.x, it.b.y), v(p.b.x, p.b.y)];
+        dashed(
+            &pts,
+            false,
+            5.0,
+            5.0,
+            0.0,
+            1.5 * 3.5,
+            rgba(col::CABLE, 0.22),
+        );
+        dashed(
+            &pts,
+            false,
+            5.0,
+            5.0,
+            0.0,
+            1.5,
+            crate::look::hex(col::CABLE),
+        );
+    }
+    let mods = cj_sim::mods::compute_mods(
+        &[Some(Part::Cannon), None, None, None, None],
+        &Levels::default(),
+        1,
+    );
+    let f = tug::Frame::new(p.b.x as f32, p.b.y as f32, p.angle as f32, 0.8);
+    let st = tug::TugState {
+        t,
+        thrust: p.thrust as f32,
+        ..tug::TugState::default()
+    };
+    tug::draw_tug(look, &f, &mods, &st, rng);
+    let label = if p.linked { "P2 · LATCHED" } else { "P2" };
+    crate::foes::tag(
+        look,
+        p.b.x as f32,
+        p.b.y as f32 - 26.0,
+        label,
+        col::CABLE,
+        scale,
+    );
 }
 
 #[cfg(test)]

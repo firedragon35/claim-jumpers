@@ -155,6 +155,15 @@ pub struct World {
     pub hold_opened: bool,
     /// The boss crew taken down this shift, if any.
     pub boss_down: Option<&'static str>,
+    /// The co-op partner tug, and P2's controls for the next step.
+    pub p2: Option<crate::coop::Partner>,
+    pub p2_input: crate::coop::P2Input,
+    /// The daily challenge's field event, which outranks the belt's.
+    pub forced_event: Option<crate::field::Event>,
+    /// The guided first shift, while it runs.
+    pub tut: Option<crate::tutorial::Tutorial>,
+    /// Cargo has been cut loose mid-swing this shift (a training step).
+    pub threw_cargo: bool,
     /// Standing changes earned this shift, applied when it ends.
     pub rep_delta: Rep,
     /// Rival crews respect you: half as many hunters come.
@@ -259,6 +268,11 @@ impl World {
             cores_banked: 0,
             hold_opened: false,
             boss_down: None,
+            p2: None,
+            p2_input: Default::default(),
+            forced_event: None,
+            tut: None,
+            threw_cargo: false,
             cam: Camera {
                 x: BAY_X,
                 y: BAY_Y,
@@ -327,7 +341,28 @@ impl World {
         self.emit(Event::Sfx(s));
     }
     pub(crate) fn radio(&mut self, key: Radio, force: bool, once: bool) {
-        self.emit(Event::Radio { key, force, once });
+        self.emit(Event::Radio {
+            key,
+            force,
+            once,
+            text: None,
+        });
+    }
+    /// A radio line with its own text: `text` is shown, `say` is spoken.
+    pub(crate) fn radio_say(
+        &mut self,
+        key: Radio,
+        force: bool,
+        once: bool,
+        text: String,
+        say: String,
+    ) {
+        self.emit(Event::Radio {
+            key,
+            force,
+            once,
+            text: Some((text, say)),
+        });
     }
     pub(crate) fn popup(&mut self, x: f64, y: f64, text: String, tint: Tint) {
         self.emit(Event::Popup { x, y, text, tint });
@@ -477,6 +512,7 @@ impl World {
         self.time_left -= dt;
 
         self.update_ship(input, dt);
+        self.update_partner(dt);
         // (The co-op partner tug updates here in milestone 5.)
         self.update_scoop(dt);
         for j in 0..self.jumpers.len() {
@@ -548,6 +584,7 @@ impl World {
             return;
         }
         self.update_bay(dt);
+        self.update_tutorial(dt);
         // (The guided tutorial updates here in milestone 5 part 2.)
         self.update_events(dt);
         self.update_opposition_spawns(dt);
@@ -1140,6 +1177,17 @@ impl World {
         }
         self.delivery_t = self.t;
         self.stats.best_run = self.stats.best_run.max(self.delivery_total);
+        self.emit(Event::Unlock("firstBank"));
+        if self.delivery_total >= 5000.0 {
+            self.emit(Event::Unlock("bigHaul"));
+        }
+        if self.delivery_total >= 1500.0 {
+            let text = format!("{} cr delivery", fmt_credits(self.delivery_total));
+            self.emit(Event::Highlight {
+                score: self.delivery_total,
+                text,
+            });
+        }
         // (Highlights and achievements: milestone 5.)
         let text = if named {
             format!("+{} {}", fmt_credits(value), label.to_uppercase())
@@ -1171,12 +1219,20 @@ impl World {
         }
         self.remove_item(i);
         self.sfx(if named { Sfx::Jackpot } else { Sfx::Bank });
-        // (The spoken pod and rare lines carry the item name and value
-        // once the radio is ported in milestone 5.)
         if hidden {
-            self.radio(Radio::Pod, true, false);
+            let what = POD_CONTENTS[self.rng.index(POD_CONTENTS.len())];
+            let v = fmt_credits(value);
+            let text = format!("Pod cracked open. {what}. Bay says {v} cr. I've seen worse.");
+            let say = format!("Pod's worth {v} cr. I've seen worse.");
+            self.radio_say(Radio::Pod, true, false, text, say);
         } else if rare {
-            self.radio(Radio::Rare, true, false);
+            let v = fmt_credits(value);
+            let text = format!(
+                "A {}. {v} cr. Well, well. I'm almost impressed. Almost.",
+                label.to_lowercase()
+            );
+            let say = format!("{label}. Almost impressed.");
+            self.radio_say(Radio::Rare, true, false, text, say);
         } else if value >= 800.0 {
             self.radio(Radio::BankBig, true, false);
         } else {

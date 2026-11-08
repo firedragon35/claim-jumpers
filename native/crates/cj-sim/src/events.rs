@@ -185,17 +185,34 @@ pub enum Radio {
     HoldOpen,
     HoldSealed,
     CoreZap,
+    Training,
+    P2Latch,
+    P2Free,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Event {
     Sfx(Sfx),
-    /// A radio line. `force` interrupts the cooldown; `once` plays once per shift.
+    /// A radio line. `force` interrupts the cooldown; `once` plays once per
+    /// shift. `text` is a line built from this moment's numbers, as (shown,
+    /// spoken); without it the game picks one of the key's stock lines.
     Radio {
         key: Radio,
         force: bool,
         once: bool,
+        text: Option<(String, String)>,
     },
+    /// Freeze the simulation for this many real seconds (hitStop).
+    HitStop(f64),
+    /// Run the simulation slowly for this many real seconds (slowMo).
+    SlowMo(f64),
+    /// Something worth a replay happened (noteHighlight).
+    Highlight {
+        score: f64,
+        text: String,
+    },
+    /// An achievement was earned mid-shift (Profile.unlock), by its id.
+    Unlock(&'static str),
     /// Sparks flying out from a point.
     Burst {
         x: f64,

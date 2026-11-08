@@ -254,7 +254,7 @@ impl Ui {
                 r.w + 2.0 * o,
                 r.h + 2.0 * o,
                 2.0,
-                Color::from_hex(col::CABLE),
+                crate::look::hex(col::CABLE),
             );
         }
         self.cur.push(Btn {
@@ -325,7 +325,7 @@ fn draw_button(
     } else {
         label.to_owned()
     };
-    let edge = Color::from_hex(col::PANEL_EDGE);
+    let edge = crate::look::hex(col::PANEL_EDGE);
     let (fill, border, fg) = match style {
         Style::Primary => {
             let c = if hover { 0xffc24d } else { col::HAZARD };
@@ -343,8 +343,8 @@ fn draw_button(
         ),
         Style::Mode { pressed: true } => (
             Some(rgba(col::CABLE, 0.12)),
-            Some(Color::from_hex(col::CABLE)),
-            Color::from_hex(col::CABLE),
+            Some(crate::look::hex(col::CABLE)),
+            crate::look::hex(col::CABLE),
         ),
         Style::Mode { pressed: false } => (
             None,
@@ -354,7 +354,7 @@ fn draw_button(
         Style::Tab { selected: true } => (
             Some(rgba(0x090d15, 0.86)),
             Some(edge),
-            Color::from_hex(col::HAZARD),
+            crate::look::hex(col::HAZARD),
         ),
         Style::Tab { selected: false } => (
             None,
@@ -362,27 +362,27 @@ fn draw_button(
             rgba(if hover { col::TEXT } else { col::MUTED }, a),
         ),
         Style::Slot { filled: true } => (
-            Some(Color::from_hex(0x0c1220)),
-            Some(Color::from_hex(if hover {
+            Some(crate::look::hex(0x0c1220)),
+            Some(crate::look::hex(if hover {
                 col::DANGER
             } else {
                 col::HAZARD
             })),
-            Color::from_hex(col::TEXT),
+            crate::look::hex(col::TEXT),
         ),
         Style::Slot { filled: false } => (
-            Some(Color::from_hex(0x0c1220)),
+            Some(crate::look::hex(0x0c1220)),
             None,
-            Color::from_hex(col::MUTED),
+            crate::look::hex(col::MUTED),
         ),
         Style::Belt { picked } => (
-            Some(Color::from_hex(0x0c1220)),
+            Some(crate::look::hex(0x0c1220)),
             Some(if picked {
-                Color::from_hex(col::CABLE)
+                crate::look::hex(col::CABLE)
             } else {
                 edge
             }),
-            Color::from_hex(col::TEXT),
+            crate::look::hex(col::TEXT),
         ),
     };
     if let Some(f) = fill {
@@ -605,9 +605,9 @@ pub fn card(r: Rect) {
         r.h,
         Color::new(9.0 / 255.0, 13.0 / 255.0, 21.0 / 255.0, 0.86),
     );
-    draw_rectangle_lines(r.x, r.y, r.w, r.h, 1.0, Color::from_hex(col::PANEL_EDGE));
+    draw_rectangle_lines(r.x, r.y, r.w, r.h, 1.0, crate::look::hex(col::PANEL_EDGE));
     // repeating-linear-gradient(-45deg, hazard 0 10px, #1a1408 10px 20px), 6 px tall.
-    let (dark, amber) = (Color::from_hex(0x1a1408), Color::from_hex(col::HAZARD));
+    let (dark, amber) = (crate::look::hex(0x1a1408), crate::look::hex(col::HAZARD));
     draw_rectangle(r.x, r.y, r.w, 6.0, dark);
     let period = 20.0 * std::f32::consts::SQRT_2;
     let mut x = r.x - 6.0;
@@ -666,7 +666,7 @@ pub fn ledger(look: &Look, ui: &Ui, x: f32, y: f32, rows: &[(&str, String, u32)]
             ry,
             size,
             Which::MonoLight,
-            Color::from_hex(col::MUTED),
+            crate::look::hex(col::MUTED),
         );
         let w = text_w(look, v, size, Which::MonoLight);
         text(
@@ -677,7 +677,7 @@ pub fn ledger(look: &Look, ui: &Ui, x: f32, y: f32, rows: &[(&str, String, u32)]
             ry,
             size,
             Which::MonoLight,
-            Color::from_hex(*c),
+            crate::look::hex(*c),
         );
     }
     (lw + 18.0 + vw, rows.len() as f32 * line)

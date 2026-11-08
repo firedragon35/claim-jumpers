@@ -15,6 +15,8 @@ use std::path::{Path, PathBuf};
 const CAREER: &str = "career.json";
 const BEST: &str = "best.json";
 const MODE: &str = "mode.txt";
+/// "done" once the guided first shift has been finished or skipped.
+const TRAINING: &str = "training.txt";
 
 pub struct Store {
     dir: Option<PathBuf>,
@@ -54,13 +56,13 @@ impl Store {
         self.dir.as_deref()
     }
 
-    fn read(&self, name: &str) -> Option<String> {
+    pub fn read(&self, name: &str) -> Option<String> {
         std::fs::read_to_string(self.dir.as_ref()?.join(name)).ok()
     }
 
     /// Write via a temporary file and a rename, so a crash mid-write never
     /// leaves a half-written save behind.
-    fn write(&self, name: &str, text: &str) {
+    pub fn write(&self, name: &str, text: &str) {
         let Some(dir) = &self.dir else { return };
         let tmp = dir.join(format!("{name}.tmp"));
         let res = std::fs::write(&tmp, text).and_then(|_| std::fs::rename(&tmp, dir.join(name)));
@@ -132,6 +134,29 @@ impl Store {
 
     pub fn save_mode(&self, m: Mode) {
         self.write(MODE, m.def().key);
+    }
+
+    pub fn training_done(&self) -> bool {
+        self.read(TRAINING).is_some_and(|t| t.trim() == "done")
+    }
+
+    /// tutorialPending: training was asked for again, or a career's first
+    /// shift has never had it.
+    pub fn training_pending(&self, shift: i32) -> bool {
+        match self.read(TRAINING).as_deref().map(str::trim) {
+            Some("replay") => true,
+            Some("done") => false,
+            _ => shift == 1,
+        }
+    }
+
+    /// "Replay training": run it again on the next shift.
+    pub fn save_training_replay(&self) {
+        self.write(TRAINING, "replay");
+    }
+
+    pub fn save_training_done(&self) {
+        self.write(TRAINING, "done");
     }
 }
 

@@ -1,0 +1,4 @@
+# Link the C runtime statically on Windows, so claim-jumpers.exe needs no
+# Visual C++ Redistributable (VCRUNTIME140.dll) on the player's PC.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

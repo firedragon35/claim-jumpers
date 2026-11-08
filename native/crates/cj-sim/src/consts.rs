@@ -373,3 +373,22 @@ pub const ROCK_REFILL_TIME: f64 = 6.0;
 pub const ROCK_REFILL_CAP: usize = 90;
 pub const WRECK_REFILL_TIME: f64 = 45.0;
 pub const WRECK_REFILL_CAP: usize = 6;
+
+/* Hit feedback (src/js/10d-presentation.js): real seconds of freeze or slow
+ * motion the game applies to its fixed-step accumulator. */
+pub const HITSTOP_SMASH: f64 = 0.08;
+pub const HITSTOP_BOSS: f64 = 0.14;
+pub const SLOWMO_BOSS: f64 = 1.2;
+pub const SLOWMO_RATE: f64 = 0.35;
+
+/// What Marge says was in a cracked sealed pod.
+pub const POD_CONTENTS: [&str; 8] = [
+    "medical supplies",
+    "someone's vintage synthesizer",
+    "400 kg of instant noodles",
+    "unregistered jewellery",
+    "a crate of very old whisky",
+    "spare navigation chips",
+    "a very confused cat (now the bay crew's cat)",
+    "mining permits, some forged",
+];

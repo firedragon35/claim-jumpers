@@ -314,7 +314,10 @@ impl World {
     /// the mining crew arrive here in milestone 4; the tutorial holds
     /// rivals back in milestone 5.)
     pub(crate) fn update_spawns(&mut self, dt: f64) {
-        self.jumper_timer -= dt * (1.0 + self.line_value() / 3000.0).min(2.0);
+        // Rivals stay away while training runs.
+        if self.tut.is_none() {
+            self.jumper_timer -= dt * (1.0 + self.line_value() / 3000.0).min(2.0);
+        }
         if self.jumper_timer <= 0.0 {
             // The grudge stage raises how many can be out at once and how
             // often they come; at Vendetta they arrive in pairs.

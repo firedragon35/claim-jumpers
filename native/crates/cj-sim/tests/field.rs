@@ -223,3 +223,106 @@ fn the_awarded_self_sealing_hull_mounts_and_repairs_the_hull() {
     // One second of steps; the bay is far away, so this is the seal alone.
     assert!((w.ship.hp - 51.5).abs() < 1e-6, "hull {}", w.ship.hp);
 }
+
+/// Training (guided-first-shift.js): rivals and the field event wait while
+/// it runs; each step advances on its action after a short beat; skipping
+/// ends it and lets the shift go on as normal.
+#[test]
+fn training_holds_rivals_and_advances_on_each_action() {
+    let mut c = Career::new(Mode::Standard);
+    c.shift = 1;
+    let mut w = World::for_career(Rng::seeded(8), VIEW, &c);
+    w.start_tutorial();
+    w.event_done = false;
+    w.event_t = 0.0;
+    let timer = w.jumper_timer;
+    for _ in 0..30 {
+        step(&mut w);
+    }
+    assert_eq!(w.jumper_timer, timer, "no rivals while training");
+    assert!(!w.event_done, "the field event waits");
+    assert_eq!(w.tut.as_ref().map(|t| t.step), Some(0));
+
+    // Step 1: fly clear of the bay, held for 0.8 s.
+    w.ship.b.x = BAY_X + 600.0;
+    w.ship.b.y = BAY_Y;
+    for _ in 0..60 {
+        w.ship.b.x = BAY_X + 600.0;
+        w.ship.b.vx = 0.0;
+        step(&mut w);
+    }
+    assert_eq!(w.tut.as_ref().map(|t| t.step), Some(1));
+
+    w.end_tutorial(true);
+    assert!(w.tut.is_none());
+    step(&mut w);
+    assert!(w.jumper_timer < timer, "rivals come once training ends");
+}
+
+/// Local co-op: the partner latches onto the cable's tail and pulls.
+#[test]
+fn local_coop_partner_latches_onto_the_cable_and_pulls() {
+    use cj_sim::coop::P2Input;
+    use cj_sim::Action;
+    let mut c = Career::new(Mode::Standard);
+    c.shift = 2;
+    let mut w = quiet(&c, Rng::seeded(6));
+    w.spawn_partner();
+    w.ship.angle = 0.0;
+    let (sx, sy) = (w.ship.b.x, w.ship.b.y);
+    let it = w.new_item(ItemType::Engine, sx + 60.0, sy, 0.0, 0.0);
+    let id = it.id;
+    w.items.push(it);
+    w.action(Action::Hook);
+    step(&mut w);
+    let i = w.item_index(id).expect("the engine");
+    let ib = w.items[i].b;
+    let p = w.p2.as_mut().expect("partner");
+    p.b.x = ib.x + 60.0;
+    p.b.y = ib.y;
+    p.b.vx = 0.0;
+    p.b.vy = 0.0;
+    w.p2_input = P2Input {
+        latch: true,
+        ..P2Input::default()
+    };
+    step(&mut w);
+    w.p2_input = P2Input::default();
+    step(&mut w);
+    assert!(w.p2.as_ref().unwrap().linked, "latched");
+
+    let x0 = w.items[w.item_index(id).unwrap()].b.x;
+    w.p2.as_mut().unwrap().angle = 0.0;
+    w.p2_input = P2Input {
+        thrust: 1.0,
+        ..P2Input::default()
+    };
+    for _ in 0..90 {
+        step(&mut w);
+        w.ship.b.vx = 0.0;
+        w.ship.b.vy = 0.0;
+    }
+    let x1 = w.items[w.item_index(id).unwrap()].b.x;
+    assert!(x1 - x0 > 10.0, "pulled {x0} -> {x1}");
+    assert!(w.p2.as_ref().unwrap().linked, "still latched");
+}
+
+/// A cargo smash freezes the action briefly and marks a highlight.
+#[test]
+fn a_cargo_smash_raises_hit_stop_and_a_highlight() {
+    use cj_sim::events::Event;
+    let mut c = Career::new(Mode::Standard);
+    c.shift = 3;
+    let mut w = quiet(&c, Rng::seeded(2));
+    let (sx, sy) = (w.ship.b.x, w.ship.b.y);
+    let j = w.new_jumper(sx + 200.0, sy, Some(cj_sim::consts::Variant::Cutter));
+    w.jumpers.push(j);
+    w.events.clear();
+    let n = w.jumpers.len() - 1;
+    w.hurt_jumper(n, 99.0, Some(7.0));
+    assert!(w.events.contains(&Event::HitStop(HITSTOP_SMASH)));
+    assert!(w.events.iter().any(
+        |e| matches!(e, Event::Highlight { text, .. } if text == "Smashed a rival with cargo")
+    ));
+    assert!(w.events.contains(&Event::Unlock("smash")));
+}

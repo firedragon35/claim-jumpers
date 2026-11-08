@@ -1,2 +1,5 @@
 # Cargo build output
 /target/
+
+# Release packages (tools/package.ps1)
+/dist/
