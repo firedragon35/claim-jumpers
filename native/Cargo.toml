@@ -1,12 +1,15 @@
-# Native Windows port of Claim Jumpers. The browser game in the repo root is
+# Native Windows port of Claim Jumpers. The browser game in the repository root is
 # the reference implementation; this workspace must match its behaviour.
 #
-# Milestone 0 contains only the risk-test spike. The real crates (cj-sim for
-# the pure gameplay simulation, cj-game for the macroquad app) arrive in
-# Milestone 1.
+# crates/cj-sim   the pure, deterministic gameplay simulation (builds on any OS)
+# crates/cj-game  the macroquad application, claim-jumpers.exe (Windows)
+# spikes/m0-spike the Milestone 0 risk-test program, kept for reference only. It is a
+#                 workspace member so `cargo run -p m0-spike` still works, but it is not a
+#                 default member, so plain `cargo build` and `cargo test` skip it.
 [workspace]
 resolver = "2"
 members = ["crates/cj-sim", "crates/cj-game", "spikes/m0-spike"]
+default-members = ["crates/cj-sim", "crates/cj-game"]
 
 [workspace.package]
 edition = "2021"

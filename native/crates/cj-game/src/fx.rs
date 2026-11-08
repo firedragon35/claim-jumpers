@@ -96,6 +96,9 @@ impl Fx {
         });
     }
 
+    /// A short-lived spark. The eight arguments are the particle's own fields; a parameter struct
+    /// would only add churn at the dozen call sites, so the lint is allowed like `add` above.
+    #[allow(clippy::too_many_arguments)]
     fn spark(&mut self, x: f64, y: f64, vx: f64, vy: f64, life: f64, rgb: u32, size: f64) {
         self.add(x, y, vx, vy, life, rgb, size, 0.0, Kind::Spark, 0.0);
     }
@@ -292,25 +295,23 @@ impl Fx {
     pub fn emit_ambient(&mut self, w: &World) {
         let s = &w.ship;
         // Exhaust: visibly choked while sputtering. Only forward thrust smokes.
-        if s.alive && s.throttle > 0.0 {
-            if self.rng.chance(if s.sputtering { 0.25 } else { 0.9 }) {
-                let bx = s.b.x - s.angle.cos() * 20.0;
-                let by = s.b.y - s.angle.sin() * 20.0;
-                let sp = self.rng.range(140.0, 240.0);
-                let a = s.angle + PI + self.rng.range(-0.25, 0.25);
-                let life = self.rng.range(0.2, 0.4);
-                let size = self.rng.range(2.0, 4.0);
-                let c = if s.sputtering { 0x888888 } else { col::HAZARD };
-                self.spark(
-                    bx,
-                    by,
-                    s.b.vx + a.cos() * sp,
-                    s.b.vy + a.sin() * sp,
-                    life,
-                    c,
-                    size,
-                );
-            }
+        if s.alive && s.throttle > 0.0 && self.rng.chance(if s.sputtering { 0.25 } else { 0.9 }) {
+            let bx = s.b.x - s.angle.cos() * 20.0;
+            let by = s.b.y - s.angle.sin() * 20.0;
+            let sp = self.rng.range(140.0, 240.0);
+            let a = s.angle + PI + self.rng.range(-0.25, 0.25);
+            let life = self.rng.range(0.2, 0.4);
+            let size = self.rng.range(2.0, 4.0);
+            let c = if s.sputtering { 0x888888 } else { col::HAZARD };
+            self.spark(
+                bx,
+                by,
+                s.b.vx + a.cos() * sp,
+                s.b.vy + a.sin() * sp,
+                life,
+                c,
+                size,
+            );
         }
         // Stunned by a sheriff bolt: blue crackle round the hull.
         if s.alive && s.stun_t > 0.0 && self.rng.chance(0.5) {

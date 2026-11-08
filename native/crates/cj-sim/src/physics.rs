@@ -82,8 +82,9 @@ fn collide(a: &mut Body, b: &mut Body) -> Option<f64> {
         return None;
     }
     // `|| 0.001` in the browser: coincident centres separate along nothing.
+    // A literal float pattern compares with `==`, so this matches exactly when the guard did.
     let d = match d2.sqrt() {
-        v if v == 0.0 => 0.001,
+        0.0 => 0.001,
         v => v,
     };
     let (nx, ny) = (dx / d, dy / d);

@@ -25,7 +25,7 @@ fn add(w: &mut World, kind: ItemType, x: f64, y: f64) -> u32 {
 }
 
 fn has_sfx(w: &World, s: Sfx) -> bool {
-    w.events.iter().any(|e| *e == Event::Sfx(s))
+    w.events.contains(&Event::Sfx(s))
 }
 
 #[test]

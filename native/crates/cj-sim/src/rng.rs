@@ -32,6 +32,11 @@ impl Rng {
     }
 
     /// The next number in [0, 1): `Math.random()`.
+    ///
+    /// The name deliberately mirrors the browser game's `Math.random()` call sites. This is not an
+    /// `Iterator`: it never ends and returns a plain `f64`, not an `Option`, so the lint that asks
+    /// for the trait (or a different name) does not apply.
+    #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> f64 {
         match self {
             Rng::Constant(v) => *v,
