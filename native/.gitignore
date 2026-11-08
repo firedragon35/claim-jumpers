@@ -3,3 +3,6 @@
 
 # Release packages (tools/package.ps1)
 /dist/
+
+# Local-only terms that must never appear in the repo (see scripts/check.sh); never commit
+/.sanitize-deny.local
