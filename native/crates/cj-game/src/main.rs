@@ -706,12 +706,9 @@ impl Smoke {
             _ => return false,
         };
         let path = std::env::temp_dir().join(format!("claim-jumpers-m5-{name}.png"));
-        // The framebuffer reads bottom row first and carries the alpha of
-        // the last blend; flip it and make it opaque.
+        // get_screen_data comes back top row first, as the window shows it,
+        // but carries the alpha of the last blend; make it opaque.
         let mut img = get_screen_data();
-        let row = usize::from(img.width) * 4;
-        let flipped: Vec<u8> = img.bytes.chunks(row).rev().flatten().copied().collect();
-        img.bytes = flipped;
         for px in img.bytes.chunks_mut(4) {
             px[3] = 255;
         }

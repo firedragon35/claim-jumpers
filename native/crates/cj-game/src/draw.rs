@@ -1356,7 +1356,13 @@ mod tests {
         let m = display_camera(Rect::new(0.0, 0.0, 800.0, 600.0)).matrix();
         let top_left = m.project_point3(vec3(0.0, 0.0, 0.0));
         let bottom_right = m.project_point3(vec3(800.0, 600.0, 0.0));
-        assert!((top_left.x + 1.0).abs() < 1e-5 && (top_left.y - 1.0).abs() < 1e-5, "{top_left:?}");
-        assert!((bottom_right.x - 1.0).abs() < 1e-5 && (bottom_right.y + 1.0).abs() < 1e-5, "{bottom_right:?}");
+        assert!(
+            (top_left.x + 1.0).abs() < 1e-5 && (top_left.y - 1.0).abs() < 1e-5,
+            "{top_left:?}"
+        );
+        assert!(
+            (bottom_right.x - 1.0).abs() < 1e-5 && (bottom_right.y + 1.0).abs() < 1e-5,
+            "{bottom_right:?}"
+        );
     }
 }
