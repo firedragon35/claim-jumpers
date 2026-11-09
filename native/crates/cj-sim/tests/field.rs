@@ -1,9 +1,8 @@
 //! The browser's own tests for the career's field systems
-//! (tests/specs/phases-6-9.spec.js in the repository root), ported to the
+//! (tests/specs/phases-6-9.spec.js in the claim-jumpers-game repository), ported to the
 //! Rust simulation: standing and truces, contract chains, belt conditions,
 //! escorts, sealed holds and rogue cores. Each keeps the browser test's
-//! setup and assertions. The presentation, daily and co-op tests in that
-//! file arrive with their systems.
+//! setup and assertions.
 
 use cj_sim::career::{Career, Mode};
 use cj_sim::consts::*;
@@ -325,4 +324,28 @@ fn a_cargo_smash_raises_hit_stop_and_a_highlight() {
         |e| matches!(e, Event::Highlight { text, .. } if text == "Smashed a rival with cargo")
     ));
     assert!(w.events.contains(&Event::Unlock("smash")));
+}
+
+/// updateCamera in co-op: centred between the tugs, zoomed out to fit them.
+#[test]
+fn the_camera_frames_both_tugs() {
+    let c = Career::new(Mode::Standard);
+    let mut w = quiet(&c, Rng::Constant(0.5));
+    w.rocks.clear();
+    w.wrecks.clear();
+    w.spawn_partner();
+    let p = w.p2.as_mut().expect("partner");
+    p.b.x = w.ship.b.x - 1500.0;
+    p.b.y = w.ship.b.y;
+    // Long enough for the camera's easing to settle.
+    for _ in 0..900 {
+        step(&mut w);
+    }
+    let p = w.p2.as_ref().expect("partner");
+    let mid = (w.ship.b.x + p.b.x) / 2.0;
+    assert!((w.cam.x - mid).abs() < 1.0, "{} vs {mid}", w.cam.x);
+    let gap = (w.ship.b.x - p.b.x).hypot(w.ship.b.y - p.b.y);
+    let base = (VIEW.0.min(VIEW.1) / 900.0).clamp(0.5, 1.1);
+    let want = base * 750.0 / gap;
+    assert!((w.cam.zoom - want).abs() < 0.01, "{} vs {want}", w.cam.zoom);
 }

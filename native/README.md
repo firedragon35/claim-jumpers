@@ -5,7 +5,7 @@ A native Rust port of Claim Jumpers for Windows 10 and 11. The browser game
 reference implementation; the port must match its gameplay, rules,
 controls, balance and look unless a change is explicitly approved.
 
-**Status: Milestone 6, release 1.0.2 (all systems ported, packaged for Windows; history in [CHANGELOG.md](CHANGELOG.md)).** A career of
+**Status: Milestone 6, release 1.0.3 (all systems ported, packaged for Windows; history in [CHANGELOG.md](CHANGELOG.md)).** A career of
 five-minute shifts: fly the tug, tow and fight for salvage, and bank it at
 the carrier, against rival crews, debt collectors who net and tow the tug
 (or confiscate a fat load, or impound it), the law (wanted stars, patrols,
@@ -58,7 +58,6 @@ gamepad (typing the pilot name needs a keyboard).
 | `crates/cj-sim` | The gameplay simulation: pure Rust, no window or audio, deterministic. |
 | `crates/cj-game` | The Windows game (`claim-jumpers.exe`): window, rendering, input, sound, HUD, menus and saves. |
 | `tools/golden` | Exports reference traces from the browser game for the simulation tests. |
-| `spikes/m0-spike` | The Milestone 0 technology test, kept for reference. |
 
 ## Stack
 
@@ -76,7 +75,7 @@ source and licences (SIL OFL 1.1).
 
 1. Install Rust with the MSVC toolchain:
    `winget install Rustlang.Rustup`, then `rustup default stable-x86_64-pc-windows-msvc`.
-   Rust 1.85 or newer is required (developed with 1.99.1).
+   Rust 1.89 or newer is required (developed with 1.99.1).
 2. Install the Visual Studio C++ build tools (or Visual Studio with the
    "Desktop development with C++" workload), which provide the linker.
 
@@ -102,7 +101,7 @@ powershell -ExecutionPolicy Bypass -File tools/package.ps1
 ```
 
 It builds the release exe, runs the `--smoke` check from an unrelated
-folder (stopping if it fails), and writes
+folder (stopping if it fails or hangs), and writes
 `dist\ClaimJumpers-<version>-windows-x64.zip` with:
 
 - `claim-jumpers.exe`;
@@ -157,7 +156,9 @@ the settings (`settings.json`), the profile of records and achievements
 (`profile.json`), the local leaderboard (`board.json`), the pilot name
 (`pilot.txt`) and whether training is done (`training.txt`), all in the
 browser's field names. Saves are written atomically, and a malformed save
-is repaired on load the way the browser repairs one. Set
+is repaired on load the way the browser repairs one. A career file that
+can't be read at all is copied to `career.bad.json` before a new career
+replaces it, and a save that fails shows a warning on screen. Set
 `CLAIM_JUMPERS_DATA` to use another folder.
 
 Unattended check: a scripted shift with a tow, the cannon, a rival, a
@@ -168,7 +169,9 @@ pause card, the shift report, a purchase in the shop, the shop's Parts
 tab, accepting a contract and hiring a co-pilot on Jobs & crew, buying a
 truce on Map & standing, the title, settings, records, the leaderboard
 and the sound test (playing one sound), with a screenshot of each in
-`%TEMP%\claim-jumpers-m5-<screen>.png` and a report. It uses (and then
+`%TEMP%\claim-jumpers-m5-<screen>.png` and a report. It exits non-zero
+unless all twelve screens were captured and the career on disk reached
+shift 2. It uses (and then
 deletes) its own temporary save folder, never the player's. The release
 build has no console window, so redirect the report to a file:
 
@@ -294,6 +297,9 @@ Everything in the browser game is ported. Deliberate differences:
   folder (the browser keeps it in localStorage).
 - None of the game's fonts has the ★ and ☆ glyphs (the browser falls back
   to a system font), so wanted stars are drawn as star shapes.
+- Opening Settings from the pause card freezes the shift behind it. (The
+  browser runs its menu drift there, which moves the paused shift's cargo
+  and clock.)
 - Added for the desktop: a Quit button on the title screen, and arrow
   keys moving menu focus (the browser relies on Tab and the mouse there).
 - Sound is mono and synthesized by a port of the browser's WebAudio
@@ -301,12 +307,6 @@ Everything in the browser game is ported. Deliberate differences:
   it should sound alike but has not been compared side by side.
 - Rock highlights are a soft sprite instead of a gradient clipped to the
   rock's outline.
-
-## The M0 spike
-
-`spikes/m0-spike` is the Milestone 0 risk-test program (rendering, fonts, gamepad, synthesized
-audio, speech). It is kept for reference only and is not a default workspace member. Run it
-explicitly with `cargo run -p m0-spike --release` (add `-- --smoke` for its unattended check).
 
 ## Verified so far
 

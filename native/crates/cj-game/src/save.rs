@@ -10,9 +10,14 @@
 
 use cj_sim::career::{Career, Mode, MODES};
 use serde_json::{Map, Value};
+use std::cell::RefCell;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 const CAREER: &str = "career.json";
+/// A copy of a career file that could not be loaded, kept because the next
+/// new career overwrites `CAREER`.
+const CAREER_BAD: &str = "career.bad.json";
 const BEST: &str = "best.json";
 const MODE: &str = "mode.txt";
 /// "done" once the guided first shift has been finished or skipped.
@@ -20,6 +25,9 @@ const TRAINING: &str = "training.txt";
 
 pub struct Store {
     dir: Option<PathBuf>,
+    /// The latest problem to show the player. The release build has no
+    /// console, so printing an error alone would tell them nothing.
+    error: RefCell<Option<String>>,
 }
 
 /// Best single-shift haul per difficulty mode.
@@ -46,10 +54,27 @@ impl Store {
             .map(PathBuf::from)
             .or_else(|| std::env::var_os("APPDATA").map(|a| Path::new(&a).join("ClaimJumpers")))
             .filter(|d| std::fs::create_dir_all(d).is_ok());
-        if dir.is_none() {
-            eprintln!("no writable save folder: the career lasts this session only");
+        let error = dir
+            .is_none()
+            .then(|| "No save folder: this career lasts this session only.".to_owned());
+        if let Some(e) = &error {
+            eprintln!("{e}");
         }
-        Store { dir }
+        Store {
+            dir,
+            error: RefCell::new(error),
+        }
+    }
+
+    /// Hand over the latest save problem once, for the on-screen toast.
+    pub fn take_error(&self) -> Option<String> {
+        self.error.borrow_mut().take()
+    }
+
+    /// Log a save problem and queue a short message for the player.
+    fn report(&self, message: String, detail: impl std::fmt::Display) {
+        eprintln!("{message} ({detail})");
+        *self.error.borrow_mut() = Some(message);
     }
 
     pub fn folder(&self) -> Option<&Path> {
@@ -61,18 +86,36 @@ impl Store {
     }
 
     /// Write via a temporary file and a rename, so a crash mid-write never
-    /// leaves a half-written save behind.
+    /// leaves a half-written save behind. The data is flushed to the disk
+    /// before the rename: otherwise a power cut can leave the new name
+    /// pointing at an empty file.
     pub fn write(&self, name: &str, text: &str) {
         let Some(dir) = &self.dir else { return };
         let tmp = dir.join(format!("{name}.tmp"));
-        let res = std::fs::write(&tmp, text).and_then(|_| std::fs::rename(&tmp, dir.join(name)));
+        let res = write_flushed(&tmp, text).and_then(|_| std::fs::rename(&tmp, dir.join(name)));
         if let Err(e) = res {
-            eprintln!("could not save {name}: {e}");
+            self.report(format!("Could not save {name}. Progress may be lost."), e);
         }
     }
 
+    /// The saved career, or None if there isn't a usable one. A file that
+    /// exists but can't be read or parsed is copied aside first, because
+    /// starting a new career replaces it.
     pub fn load_career(&self) -> Option<Career> {
-        Career::from_json(&self.read(CAREER)?)
+        let dir = self.dir.as_ref()?;
+        let path = dir.join(CAREER);
+        let career = std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|text| Career::from_json(&text));
+        if career.is_none() && path.exists() {
+            if let Err(e) = std::fs::copy(&path, dir.join(CAREER_BAD)) {
+                self.report(
+                    "Your career file could not be read or backed up.".to_owned(),
+                    e,
+                );
+            }
+        }
+        career
     }
 
     pub fn save_career(&self, c: &Career) {
@@ -80,8 +123,12 @@ impl Store {
     }
 
     pub fn clear_career(&self) {
-        if let Some(dir) = &self.dir {
-            let _ = std::fs::remove_file(dir.join(CAREER));
+        let Some(dir) = &self.dir else { return };
+        match std::fs::remove_file(dir.join(CAREER)) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+                self.report("Could not clear the old career file.".to_owned(), e);
+            }
+            _ => {}
         }
     }
 
@@ -160,6 +207,13 @@ impl Store {
     }
 }
 
+/// Create `path`, write `text`, and wait until the disk has it.
+fn write_flushed(path: &Path, text: &str) -> std::io::Result<()> {
+    let mut file = std::fs::File::create(path)?;
+    file.write_all(text.as_bytes())?;
+    file.sync_all()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -168,7 +222,10 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("cj-save-test-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        Store { dir: Some(dir) }
+        Store {
+            dir: Some(dir),
+            error: RefCell::new(None),
+        }
     }
 
     #[test]
@@ -197,10 +254,32 @@ mod tests {
     }
 
     #[test]
-    fn a_corrupt_save_is_no_career() {
+    fn a_corrupt_save_is_no_career_but_is_kept() {
         let s = temp_store("bad");
         s.write(CAREER, "{ not json");
         assert!(s.load_career().is_none());
+        // The next new career overwrites career.json, so the copy must exist.
+        assert_eq!(s.read(CAREER_BAD).as_deref(), Some("{ not json"));
         let _ = std::fs::remove_dir_all(s.dir.unwrap());
+    }
+
+    #[test]
+    fn no_career_file_makes_no_backup() {
+        let s = temp_store("none");
+        assert!(s.load_career().is_none());
+        assert!(s.read(CAREER_BAD).is_none());
+        let _ = std::fs::remove_dir_all(s.dir.unwrap());
+    }
+
+    #[test]
+    fn a_failed_save_is_reported_once() {
+        let s = temp_store("fail");
+        let dir = s.dir.clone().unwrap();
+        // Writing into a folder that no longer exists fails on every system.
+        std::fs::remove_dir_all(&dir).unwrap();
+        s.write(CAREER, "{}");
+        let error = s.take_error().expect("the failure is reported");
+        assert!(error.contains(CAREER), "names the file: {error}");
+        assert!(s.take_error().is_none(), "and only once");
     }
 }

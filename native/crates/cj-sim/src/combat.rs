@@ -386,8 +386,7 @@ impl World {
         let hook = jm.hook.take();
         let boss = jm.boss.clone();
         // Every rival you scrap deepens the crews' grudge; a new stage is
-        // announced. (A rogue sentry's kills, which are not yours, and the
-        // fixer crew's half-grudge arrive in milestones 4 and 3.)
+        // announced.
         let before = self.rival_stage();
         // A rogue sentry's kill isn't yours: no tally, grudge, standing or
         // bounty.
@@ -475,13 +474,7 @@ impl World {
                 "That was {}. {v} cr bounty, paid. Don't let it go to your head.",
                 b.name
             );
-            self.radio_say(
-                Radio::BossDown,
-                true,
-                false,
-                text,
-                format!("Bounty paid. {v} cr."),
-            );
+            self.radio_text(Radio::BossDown, true, false, text);
         }
         if smashed && !self.no_blame {
             self.scatter_rivals(j);

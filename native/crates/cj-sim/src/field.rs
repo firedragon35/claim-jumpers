@@ -813,13 +813,7 @@ impl World {
                 let text = format!(
                     "That's {name}'s crew. Bounty of {v} cr on them, and they're coming for you, not the cargo."
                 );
-                self.radio_say(
-                    Radio::Boss,
-                    true,
-                    false,
-                    text,
-                    format!("{name}. {v} cr bounty."),
-                );
+                self.radio_text(Radio::Boss, true, false, text);
             }
         }
     }

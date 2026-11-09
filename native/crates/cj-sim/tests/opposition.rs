@@ -1,5 +1,5 @@
 //! The browser's own behaviour tests for the opposition and weapons
-//! (tests/specs/game.spec.js and weapons.spec.js in the repository root),
+//! (tests/specs/game.spec.js and weapons.spec.js in the claim-jumpers-game repository),
 //! ported to the Rust simulation. Each keeps the browser test's setup and
 //! assertions; where the browser pins Math.random, so does this.
 

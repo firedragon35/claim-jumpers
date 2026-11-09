@@ -1,8 +1,6 @@
 //! The shift in progress (the browser's global `G`) and its fixed step.
 //!
-//! Update order follows step() in src/js/16-simulation-step.js. Systems
-//! that arrive in later milestones are noted where they slot in, so the
-//! order stays faithful as they are added.
+//! Update order follows step() in src/js/16-simulation-step.js.
 
 use crate::career::{tier, Career, Rep, Tier};
 use crate::consts::*;
@@ -179,8 +177,7 @@ pub struct World {
     pub screen_flash: f64,
     warned_minute: bool,
     warned_ten: bool,
-    /// The shift clock reached zero. The end-of-shift report arrives with
-    /// the career in milestone 3; until then the game shows a placeholder.
+    /// The shift has ended: the clock reached zero or the tug was impounded.
     pub shift_over: bool,
     /// Effects, sounds and radio lines raised since the last drain.
     pub events: Vec<Event>,
@@ -300,10 +297,8 @@ impl World {
         w
     }
 
-    /// The next shift of a career (newGame): its loadout, difficulty,
-    /// shift number and carried-over rival grudge. (Belts, conditions,
-    /// contracts, crews and the rest of newGame's setup arrive with their
-    /// systems in milestones 4 and 5; this is the Hollis Belt.)
+    /// The next shift of a career (newGame): its loadout, difficulty, shift
+    /// number, carried-over rival grudge, and the field the career has picked.
     pub fn for_career(rng: Rng, view: (f64, f64), c: &Career) -> World {
         let mut w = World::empty(rng, view);
         w.mods = c.mods();
@@ -354,20 +349,13 @@ impl World {
             text: None,
         });
     }
-    /// A radio line with its own text: `text` is shown, `say` is spoken.
-    pub(crate) fn radio_say(
-        &mut self,
-        key: Radio,
-        force: bool,
-        once: bool,
-        text: String,
-        say: String,
-    ) {
+    /// A radio line with its own text, shown and spoken as written.
+    pub(crate) fn radio_text(&mut self, key: Radio, force: bool, once: bool, text: String) {
         self.emit(Event::Radio {
             key,
             force,
             once,
-            text: Some((text, say)),
+            text: Some(text),
         });
     }
     /// Queues a floating text popup at (`x`, `y`) in world coordinates.
@@ -522,7 +510,6 @@ impl World {
 
         self.update_ship(input, dt);
         self.update_partner(dt);
-        // (The co-op partner tug updates here in milestone 5.)
         self.update_scoop(dt);
         for j in 0..self.jumpers.len() {
             self.update_jumper(j, dt);
@@ -594,7 +581,6 @@ impl World {
         }
         self.update_bay(dt);
         self.update_tutorial(dt);
-        // (The guided tutorial updates here in milestone 5 part 2.)
         self.update_events(dt);
         self.update_opposition_spawns(dt);
         self.update_spawns(dt);
@@ -668,7 +654,7 @@ impl World {
         let mods = &self.mods;
         let s = &mut self.ship;
 
-        // Heat sink shared by the guns and (from milestone 3) side thrusters.
+        // Heat sink shared by the guns and side thrusters.
         s.heat = (s.heat - HEAT_COOL * dt).max(0.0);
         let mut overheat = false;
         if !s.overheated && s.heat >= 100.0 {
@@ -1008,7 +994,6 @@ impl World {
         s.respawn_t = RESPAWN_TIME;
         let (x, y) = (s.b.x, s.b.y);
         self.stats.deaths += 1;
-        // (The broker crew's fee multiplier joins with crews in milestone 3.)
         let deductible = js::round(DEDUCTIBLE * self.diff_fees * self.crew_fee_mul());
         self.banked = (self.banked - deductible).max(0.0);
         self.popup(
@@ -1197,7 +1182,6 @@ impl World {
                 text,
             });
         }
-        // (Highlights and achievements: milestone 5.)
         let text = if named {
             format!("+{} {}", fmt_credits(value), label.to_uppercase())
         } else {
@@ -1232,16 +1216,14 @@ impl World {
             let what = POD_CONTENTS[self.rng.index(POD_CONTENTS.len())];
             let v = fmt_credits(value);
             let text = format!("Pod cracked open. {what}. Bay says {v} cr. I've seen worse.");
-            let say = format!("Pod's worth {v} cr. I've seen worse.");
-            self.radio_say(Radio::Pod, true, false, text, say);
+            self.radio_text(Radio::Pod, true, false, text);
         } else if rare {
             let v = fmt_credits(value);
             let text = format!(
                 "A {}. {v} cr. Well, well. I'm almost impressed. Almost.",
                 label.to_lowercase()
             );
-            let say = format!("{label}. Almost impressed.");
-            self.radio_say(Radio::Rare, true, false, text, say);
+            self.radio_text(Radio::Rare, true, false, text);
         } else if value >= 800.0 {
             self.radio(Radio::BankBig, true, false);
         } else {
@@ -1317,13 +1299,24 @@ impl World {
             .filter_map(|id| self.items.iter().find(|it| it.id == *id))
             .map(|it| it.b.dist_to(&s.b))
             .fold(0.0, f64::max);
-        let target_zoom = base * (1.0 - (span / 2200.0).min(0.32));
-        let (tx, ty) = if s.alive {
+        let mut target_zoom = base * (1.0 - (span / 2200.0).min(0.32));
+        let (mut tx, mut ty) = if s.alive {
             (s.b.x + s.b.vx * 0.35, s.b.y + s.b.vy * 0.35)
         } else {
             (self.cam.x, self.cam.y)
         };
-        // (Co-op framing of both tugs: milestone 5.)
+        // Co-op: frame both tugs, zooming out as they spread apart. A
+        // wrecked tug counts as back at the bay, where it will respawn.
+        if let Some(p) = &self.p2 {
+            let (ax, ay) = if s.alive {
+                (s.b.x, s.b.y)
+            } else {
+                (BAY_X, BAY_Y)
+            };
+            tx = (ax + p.b.x) / 2.0;
+            ty = (ay + p.b.y) / 2.0;
+            target_zoom = target_zoom.min(base * 750.0 / js::dist(p.b.x, p.b.y, ax, ay).max(750.0));
+        }
         let k = 1.0 - (-4.0 * dt).exp();
         self.cam.x += (tx - self.cam.x) * k;
         self.cam.y += (ty - self.cam.y) * k;
@@ -1356,7 +1349,7 @@ pub fn fmt_credits(n: f64) -> String {
     let digits = v.unsigned_abs().to_string();
     let mut out = String::new();
     for (i, c) in digits.chars().enumerate() {
-        if i > 0 && (digits.len() - i) % 3 == 0 {
+        if i > 0 && (digits.len() - i).is_multiple_of(3) {
             out.push(',');
         }
         out.push(c);

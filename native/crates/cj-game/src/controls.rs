@@ -4,6 +4,7 @@
 use crate::settings::{Bind, Coop, Settings, KEY_ACTIONS};
 use cj_sim::coop::P2Input;
 use cj_sim::{Action, Input};
+use gilrs::ff::{BaseEffect, BaseEffectType, Effect, EffectBuilder, Repeat, Replay, Ticks};
 use gilrs::{Axis, Button, Gilrs};
 use macroquad::prelude::*;
 
@@ -61,6 +62,8 @@ pub struct Controls {
     binds: Vec<Vec<KeyCode>>,
     /// Who flies the co-op partner (with "pad", player 1 ignores that pad).
     coop: Coop,
+    /// The rumble playing now; gilrs stops an effect when its handle drops.
+    rumbling: Option<Effect>,
 }
 
 /// Button → one-shot, as PAD_TAPS: Y hook, B drop last, LB cut all,
@@ -102,6 +105,7 @@ impl Controls {
             last_device: Device::Keyboard,
             binds: Vec::new(),
             coop: Coop::Off,
+            rumbling: None,
         }
         .bound(&Settings::default())
     }
@@ -333,6 +337,45 @@ impl Controls {
         self.menu_prev = now;
         out.dir = dir;
         out
+    }
+
+    /// rumble(): a short buzz, `strength` 0..1 for `ms` milliseconds, on
+    /// the pad in use. Silently ignored on pads without motors.
+    pub fn rumble(&mut self, strength: f64, ms: f64) {
+        if self.last_device != Device::Pad {
+            return;
+        }
+        let skip = self.exclude();
+        let Some(g) = self.gilrs.as_mut() else { return };
+        let Some(id) = active_pad(g, skip).filter(|id| g.gamepad(*id).is_ff_supported()) else {
+            return;
+        };
+        let play_for = Ticks::from_ms(ms as u32);
+        let motor = |kind| BaseEffect {
+            kind,
+            scheduling: Replay {
+                play_for,
+                ..Default::default()
+            },
+            envelope: Default::default(),
+        };
+        let magnitude = |level: f64| (level.clamp(0.0, 1.0) * f64::from(u16::MAX)) as u16;
+        // The browser's dual-rumble: the weak motor at 60% of the strong one.
+        let effect = EffectBuilder::new()
+            .add_effect(motor(BaseEffectType::Strong {
+                magnitude: magnitude(strength),
+            }))
+            .add_effect(motor(BaseEffectType::Weak {
+                magnitude: magnitude(strength * 0.6),
+            }))
+            .repeat(Repeat::For(play_for))
+            .gamepads(&[id])
+            .finish(g);
+        if let Ok(effect) = effect {
+            if effect.play().is_ok() {
+                self.rumbling = Some(effect);
+            }
+        }
     }
 
     fn pad_state(&mut self) -> Option<PadState> {

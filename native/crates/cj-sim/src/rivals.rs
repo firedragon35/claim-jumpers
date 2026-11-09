@@ -311,9 +311,7 @@ impl World {
     }
 
     /// Rival arrivals and field refills. A loaded cable draws jumpers
-    /// sooner, up to twice as fast. (Collectors, the law, the refinery and
-    /// the mining crew arrive here in milestone 4; the tutorial holds
-    /// rivals back in milestone 5.)
+    /// sooner, up to twice as fast.
     pub(crate) fn update_spawns(&mut self, dt: f64) {
         // Rivals stay away while training runs.
         if self.tut.is_none() {

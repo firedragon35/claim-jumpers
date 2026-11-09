@@ -123,7 +123,7 @@ pub const START_ROCKS: usize = 95;
 pub const START_ITEMS: usize = 10;
 
 // ---------------------------------------------------------------------
-// Combat (milestone 2).
+// Combat.
 // ---------------------------------------------------------------------
 
 /// Seconds between cannon shots at cannon level 1.

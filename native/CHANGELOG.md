@@ -5,6 +5,49 @@ format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the port uses [Semantic Versioning](https://semver.org/) as defined in
 [CLAUDE.md](CLAUDE.md#versioning).
 
+## [1.0.3] - 2026-11-09
+
+### Fixed
+
+- A career file that can't be read or parsed is copied to `career.bad.json`
+  before a new career can replace it. Saves are flushed to disk before the
+  final rename, so a power cut can't leave an empty file.
+- Save failures now show a warning on screen; the release build has no
+  console, so they used to be invisible.
+- Skipping training is remembered, as finishing it is. After "Replay
+  training", a skip no longer brings training back every shift.
+- Local co-op: the camera frames both tugs and zooms out as they spread
+  apart, as in the browser.
+- Opening Settings from the pause card no longer moves the shift's cargo and
+  clock behind it.
+- An enemy shot at exactly the edge of hearing no longer produces invalid
+  sound samples.
+- A key that is another action's fixed key can't be rebound (it would have
+  triggered both actions), as in the browser.
+- Sound comes back after the output device is lost, such as when a headset
+  is unplugged, and when a device appears after a silent start.
+- SWAT, stun and rogue bolts have their browser sizes and colours.
+
+### Added
+
+- Gamepad rumble on hull hits, reactor blasts and being netted, as in the
+  browser.
+
+### Changed
+
+- `--smoke` exits non-zero unless every screen was captured and the career
+  reached disk at shift 2; `tools/package.ps1` stops a smoke run that hangs.
+- The minimum Rust version is corrected to 1.89, which the locked `uuid`
+  dependency already required.
+- `tools/package.ps1` builds with `--locked`, so a release ships exactly the
+  dependency versions in `Cargo.lock`.
+
+### Removed
+
+- The short spoken variants of radio lines, which were never read out; Marge
+  reads the full line, as the browser does.
+- `spikes/m0-spike`, the Milestone 0 technology test. It remains in git history.
+
 ## [1.0.2] - 2026-11-08
 
 ### Changed

@@ -15,7 +15,8 @@ $version = (Select-String -Path 'crates\cj-game\Cargo.toml' -Pattern '^version =
 $name = "ClaimJumpers-$version-windows-x64"
 Write-Host "Packaging $name"
 
-cargo build --release -p cj-game
+# --locked: ship exactly the dependency versions in Cargo.lock, or stop.
+cargo build --release --locked -p cj-game
 if ($LASTEXITCODE -ne 0) { throw 'cargo build failed' }
 $exe = Join-Path $native 'target\release\claim-jumpers.exe'
 
@@ -23,7 +24,13 @@ $exe = Join-Path $native 'target\release\claim-jumpers.exe'
 # it uses (and deletes) its own save folder.
 $log = Join-Path $env:TEMP "cj-package-smoke.txt"
 $p = Start-Process -FilePath $exe -ArgumentList '--smoke' -WorkingDirectory $env:TEMP `
-    -RedirectStandardOutput $log -RedirectStandardError "$log.err" -PassThru -Wait
+    -RedirectStandardOutput $log -RedirectStandardError "$log.err" -PassThru
+# Touching Handle now is what makes ExitCode readable once the process has ended.
+$null = $p.Handle
+if (-not $p.WaitForExit(180000)) {
+    Stop-Process -Id $p.Id -Force
+    throw "smoke check hung (no result after 3 minutes); see $log"
+}
 if ($p.ExitCode -ne 0) { throw "smoke check failed (exit $($p.ExitCode)); see $log" }
 Write-Host "Smoke check passed ($((Select-String -Path $log -Pattern 'screenshot:').Count) screens)"
 

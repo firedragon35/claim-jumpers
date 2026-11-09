@@ -763,7 +763,7 @@ impl World {
                     self.radio(Radio::Armed, true, false);
                 } else {
                     let text = format!("Charge seated. {left} to go. Steady hands, kiddo.");
-                    self.radio_say(Radio::Seated, true, false, text, format!("{left} to go."));
+                    self.radio_text(Radio::Seated, true, false, text);
                 }
             }
             i += 1;
@@ -1173,21 +1173,15 @@ impl World {
         };
         self.popup(x, y - 34.0, text, Tint::Collector);
         self.sfx(Sfx::Confiscated);
-        let (text, say) = if value > 0.0 {
-            (
-                format!(
-                    "They jacked the whole haul. {} cr of cargo, and not a credit off your loan. Greedy bastards.",
-                    fmt_credits(value)
-                ),
-                "They jacked the haul. Greedy bastards.",
+        let text = if value > 0.0 {
+            format!(
+                "They jacked the whole haul. {} cr of cargo, and not a credit off your loan. Greedy bastards.",
+                fmt_credits(value)
             )
         } else {
-            (
-                "They dragged you out for nothing. Your line was empty. Ha.".to_owned(),
-                "Nothing to take. Ha.",
-            )
+            "They dragged you out for nothing. Your line was empty. Ha.".to_owned()
         };
-        self.radio_say(Radio::Jacked, true, false, text, say.to_owned());
+        self.radio_text(Radio::Jacked, true, false, text);
     }
 
     /// Remove every piece on the line, with a burst each (seizures).
@@ -1531,8 +1525,7 @@ impl World {
             fmt_credits(value),
             fmt_credits(credit)
         );
-        let say = "They took the load. Thieves.".to_owned();
-        self.radio_say(Radio::Confiscated, true, false, text, say);
+        self.radio_text(Radio::Confiscated, true, false, text);
     }
 
     /// The collector got the tug off the field: impound fee, shift over.
@@ -1956,8 +1949,7 @@ impl World {
             "Arrested. {stars}-star fine of {} cr: {paid}. Your record is clean. My nerves are not.",
             fmt_credits(fine)
         );
-        let say = "Arrested. Your record is clean. My nerves are not.".to_owned();
-        self.radio_say(Radio::Arrested, true, false, text, say);
+        self.radio_text(Radio::Arrested, true, false, text);
     }
 
     /// A crooked shakedown: no fine, no stars; he takes the cargo on your
@@ -1982,8 +1974,7 @@ impl World {
             "He took {} cr of cargo \"as evidence.\" No charge, no receipt. That is not how evidence works, hotshot.",
             fmt_credits(cargo)
         );
-        let say = "He took your cargo as evidence. That is not how evidence works.".to_owned();
-        self.radio_say(Radio::ShookDown, true, false, text, say);
+        self.radio_text(Radio::ShookDown, true, false, text);
     }
 
     /* --------------------------- Missiles --------------------------- */
@@ -2625,8 +2616,7 @@ impl World {
         }
         let left = self.sentries.iter().filter(|x| !x.dead && !x.rogue).count();
         let text = format!("Lost a sentry drone. {left} left. Those are not free, hotshot.");
-        let say = "Lost a sentry. Those are not free.".to_owned();
-        self.radio_say(Radio::SentryLost, true, false, text, say);
+        self.radio_text(Radio::SentryLost, true, false, text);
     }
 
     /* ---------------------------- Mining drones ---------------------------- */
@@ -2922,8 +2912,7 @@ impl World {
                     let text = format!(
                         "Kessler Mutual ran your numbers, hon. You're {v} cr short of this shift's installment, so they're sending somebody. Bank something. Today."
                     );
-                    let say = format!("{v} cr short, hon. Bank something.");
-                    self.radio_say(Radio::LowWallet, true, false, text, say);
+                    self.radio_text(Radio::LowWallet, true, false, text);
                 }
             }
             // Fat cable: a rich load draws a collector (once a minute at most).

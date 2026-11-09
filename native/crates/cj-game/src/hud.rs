@@ -1,9 +1,5 @@
 //! The in-flight HUD (the #hud panel in src/page.html, styled by
 //! src/styles.css and filled by updateHud). Drawn in logical pixels.
-//!
-//! Milestone 1 shows what the slice has: banked and on-the-line credits,
-//! the shift clock, shield, hull and winch. Wallet, contracts, wanted
-//! level, heat, engine heat and weapon counters join with their systems.
 
 use crate::controls::Device;
 use crate::look::{col, text_left, text_width, Look};
@@ -173,8 +169,7 @@ pub fn draw(look: &Look, w: &World, career: Option<&Career>, view: (f32, f32), d
         crate::look::hex(col::MUTED),
     );
     // The rivals' mood once they hold a grudge, and the under-attack
-    // warning, stack between the shift label and the clock. (The wanted
-    // stars join this column with the law in milestone 4.)
+    // warning, stack between the shift label and the clock.
     let mut cy = top + 16.0;
     // Wanted stars: always shown, dim when clean; the law tier that's
     // coming for you once wanted; flashing while anyone is in pursuit.

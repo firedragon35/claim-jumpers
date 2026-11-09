@@ -13,7 +13,7 @@ pub struct Input {
     /// Side thrusters -1..1 (needs the side thrusters part).
     pub strafe: f64,
     pub fire: bool,
-    /// Afterburner (both triggers or Shift); arrives in milestone 4.
+    /// Afterburner (both triggers or Shift).
     pub burn: bool,
 }
 

@@ -5,9 +5,8 @@
 //!
 //! The save file is JSON with the browser's field names. Loading repairs
 //! anything malformed instead of trusting it, as loadCareer does. Fields
-//! for systems that arrive in later milestones of the port (contracts,
-//! crews, belts and the rest) are kept exactly as they were read, so a
-//! save round-trips through this build without losing them.
+//! this build doesn't use are kept exactly as they were read, so a save
+//! round-trips without losing them.
 
 use crate::field::*;
 use crate::js;
@@ -45,12 +44,12 @@ pub struct ModeDef {
     pub jumper_rate: f64,
     /// + most rivals alive at once.
     pub jumper_cap: f64,
-    /// + mining crew size (milestone 4).
+    /// + mining crew size.
     pub miner_crew: i32,
-    /// First shift debt collectors appear, and most waves per shift (milestone 4).
+    /// First shift debt collectors appear, and most waves per shift.
     pub collector_from: i32,
     pub collector_waves: i32,
-    /// × how much each wiggle tears a net (milestone 4).
+    /// × how much each wiggle tears a net.
     pub net_tear: f64,
     /// × wreck deductible and impound fee.
     pub fees: f64,
@@ -114,10 +113,7 @@ impl Mode {
     }
 }
 
-/// Faction standing (REP), each -100..100. The standing screen and most of
-/// its events arrive with phase 6 in milestone 5; the bank's rate, the
-/// rivals' grudge and the events that already exist are applied now.
-/// Standing with each faction, from -100 to 100.
+/// Standing with each faction (REP), from -100 to 100.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Rep {
     /// Kessler Mutual, the lender; shifts the installment rate.
@@ -221,7 +217,7 @@ pub struct Career {
     /// The rival crews' grudge, carried into the next shift.
     pub grudge: f64,
     pub levels: Levels,
-    /// Sentry drones owned (milestone 4 launches them).
+    /// Sentry drones owned.
     pub sentries: u32,
     /// Index into TUG_CLASSES; goes up each time a loan is paid off.
     pub tug_class: usize,
@@ -246,7 +242,7 @@ pub struct Career {
     pub conditions: Option<(i32, [Condition; 5])>,
     /// Rogue cores stored in the shop.
     pub cores: u32,
-    /// Save fields for systems not yet ported, kept verbatim.
+    /// Save fields this build doesn't use, kept verbatim.
     pub extra: Map<String, Value>,
 }
 
@@ -641,7 +637,7 @@ impl Career {
             rivals: clamp(self.rep.rivals + d.rivals),
         };
 
-        // What Marge reacts to in the shop (milestone 5 reads it).
+        // What Marge reacts to in the shop.
         self.extra.insert(
             "lastShift".to_owned(),
             json!({
@@ -674,8 +670,8 @@ impl Career {
         }
     }
 
-    /// Serialize for the save file, in the browser's field names, with the
-    /// fields of systems not yet ported carried through.
+    /// Serialize for the save file, in the browser's field names, with any
+    /// fields this build doesn't use carried through.
     pub fn to_json(&self) -> String {
         let mut m = self.extra.clone();
         let mounted: Map<String, Value> = SLOTS
@@ -951,7 +947,7 @@ impl Career {
                 }
             }
         }
-        // Everything else is for systems still to come: kept as it was.
+        // Anything this build doesn't use: kept as it was.
         for (k, v) in raw {
             if !OWN_KEYS.contains(&k.as_str()) {
                 c.extra.insert(k.clone(), v.clone());

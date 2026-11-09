@@ -835,9 +835,24 @@ fn draw_shots(look: &Look, w: &World) {
             glow_stroke(&pts, false, col::HAZARD, 2.2, 1.0);
             look.glow(b.x as f32, b.y as f32, 7.0, col::HAZARD, true, 1.0);
         }
-        // (Stun, SWAT and rogue bolts take other colours in milestone 4.)
+        // SWAT rounds and stun bolts are bigger; SWAT, stun and rogue bolts
+        // each read by colour.
         for b in &w.ebullets {
-            look.glow(b.x as f32, b.y as f32, 11.0, col::JUMPER, true, 1.0);
+            let size = if b.swat {
+                15.0
+            } else if b.stun {
+                13.0
+            } else {
+                11.0
+            };
+            let colour = if b.swat || b.rogue {
+                col::DANGER
+            } else if b.stun {
+                col::LAW
+            } else {
+                col::JUMPER
+            };
+            look.glow(b.x as f32, b.y as f32, size, colour, true, 1.0);
         }
     });
 }

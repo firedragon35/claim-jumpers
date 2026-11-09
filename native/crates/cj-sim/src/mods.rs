@@ -46,7 +46,7 @@ pub struct Mods {
     /// Side-thruster force and heat multipliers (engine level).
     pub strafe_mul: f64,
     pub strafe_heat_mul: f64,
-    // Missile rack and sentry firmware (used from milestone 4).
+    // Missile rack and sentry firmware.
     pub missile_rack: u32,
     pub missile_reload: f64,
     pub missile_dmg: f64,

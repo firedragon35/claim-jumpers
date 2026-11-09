@@ -369,7 +369,7 @@ fn save_round_trips_and_keeps_unported_fields() {
         ],
     ));
     c.cores = 2;
-    // A save key for a system still to come is kept verbatim.
+    // A save key this build doesn't use is kept verbatim.
     c.extra.insert("records".into(), Value::from("kept"));
     let back = Career::from_json(&c.to_json()).expect("loads");
     assert_eq!(back, c);

@@ -21,7 +21,9 @@
 use cj_sim::events::Sfx;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use std::f32::consts::TAU;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::Arc;
 
 /// Master volume and the per-effect gain (MASTER_VOLUME, SFX_GAIN).
 const MASTER_VOLUME: f32 = 0.95;
@@ -29,6 +31,8 @@ const SFX_GAIN: f32 = 1.9;
 /// Envelopes start and end here rather than at 0, because an exponential
 /// ramp cannot reach zero (WebAudio's 0.0001 floor).
 const FLOOR: f32 = 0.0001;
+/// Seconds between attempts to reopen a lost sound device.
+const REOPEN_SECONDS: f64 = 3.0;
 
 #[derive(Clone, Copy, PartialEq)]
 pub(crate) enum Wave {
@@ -345,7 +349,7 @@ impl Mixer {
         self.eng_gain += (self.eng_gain_to - self.eng_gain) * (1.0 - (-dt / 0.04).exp());
         self.eng_cut += (self.eng_cut_to - self.eng_cut) * (1.0 - (-dt / 0.08).exp());
         self.eng_n += 1;
-        if self.eng_n % 32 == 0 {
+        if self.eng_n.is_multiple_of(32) {
             self.eng_bq
                 .set(Filter::Lowpass, self.eng_cut.max(20.0), self.sr);
         }
@@ -405,6 +409,10 @@ impl Mixer {
 pub struct Audio {
     tx: Option<Sender<Cmd>>,
     _stream: Option<cpal::Stream>,
+    /// Set by the stream's error callback when the device is lost.
+    failed: Arc<AtomicBool>,
+    /// Clock time of the next attempt to reopen the device.
+    reopen_at: f64,
     muted: bool,
     /// Seconds of game time, for rate-limiting the cargo rattle.
     clock: f64,
@@ -417,25 +425,43 @@ pub struct Audio {
 impl Audio {
     /// Open the default output device. On failure the game runs silent.
     pub fn start() -> Audio {
-        match open() {
-            Ok((tx, stream)) => Audio {
-                tx: Some(tx),
-                _stream: Some(stream),
-                muted: false,
-                clock: 0.0,
-                last_rattle: -1.0,
-                rng: Noise(0x9e37_79b9),
-                error: None,
-            },
-            Err(e) => Audio {
-                tx: None,
-                _stream: None,
-                muted: false,
-                clock: 0.0,
-                last_rattle: -1.0,
-                rng: Noise(0x9e37_79b9),
-                error: Some(e),
-            },
+        let failed = Arc::new(AtomicBool::new(false));
+        let (tx, stream, error) = match open(&failed) {
+            Ok((tx, stream)) => (Some(tx), Some(stream), None),
+            Err(e) => {
+                // Marked as lost, so plugging a device in later brings sound back.
+                failed.store(true, Ordering::Relaxed);
+                (None, None, Some(e))
+            }
+        };
+        Audio {
+            tx,
+            _stream: stream,
+            failed,
+            reopen_at: 0.0,
+            muted: false,
+            clock: 0.0,
+            last_rattle: -1.0,
+            rng: Noise(0x9e37_79b9),
+            error,
+        }
+    }
+
+    /// Reopen the default device if the stream was lost (a headset
+    /// unplugged, say). cpal's stream thread ends on such an error and
+    /// never restarts by itself. Call once a frame; `now` is in seconds.
+    pub fn recover(&mut self, now: f64) {
+        if !self.failed.load(Ordering::Relaxed) || now < self.reopen_at {
+            return;
+        }
+        self.reopen_at = now + REOPEN_SECONDS;
+        if let Ok((tx, stream)) = open(&self.failed) {
+            self.failed.store(false, Ordering::Relaxed);
+            self.tx = Some(tx);
+            self._stream = Some(stream);
+            self.error = None;
+            // A new mixer starts unmuted. Music and engine levels are re-sent anyway.
+            self.send(Cmd::Mute(self.muted));
         }
     }
 
@@ -635,7 +661,9 @@ impl Audio {
             // Enemy blaster: lower and buzzier, quieter with distance.
             Sfx::EnemyShot(d) => {
                 let d = f32::from(d);
-                if d > 1100.0 {
+                // At exactly 1100 the volume would be 0, and an exponential
+                // fade from 0 produces NaN samples (see exp_ramp).
+                if d >= 1100.0 {
                     return;
                 }
                 let v = 0.06 * (1.0 - d / 1100.0);
@@ -1170,7 +1198,14 @@ impl Audio {
     }
 }
 
-fn open() -> Result<(Sender<Cmd>, cpal::Stream), String> {
+/// True if this stream error means the stream has stopped for good. The
+/// others are reports about a stream that is still playing.
+fn stream_is_lost(kind: cpal::ErrorKind) -> bool {
+    use cpal::ErrorKind::{DeviceChanged, RealtimeDenied, Xrun};
+    !matches!(kind, Xrun | RealtimeDenied | DeviceChanged)
+}
+
+fn open(failed: &Arc<AtomicBool>) -> Result<(Sender<Cmd>, cpal::Stream), String> {
     let host = cpal::default_host();
     let device = host
         .default_output_device()
@@ -1196,9 +1231,9 @@ fn open() -> Result<(Sender<Cmd>, cpal::Stream), String> {
         music_gain_to: 0.0,
     };
     let stream = match format {
-        cpal::SampleFormat::F32 => build::<f32>(&device, &config, mixer),
-        cpal::SampleFormat::I16 => build::<i16>(&device, &config, mixer),
-        cpal::SampleFormat::U16 => build::<u16>(&device, &config, mixer),
+        cpal::SampleFormat::F32 => build::<f32>(&device, &config, mixer, failed.clone()),
+        cpal::SampleFormat::I16 => build::<i16>(&device, &config, mixer, failed.clone()),
+        cpal::SampleFormat::U16 => build::<u16>(&device, &config, mixer, failed.clone()),
         other => return Err(format!("unsupported sample format {other:?}")),
     }?;
     stream.play().map_err(|e| e.to_string())?;
@@ -1209,6 +1244,7 @@ fn build<T>(
     device: &cpal::Device,
     config: &cpal::StreamConfig,
     mut mixer: Mixer,
+    failed: Arc<AtomicBool>,
 ) -> Result<cpal::Stream, String>
 where
     T: cpal::SizedSample + cpal::FromSample<f32>,
@@ -1227,7 +1263,12 @@ where
                     }
                 }
             },
-            |err| eprintln!("audio stream error: {err}"),
+            move |err: cpal::Error| {
+                eprintln!("audio stream error: {err}");
+                if stream_is_lost(err.kind()) {
+                    failed.store(true, Ordering::Relaxed);
+                }
+            },
             None,
         )
         .map_err(|e| e.to_string())
@@ -1236,6 +1277,34 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_enemy_shot_at_the_edge_of_hearing_is_not_played() {
+        let (tx, rx) = channel();
+        let mut a = Audio {
+            tx: Some(tx),
+            _stream: None,
+            failed: Arc::new(AtomicBool::new(false)),
+            reopen_at: 0.0,
+            muted: false,
+            clock: 0.0,
+            last_rattle: -1.0,
+            rng: Noise(1),
+            error: None,
+        };
+        // Exactly 1100 is volume 0, which would fade to NaN samples.
+        a.sfx(Sfx::EnemyShot(1100));
+        assert!(rx.try_recv().is_err());
+        a.sfx(Sfx::EnemyShot(1099));
+        assert!(rx.try_recv().is_ok());
+    }
+
+    #[test]
+    fn only_a_stopped_stream_counts_as_lost() {
+        assert!(stream_is_lost(cpal::ErrorKind::DeviceNotAvailable));
+        assert!(stream_is_lost(cpal::ErrorKind::StreamInvalidated));
+        assert!(!stream_is_lost(cpal::ErrorKind::Xrun));
+    }
 
     #[test]
     fn lowpass_passes_dc_and_blocks_nyquist() {

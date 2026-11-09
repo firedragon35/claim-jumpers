@@ -155,13 +155,7 @@ impl World {
         if p.linked && stretched {
             p.linked = false;
             let text = "P2, you lost the cable.".to_owned();
-            self.radio_say(
-                Radio::P2Free,
-                false,
-                false,
-                text,
-                "P2 lost the cable.".to_owned(),
-            );
+            self.radio_text(Radio::P2Free, false, false, text);
         }
     }
 
@@ -182,13 +176,7 @@ impl World {
         p.link = d + 4.0;
         self.sfx(Sfx::Hook);
         let text = "P2 has the tail of the cable. Two tugs, one haul. Try not to rip it in half.";
-        self.radio_say(
-            Radio::P2Latch,
-            false,
-            false,
-            text.to_owned(),
-            "P2 has the tail.".to_owned(),
-        );
+        self.radio_text(Radio::P2Latch, false, false, text.to_owned());
     }
 
     /// Rope between the cable's last piece and the partner (one solver pass).

@@ -296,8 +296,9 @@ impl Settings {
         self.keys.push((b, code));
     }
 
-    /// finishRebind: Escape cancels, reserved keys are refused, and an
-    /// action already on that key takes this one's old key.
+    /// finishRebind: Escape cancels, reserved keys and other actions' fixed
+    /// keys are refused, and an action already on that key takes this
+    /// one's old key.
     pub fn rebind(&mut self, b: Bind, code: &str) -> String {
         let label = def(b).2;
         if code == "Escape" {
@@ -305,6 +306,16 @@ impl Settings {
         }
         if RESERVED.contains(&code) {
             return format!("{} is reserved. Pick another key.", key_label(code));
+        }
+        if let Some(a) = KEY_ACTIONS
+            .iter()
+            .find(|a| a.0 != b && a.3[1..].contains(&code))
+        {
+            return format!(
+                "{} is a fixed key for {}. Pick another key.",
+                key_label(code),
+                a.2
+            );
         }
         let old = self.codes_for(b)[0].clone();
         let other = KEY_ACTIONS
@@ -364,5 +375,18 @@ mod tests {
         assert_eq!(s.codes_for(Bind::Hook)[0], "Space");
         assert_eq!(key_label("Numpad8"), "Num 8");
         assert_eq!(key_label("ArrowLeft"), "←");
+    }
+
+    #[test]
+    fn another_actions_fixed_key_cannot_be_taken() {
+        let mut s = Settings::default();
+        // J is Fire's fixed alternate: on Hook too, it would do both.
+        assert_eq!(
+            s.rebind(Bind::Hook, "KeyJ"),
+            "J is a fixed key for Fire. Pick another key."
+        );
+        assert_eq!(s.codes_for(Bind::Hook)[0], "KeyE");
+        // An action may still use its own fixed key as its main one.
+        assert_eq!(s.rebind(Bind::Fire, "KeyJ"), "Fire is now J.");
     }
 }

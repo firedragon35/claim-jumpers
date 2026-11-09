@@ -16,28 +16,13 @@ pub struct Tutorial {
     pub hold_t: f64,
 }
 
-/// Each step's card text and the shorter line Marge says.
-pub const TUTORIAL: [(&str, &str); 5] = [
-    (
-        "Hold W (or RT) to thrust and A / D to turn. Fly clear of the carrier bay.",
-        "Thrust and turn. Get clear of the bay.",
-    ),
-    (
-        "Fly up to a piece of salvage and press E (gamepad Y) to hook it onto your cable.",
-        "Hook a piece of salvage.",
-    ),
-    (
-        "Tow it home: drag the cargo into the bay ring to bank it. Heavier cargo swings wider.",
-        "Tow it into the bay to bank it.",
-    ),
-    (
-        "Press Space (gamepad RB) to fire the cutting cannon. Rocks break into smaller pieces, and some hold ore.",
-        "Fire the cannon. Break a rock.",
-    ),
-    (
-        "Cargo is a weapon. Hook something, swing hard, and press X (gamepad LB) to cut it loose. It flies.",
-        "Hook something, swing, and cut it loose.",
-    ),
+/// Each step's card text, which Marge also reads out.
+pub const TUTORIAL: [&str; 5] = [
+    "Hold W (or RT) to thrust and A / D to turn. Fly clear of the carrier bay.",
+    "Fly up to a piece of salvage and press E (gamepad Y) to hook it onto your cable.",
+    "Tow it home: drag the cargo into the bay ring to bank it. Heavier cargo swings wider.",
+    "Press Space (gamepad RB) to fire the cutting cannon. Rocks break into smaller pieces, and some hold ore.",
+    "Cargo is a weapon. Hook something, swing hard, and press X (gamepad LB) to cut it loose. It flies.",
 ];
 
 /// Seconds a step's action must hold before the next step (a short beat).
@@ -55,14 +40,8 @@ impl World {
 
     fn show_tutorial_step(&mut self) {
         let Some(t) = &self.tut else { return };
-        let (text, say) = TUTORIAL[t.step];
-        self.radio_say(
-            Radio::Training,
-            true,
-            false,
-            text.to_owned(),
-            say.to_owned(),
-        );
+        let text = TUTORIAL[t.step];
+        self.radio_text(Radio::Training, true, false, text.to_owned());
     }
 
     fn tutorial_step_done(&self, step: usize) -> bool {
@@ -109,23 +88,11 @@ impl World {
         if self.tut.take().is_none() {
             return;
         }
-        let (text, say) = if skipped {
-            (
-                "Fine. Skip the lesson. The rival crews will teach you instead.",
-                "Fine. The rivals will teach you.",
-            )
+        let text = if skipped {
+            "Fine. Skip the lesson. The rival crews will teach you instead."
         } else {
-            (
-                "That is the job, hotshot. Bank enough to cover the installment, and watch for pink contacts. Rivals are inbound.",
-                "That's the job. Rivals inbound.",
-            )
+            "That is the job, hotshot. Bank enough to cover the installment, and watch for pink contacts. Rivals are inbound."
         };
-        self.radio_say(
-            Radio::Training,
-            true,
-            false,
-            text.to_owned(),
-            say.to_owned(),
-        );
+        self.radio_text(Radio::Training, true, false, text.to_owned());
     }
 }

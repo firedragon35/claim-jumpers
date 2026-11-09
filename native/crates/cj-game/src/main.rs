@@ -1,5 +1,4 @@
-//! Claim Jumpers, native Windows build. Milestone 5: the career's field
-//! systems. Fly the tug, tow and fight through five-minute shifts against
+//! Claim Jumpers, native Windows build. Fly the tug, tow and fight through five-minute shifts against
 //! rival crews, debt collectors, the law, mining drones and the Kessler
 //! refinery, on the belt you chose and under its conditions, with field
 //! events, boss crews, escorts and sealed holds; after each, the shift
@@ -94,6 +93,8 @@ const PILOT_FILE: &str = "pilot.txt";
 
 /// How long an achievement toast stays up (seconds).
 const TOAST_TIME: f64 = 3.5;
+/// How long a save warning stays up (seconds): longer, as it matters more.
+const SAVE_WARNING_TIME: f64 = 8.0;
 
 /// Everything the game keeps between frames.
 struct App {
@@ -146,8 +147,6 @@ struct App {
     bench: sounds::Bench,
     /// The last achievement earned, and the clock time it fades.
     toast: Option<(String, f64)>,
-    /// Training was skipped (so finishing it earns nothing).
-    training_skipped: bool,
     /// A daily challenge in progress: its day and its fixed loadout.
     daily: Option<(String, Career)>,
 }
@@ -196,13 +195,17 @@ impl App {
         let c = self.career.as_ref().expect("a career");
         self.world = World::for_career(self.rng(), self.world.view, c);
         // Training runs on a career's first shift until it has been done once.
-        self.training_skipped = false;
         if self.store.training_pending(c.shift) {
             self.world.start_tutorial();
         }
         if self.settings.coop != settings::Coop::Off {
             self.world.spawn_partner();
         }
+        self.begin_play(audio);
+    }
+
+    /// Everything a shift resets once its world is ready, career or daily.
+    fn begin_play(&mut self, audio: &mut audio::Audio) {
         self.fx = fx::Fx::new(self.rng());
         self.accumulator = 0.0;
         self.radio.reset();
@@ -211,6 +214,16 @@ impl App {
         self.slow_t = 0.0;
         audio.set_thrust(0.0, 0.0, false);
         self.open(Screen::Play);
+    }
+
+    /// Skip the guided training and remember it, as the browser's
+    /// endTutorial does. The step loop can't record this: a skip happens
+    /// between steps, so the loop never sees training end.
+    fn skip_training(&mut self) {
+        if self.world.tut.is_some() {
+            self.world.end_tutorial(true);
+            self.store.save_training_done();
+        }
     }
 
     /// beginDaily: today's field for everyone, from a seed made of the
@@ -225,14 +238,7 @@ impl App {
         }
         self.world = w;
         self.daily = Some((day, c));
-        self.fx = fx::Fx::new(self.rng());
-        self.accumulator = 0.0;
-        self.radio.reset();
-        self.recorder = replay::Recorder::default();
-        self.hitstop_t = 0.0;
-        self.slow_t = 0.0;
-        audio.set_thrust(0.0, 0.0, false);
-        self.open(Screen::Play);
+        self.begin_play(audio);
     }
 
     /// endDaily: score the run on the daily board and show its report.
@@ -240,7 +246,7 @@ impl App {
         let Some((day, c)) = self.daily.take() else {
             return;
         };
-        let earned = js_round(self.world.banked);
+        let earned = cj_sim::js::round(self.world.banked);
         let key = format!("daily-{day}");
         let prev = profile::board_for(&self.board, &key)
             .first()
@@ -352,7 +358,7 @@ impl App {
                 profile::Score {
                     name: self.pilot.clone(),
                     mode: mode.to_owned(),
-                    score: js_round(earned),
+                    score: cj_sim::js::round(earned),
                     shift: i64::from(flown),
                     at: now_ms(),
                 },
@@ -764,7 +770,6 @@ async fn main() {
         sound_groups: sounds::groups(),
         bench: sounds::Bench::default(),
         toast: None,
-        training_skipped: false,
         daily: None,
     };
     let mut sm = Smoke::default();
@@ -775,6 +780,7 @@ async fn main() {
 
     loop {
         controls.poll();
+        audio.recover(get_time());
         let (vw, vh) = view();
         app.world.view = (f64::from(vw), f64::from(vh));
         // Both readers run every frame so their button edges stay current.
@@ -821,9 +827,8 @@ async fn main() {
                 app.act(Act::SetMusic, &mut audio);
             }
         }
-        if presses.skip_training && app.screen == Screen::Play && app.world.tut.is_some() {
-            app.training_skipped = true;
-            app.world.end_tutorial(true);
+        if presses.skip_training && app.screen == Screen::Play {
+            app.skip_training();
         }
         if app.settings_dirty {
             app.settings_dirty = false;
@@ -879,6 +884,9 @@ async fn main() {
                 }
             }
             Screen::Paused => {}
+            // Settings opened from the pause card sit over the shift in
+            // progress: the menu drift below would move its cargo and clock.
+            Screen::Settings if app.menu_from == Screen::Paused => {}
             _ => {
                 app.world.step_ambient(dt);
                 app.fx.update(dt);
@@ -914,8 +922,7 @@ async fn main() {
             );
             app.radio.draw(&look, app.world.t, (vw, vh));
             if marge::draw_tutorial(&look, &app.world, (vw, vh)) && app.screen == Screen::Play {
-                app.training_skipped = true;
-                app.world.end_tutorial(true);
+                app.skip_training();
             }
         }
         let scene = match app.screen {
@@ -1014,18 +1021,21 @@ async fn main() {
                 )
             }
         };
+        if let Some(warning) = app.store.take_error() {
+            app.toast = Some((warning, get_time() + SAVE_WARNING_TIME));
+        }
         draw_toast(&look, &app.toast, (vw, vh));
         let picked = if smoke { sm.drive(&mut app) } else { picked };
         if let Some(a) = picked {
             app.act(a, &mut audio);
         }
         if smoke && sm.capture(&app, start) {
-            sm.finish(&app, &audio, get_time() - start);
+            let passed = sm.finish(&app, &audio, get_time() - start);
             // The check's save folder was its own; leave nothing behind.
             if let Some(dir) = app.store.folder() {
                 let _ = std::fs::remove_dir_all(dir);
             }
-            std::process::exit(0);
+            std::process::exit(if passed { 0 } else { 1 });
         }
         if app.quit {
             break;
@@ -1087,11 +1097,10 @@ fn play_steps(
     while app.accumulator >= STEP && n < n_max && !app.world.shift_over {
         let training = app.world.tut.is_some();
         app.world.step(&input, STEP);
+        // Only finishing it reaches here; a skip is handled by skip_training.
         if training && app.world.tut.is_none() {
             app.store.save_training_done();
-            if !app.training_skipped {
-                app.unlock("trained", audio);
-            }
+            app.unlock("trained", audio);
         }
         app.fx.absorb(&app.world.events);
         audio.tick(STEP);
@@ -1115,7 +1124,7 @@ fn play_steps(
                     *key,
                     *force,
                     *once,
-                    text.as_ref(),
+                    text.as_deref(),
                     app.world.t,
                     rng,
                     audio,
@@ -1124,6 +1133,7 @@ fn play_steps(
                 Event::HitStop(s) => app.hitstop_t = app.hitstop_t.max(*s),
                 Event::SlowMo(s) => app.slow_t = app.slow_t.max(*s),
                 Event::Highlight { score, text } => app.recorder.note(*score, text, app.world.t),
+                Event::Rumble { strength, ms } => controls.rumble(*strength, *ms),
                 _ => {}
             }
         }
@@ -1158,6 +1168,8 @@ fn play_steps(
 
 /// Frames of scripted flight before the shift is cut short.
 const SMOKE_FRAMES: u32 = 150;
+/// Screenshots a complete tour takes (the names in `Smoke::capture`).
+const SMOKE_SCREENS: usize = 12;
 
 /// The unattended check's progress through the screens.
 #[derive(Default)]
@@ -1319,7 +1331,9 @@ impl Smoke {
         name == "sounds"
     }
 
-    fn finish(&self, app: &App, audio: &audio::Audio, secs: f64) {
+    /// Print the report; true if the tour did what it should have. The
+    /// scripted shift ends solvent, so a working save holds shift 2.
+    fn finish(&self, app: &App, audio: &audio::Audio, secs: f64) -> bool {
         println!("M5 SMOKE REPORT");
         println!(
             "  view: {:.0} x {:.0} logical px, dpi scale {:.2}",
@@ -1336,7 +1350,7 @@ impl Smoke {
             app.store
                 .folder()
                 .map_or("none".into(), |p| p.display().to_string()),
-            saved.map_or("none".to_owned(), |c| format!(
+            saved.as_ref().map_or("none".to_owned(), |c| format!(
                 "shift {}, wallet {} cr, {} parts owned",
                 c.shift,
                 c.wallet,
@@ -1380,6 +1394,18 @@ impl Smoke {
         for s in &self.shots {
             println!("  screenshot: {s}");
         }
+        let career_saved = saved.is_some_and(|c| c.shift == 2);
+        let all_screens = self.shots.len() == SMOKE_SCREENS;
+        if !career_saved {
+            println!("SMOKE FAILED: the career on disk is not at shift 2");
+        }
+        if !all_screens {
+            println!(
+                "SMOKE FAILED: {} of {SMOKE_SCREENS} screens captured",
+                self.shots.len()
+            );
+        }
+        career_saved && all_screens
     }
 }
 
@@ -1517,15 +1543,14 @@ fn now_ms() -> f64 {
         .map_or(0.0, |d| d.as_millis() as f64)
 }
 
-/// Math.round, as the browser rounds a shift's earnings for the board.
-fn js_round(v: f64) -> f64 {
-    cj_sim::js::round(v)
-}
-
 /// dailyDay: today's date in UTC, YYYY-MM-DD.
 fn daily_day() -> String {
-    let days = (now_ms() / 86_400_000.0).floor() as i64;
-    // Civil-from-days (Howard Hinnant), valid for the Gregorian calendar.
+    civil_date((now_ms() / 86_400_000.0).floor() as i64)
+}
+
+/// The date `days` after 1970-01-01, as YYYY-MM-DD. Civil-from-days (Howard
+/// Hinnant), valid for the Gregorian calendar.
+fn civil_date(days: i64) -> String {
     let z = days + 719_468;
     let era = z.div_euclid(146_097);
     let doe = z - era * 146_097;
@@ -1625,5 +1650,15 @@ mod tests {
         let d = daily_day();
         assert_eq!(d.len(), 10);
         assert_eq!(&d[4..5], "-");
+    }
+
+    #[test]
+    fn civil_dates_are_right_across_month_and_leap_boundaries() {
+        assert_eq!(civil_date(0), "1970-01-01");
+        assert_eq!(civil_date(-1), "1969-12-31");
+        assert_eq!(civil_date(19_782), "2024-02-29");
+        assert_eq!(civil_date(19_783), "2024-03-01");
+        assert_eq!(civil_date(20_088), "2024-12-31");
+        assert_eq!(civil_date(20_089), "2025-01-01");
     }
 }

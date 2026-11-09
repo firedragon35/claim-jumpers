@@ -1,6 +1,6 @@
 //! Palette, embedded fonts, glow sprites and the additive blend: the
 //! pieces the browser builds its look from (src/js/02-utilities.js and the
-//! top of src/js/17-rendering.js). Proven on Windows by the M0 spike.
+//! top of src/js/17-rendering.js).
 
 use macroquad::miniquad::{BlendFactor, BlendState, BlendValue, Equation};
 use macroquad::prelude::*;

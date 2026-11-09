@@ -246,7 +246,7 @@ impl RadioPanel {
         key: Radio,
         force: bool,
         once: bool,
-        text: Option<&(String, String)>,
+        text: Option<&str>,
         now: f64,
         rng: &mut Rng,
         audio: &mut Audio,
@@ -258,15 +258,14 @@ impl RadioPanel {
         if !force && now - self.last_at < RADIO_GAP {
             return;
         }
-        let (shown, _spoken) = match text {
-            Some((t, s)) => (t.clone(), s.clone()),
+        let shown = match text {
+            Some(t) => t.to_owned(),
             None => {
                 let pool = lines(key);
                 if pool.is_empty() {
                     return;
                 }
-                let (t, s) = pool[rng.index(pool.len())];
-                (t.to_owned(), s.to_owned())
+                pool[rng.index(pool.len())].to_owned()
             }
         };
         if !self.used.contains(&key) {
@@ -343,7 +342,7 @@ pub fn draw_tutorial(look: &Look, w: &World, view: (f32, f32)) -> bool {
     let Some(t) = &w.tut else { return false };
     let (vw, vh) = view;
     let cw = 440.0f32.min(vw - 32.0);
-    let (text, _) = TUTORIAL[t.step.min(TUTORIAL.len() - 1)];
+    let text = TUTORIAL[t.step.min(TUTORIAL.len() - 1)];
     let lines = wrap(look, text, 15.0, Which::Body, cw - 28.0);
     let lh = 15.0 * 1.4;
     let btn = "Skip training (T)";

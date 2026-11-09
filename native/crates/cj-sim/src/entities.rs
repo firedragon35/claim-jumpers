@@ -379,8 +379,7 @@ pub fn make_rock_drifting(rng: &mut Rng, size: u8, x: f64, y: f64) -> Rock {
     make_rock(rng, size, x, y, vx, vy, veined)
 }
 
-/// A derelict hull. In this milestone wrecks drift and collide; cutting
-/// them open (hp, contents, crabs) arrives with combat in milestone 2.
+/// A derelict hull: it drifts, collides, and can be cut open for its contents.
 #[derive(Clone, Debug)]
 pub struct Wreck {
     pub b: Body,

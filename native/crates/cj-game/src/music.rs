@@ -123,10 +123,10 @@ impl Music {
         }
         // Drums from moderate danger.
         if x > 0.3 {
-            if s16 % 8 == 0 {
+            if s16.is_multiple_of(8) {
                 a.kick(t);
             }
-            if s16 % 2 == 0 {
+            if s16.is_multiple_of(2) {
                 a.music_noise(t, 0.04, 0.025 + x * 0.03, 7000.0);
             }
             if x > 0.55 && (s16 == 4 || s16 == 12) {

@@ -201,7 +201,7 @@ pub enum Event {
         key: Radio,
         force: bool,
         once: bool,
-        text: Option<(String, String)>,
+        text: Option<String>,
     },
     /// Freeze the simulation for this many real seconds (hitStop).
     HitStop(f64),
