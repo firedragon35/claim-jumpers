@@ -135,6 +135,9 @@ pub struct World {
     /// Rival kills this shift by method, and the habit the crews have adapted to.
     pub habit_kills: crate::career::Habits,
     pub rival_counter: Option<crate::career::Habit>,
+    /// What the crews' war chest has bought, and the cargo they got away with this shift.
+    pub crew_level: usize,
+    pub rival_loot: f64,
     pub(crate) intel_told: bool,
     pub vault_opened: bool,
     /// The money side of the opposition, settled at the end of the shift.
@@ -260,6 +263,8 @@ impl World {
             charge_respawn_t: crate::opposition::CHARGE_RESPAWN_TIME,
             habit_kills: Default::default(),
             rival_counter: None,
+            crew_level: 0,
+            rival_loot: 0.0,
             intel_told: false,
             vault_opened: false,
             impounded: false,
@@ -331,6 +336,7 @@ impl World {
         w.rivals_good = tier(c.rep.rivals) == Tier::Good;
         w.career = Some(c.clone());
         w.rival_counter = c.habits.dominant();
+        w.crew_level = c.crew_level();
         w.setup_career_field(c);
         w.setup_opposition();
         w.start_shift();
@@ -395,7 +401,14 @@ impl World {
         self.next_id += 1;
         let stage = self.rival_stage();
         let hunter_mul = if self.rivals_good { 0.5 } else { 1.0 };
-        make_jumper(&mut self.rng, id, x, y, variant, stage, hunter_mul)
+        let mut j = make_jumper(&mut self.rng, id, x, y, variant, stage, hunter_mul);
+        if self.crew_level >= 1 {
+            j.hp += CREW_HULL_BONUS;
+        }
+        if self.crew_level >= 2 {
+            j.speed_mul *= CREW_SPEED_MUL;
+        }
+        j
     }
 
     /// Index of the item with this id in `items`, if it still exists.

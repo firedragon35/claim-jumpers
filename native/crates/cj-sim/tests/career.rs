@@ -500,3 +500,79 @@ fn the_crews_adapt_to_a_dominant_habit_and_it_saves() {
     let w = World::for_career(Rng::Constant(0.5), (1280.0, 720.0), &c);
     assert_eq!(w.rival_counter, Some(Habit::Smash));
 }
+
+/// Settle an empty shift, after `tweak` has set up what happened in it.
+fn settled(c: &mut Career, tweak: impl FnOnce(&mut World)) {
+    let mut w = World::for_career(Rng::Constant(0.5), (1280.0, 720.0), c);
+    w.banked = 100_000.0; // never repossessed mid-test
+    tweak(&mut w);
+    c.settle(&w);
+}
+
+#[test]
+fn rival_standing_fades_unless_the_shift_pushed_it_further_out() {
+    let after = |start: f64, kills: u32| {
+        let mut c = Career::new(Mode::Standard);
+        c.rep.rivals = start;
+        settled(&mut c, |w| {
+            w.stats.jumpers = kills;
+            w.rep_delta.rivals = -3.0 * f64::from(kills);
+        });
+        c.rep.rivals
+    };
+    assert_eq!(
+        after(-50.0, 0),
+        -43.0,
+        "+2 for a clean shift, then the fade"
+    );
+    assert_eq!(after(-50.0, 1), -53.0, "still feeding the feud");
+    assert_eq!(after(50.0, 0), 52.0, "clean shifts hold good standing");
+    assert_eq!(after(50.0, 1), 42.0, "kills and the fade together");
+    assert_eq!(after(0.0, 0), 2.0);
+}
+
+#[test]
+fn rival_standing_recovers_in_about_seven_clean_shifts_and_can_reach_zero() {
+    let mut c = Career::new(Mode::Standard);
+    c.rep.rivals = -100.0;
+    for _ in 0..7 {
+        settled(&mut c, |_| {});
+    }
+    assert!(c.rep.rivals > -40.0, "{}", c.rep.rivals);
+    c.rep.rivals = -1.0;
+    settled(&mut c, |w| w.stats.jumpers = 1);
+    assert_eq!(c.rep.rivals, 0.0);
+}
+
+#[test]
+fn stolen_cargo_buys_the_crews_upgrades() {
+    let mut c = Career::new(Mode::Standard);
+    let plain =
+        World::for_career(Rng::Constant(0.5), (1280.0, 720.0), &c).new_jumper(0.0, 0.0, None);
+    settled(&mut c, |w| w.rival_loot = 3500.0);
+    assert_eq!(c.crew_level(), 1);
+    let mut w = World::for_career(Rng::Constant(0.5), (1280.0, 720.0), &c);
+    assert_eq!(w.new_jumper(0.0, 0.0, None).hp, plain.hp + 1.0);
+
+    settled(&mut c, |w| w.rival_loot = 7000.0);
+    assert_eq!(c.crew_level(), 3);
+    let back = Career::from_json(&c.to_json()).expect("loads");
+    assert_eq!(back.war_chest, c.war_chest);
+
+    c.mode = Mode::Relaxed;
+    assert_eq!(c.crew_level(), 2, "capped on Relaxed");
+    c.mode = Mode::Standard;
+
+    settled(&mut c, |w| w.boss_down = Some("Lucky Teodor"));
+    assert_eq!(c.war_chest, 5250.0, "a boss kill empties half the chest");
+    assert_eq!(c.crew_level(), 1);
+}
+
+#[test]
+fn the_report_says_when_the_crews_upgrade() {
+    let mut c = Career::new(Mode::Standard);
+    let mut w = World::for_career(Rng::Constant(0.5), (1280.0, 720.0), &c);
+    w.banked = 100_000.0;
+    w.rival_loot = 3000.0;
+    assert!(c.settle(&w).chain_note.contains("tougher hulls"));
+}

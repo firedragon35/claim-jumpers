@@ -88,7 +88,12 @@ impl World {
         }
         let v = jm.variant.def();
         let st = &RIVAL_STAGES[self.rival_stage()];
-        let fire_t = self.rng.range(st.fire.0, st.fire.1) * v.fire;
+        let quick = if self.crew_level >= 3 {
+            CREW_FIRE_MUL
+        } else {
+            1.0
+        };
+        let fire_t = self.rng.range(st.fire.0, st.fire.1) * v.fire * quick;
         let lead = d / EBULLET_SPEED;
         let jb = self.jumpers[j].b;
         let a = (tgt.y + tgt.vy * lead - jb.y).atan2(tgt.x + tgt.vx * lead - jb.x)
@@ -313,6 +318,7 @@ impl World {
         let m = JUMPER_ESCAPE_MARGIN;
         if b.x < -m || b.y < -m || b.x > WORLD_W + m || b.y > WORLD_H + m {
             self.stats.lost += self.items[ii].value;
+            self.rival_loot += self.items[ii].value;
             self.remove_item(ii);
             self.jumpers[j].dead = true;
             self.radio(Radio::Escaped, true, false);

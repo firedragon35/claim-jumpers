@@ -211,6 +211,20 @@ pub const HABIT_KEEP: f64 = 0.7;
 pub const HABIT_DODGE_BONUS: f64 = 0.2;
 pub const HABIT_SMASH_MUL: f64 = 0.7;
 pub const HABIT_MISSILE_MISS: f64 = 0.15;
+/// Share of rival standing that fades each shift it isn't pushed further out.
+pub const RIVAL_STANDING_FADE: f64 = 0.1;
+/// War-chest credits at which the crews buy each upgrade level.
+pub const CREW_LEVELS: [f64; 3] = [3000.0, 6000.0, 10000.0];
+/// Highest crew level on Relaxed.
+pub const CREW_LEVEL_CAP_RELAXED: usize = 2;
+/// Share of the war chest left after a boss crew is taken down.
+pub const CREW_BOSS_KEEP: f64 = 0.5;
+/// Extra hit points from crew level 1 up.
+pub const CREW_HULL_BONUS: f64 = 1.0;
+/// Speed multiplier from crew level 2 up.
+pub const CREW_SPEED_MUL: f64 = 1.06;
+/// Multiplier on the time between shots at crew level 3.
+pub const CREW_FIRE_MUL: f64 = 0.88;
 /// Closing speed at which volatile cargo primes on impact.
 pub const VOLATILE_IMPACT: f64 = 400.0;
 /// Shove a blast gives a body of mass 1 at its centre, px/s.

@@ -4,7 +4,7 @@ A native Rust port of Claim Jumpers for Windows 10 and 11. This is the lead
 version of the game. The browser game (`claim-jumpers-game`) it was ported
 from is a frozen baseline at its 1.0.7, and new gameplay is built here first.
 
-**Status: Milestone 6, release 1.1.0 (all systems ported, packaged for Windows; history in [CHANGELOG.md](CHANGELOG.md)).** A career of
+**Status: Milestone 6, release 1.2.0 (all systems ported, packaged for Windows; history in [CHANGELOG.md](CHANGELOG.md)).** A career of
 five-minute shifts: fly the tug, tow and fight for salvage, and bank it at
 the carrier, against rival crews, debt collectors who net and tow the tug
 (or confiscate a fat load, or impound it), the law (wanted stars, patrols,
@@ -286,7 +286,8 @@ Added here since the browser was frozen: radiation clouds from reactors, a
 shockwave when the tug is wrecked, wanted stars fading while nobody chases
 you, your shots passing through towed cargo, rivals sidestepping shots,
 missiles that can lose their lock, level 5 cannon lasers, refinery charges
-that come back, and crews adapting to how you fight.
+that come back, crews adapting to how you fight, rival standing that fades
+between shifts, and rival crews that buy upgrades with stolen cargo.
 
 Everything in the browser game is ported. Deliberate differences:
 

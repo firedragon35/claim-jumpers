@@ -8,7 +8,10 @@
 //! this build doesn't use are kept exactly as they were read, so a save
 //! round-trips without losing them.
 
-use crate::consts::{HABIT_KEEP, HABIT_MIN_KILLS, HABIT_SHARE};
+use crate::consts::{
+    CREW_BOSS_KEEP, CREW_LEVELS, CREW_LEVEL_CAP_RELAXED, HABIT_KEEP, HABIT_MIN_KILLS, HABIT_SHARE,
+    RIVAL_STANDING_FADE,
+};
 use crate::field::*;
 use crate::js;
 use crate::mods::{compute_mods, Mods};
@@ -204,6 +207,21 @@ pub fn rank_for(earned: f64) -> &'static str {
         .map_or(RANKS[0].1, |r| r.1)
 }
 
+/// Rival standing after a shift. It fades toward zero unless the shift pushed
+/// it further out, so feuds and friendships last only while they are fed.
+/// Whole steps, rounded up, so it really does reach zero.
+fn faded_rival_standing(standing: f64, delta: f64) -> f64 {
+    let moved = standing + delta;
+    if moved.abs() > standing.abs() {
+        moved
+    } else {
+        moved.signum() * (moved.abs() - (moved.abs() * RIVAL_STANDING_FADE).ceil()).max(0.0)
+    }
+}
+
+/// What the crews buy at each level, for the report and the shop.
+pub const CREW_UPGRADES: [&str; 3] = ["tougher hulls", "faster engines", "quicker guns"];
+
 /// A way of killing rivals that the crews can adapt to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Habit {
@@ -275,13 +293,16 @@ pub struct Career {
     pub cores: u32,
     /// How this player tends to kill rivals.
     pub habits: Habits,
+    /// Credits the rival crews have made from stolen cargo; buys their upgrades.
+    pub war_chest: f64,
     /// Save fields this build doesn't use, kept verbatim.
     pub extra: Map<String, Value>,
 }
 
 /// Fields this build reads and writes itself; everything else in a save
 /// is carried through untouched.
-const OWN_KEYS: [&str; 26] = [
+const OWN_KEYS: [&str; 27] = [
+    "warChest",
     "habits",
     "crew",
     "belt",
@@ -384,7 +405,18 @@ impl Career {
             conditions: None,
             cores: 0,
             habits: Habits::default(),
+            war_chest: 0.0,
             extra: Map::new(),
+        }
+    }
+
+    /// The upgrade level the rival crews' war chest has bought (0 to 3).
+    pub fn crew_level(&self) -> usize {
+        let bought = CREW_LEVELS.iter().filter(|t| self.war_chest >= **t).count();
+        if self.mode == Mode::Relaxed {
+            bought.min(CREW_LEVEL_CAP_RELAXED)
+        } else {
+            bought
         }
     }
 
@@ -655,7 +687,19 @@ impl Career {
             missile: self.habits.missile * HABIT_KEEP + w.habit_kills.missile,
         };
         // Contract chains advance (or end) with the contract.
-        let chain_note = self.settle_chain(job.as_ref(), job_done);
+        let mut chain_note = self.settle_chain(job.as_ref(), job_done);
+        // Stolen cargo funds the crews; taking down a boss costs them dearly.
+        let crew_before = self.crew_level();
+        self.war_chest += w.rival_loot;
+        if w.boss_down.is_some() {
+            self.war_chest *= CREW_BOSS_KEEP;
+        }
+        if self.crew_level() > crew_before {
+            let bought = CREW_UPGRADES[self.crew_level() - 1];
+            chain_note.push_str(&format!(
+                " Marge says the crews spent your stolen cargo on {bought}."
+            ));
+        }
 
         // Standing: this shift's events plus end-of-shift standing.
         let mut d = w.rep_delta;
@@ -671,10 +715,13 @@ impl Career {
             d.rivals += REP_CLEAN_RIVALS;
         }
         let clamp = |v: f64| v.clamp(-REP_LIMIT, REP_LIMIT);
+        let rivals = clamp(faded_rival_standing(self.rep.rivals, d.rivals));
+        // The report shows what really changed, fade included.
+        d.rivals = rivals - self.rep.rivals;
         self.rep = Rep {
             bank: clamp(self.rep.bank + d.bank),
             law: clamp(self.rep.law + d.law),
-            rivals: clamp(self.rep.rivals + d.rivals),
+            rivals,
         };
 
         // What Marge reacts to in the shop.
@@ -760,6 +807,7 @@ impl Career {
                 json!({ "shift": shift, "map": m })
             }),
             "cores": self.cores,
+            "warChest": self.war_chest,
             "habits": {
                 "cannon": self.habits.cannon,
                 "smash": self.habits.smash,
@@ -979,6 +1027,7 @@ impl Career {
             c.chain = chain_step(ch.get("id"), ch.get("step"));
         }
         c.cores = (num("cores", 0.0, 0.0).floor() as u32).min(CORES_MAX);
+        c.war_chest = num("warChest", 0.0, 0.0);
         if let Some(h) = raw.get("habits") {
             let kills = |k: &str| {
                 h.get(k)

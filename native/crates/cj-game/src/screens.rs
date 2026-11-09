@@ -2007,8 +2007,18 @@ fn map_tab(look: &Look, u: &mut Ui, career: &Career, r: Rect) -> Option<Act> {
     let vals = [career.rep.bank, career.rep.law, career.rep.rivals];
     for (i, v) in vals.into_iter().enumerate() {
         let t = tier(v);
+        // Index 2 is the rival crews; show what stolen cargo has bought them.
+        let crews = if i == 2 && career.war_chest > 0.0 {
+            format!(
+                " War chest {} · crew level {}.",
+                cr(career.war_chest),
+                career.crew_level()
+            )
+        } else {
+            String::new()
+        };
         let detail = format!(
-            "{}{} · {}",
+            "{}{} · {}{crews}",
             if v > 0.0 { "+" } else { "" },
             v,
             rep_effects(i, v)

@@ -5,6 +5,20 @@ format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the port uses [Semantic Versioning](https://semver.org/) as defined in
 [CLAUDE.md](CLAUDE.md#versioning).
 
+## [1.2.0] - 2026-11-09
+
+### Added
+
+- Rival crews buy upgrades with cargo they steal: tougher hulls at 3,000 cr,
+  then faster engines at 6,000, then quicker guns at 10,000 (level 2 at most
+  on Relaxed). Taking down a boss crew empties half their war chest. The
+  report says when they upgrade, and Map & standing shows their level.
+
+### Changed
+
+- Rival standing fades 10% toward zero each shift, unless that shift pushed
+  it further from zero.
+
 ## [1.1.0] - 2026-11-09
 
 This version is the lead: the browser game is now a frozen baseline at 1.0.7.
