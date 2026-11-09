@@ -1,7 +1,7 @@
 //! Claim Jumpers gameplay simulation.
 //!
 //! A deterministic, rendering-free port of the browser game's rules
-//! (src/js in the claim-jumpers-game repository, which remains the reference). The game
+//! (src/js in the claim-jumpers-game repository, now a frozen baseline at 1.0.7; this code leads). The game
 //! crate feeds it [`Input`] once per fixed step, calls [`World::step`], and
 //! drains [`World::events`] for sounds, effects and radio lines.
 //!

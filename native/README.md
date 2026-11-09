@@ -1,11 +1,10 @@
 # Claim Jumpers: native Windows port
 
-A native Rust port of Claim Jumpers for Windows 10 and 11. The browser game
-(maintained in its own repository, `claim-jumpers-game`) is the
-reference implementation; the port must match its gameplay, rules,
-controls, balance and look unless a change is explicitly approved.
+A native Rust port of Claim Jumpers for Windows 10 and 11. This is the lead
+version of the game. The browser game (`claim-jumpers-game`) it was ported
+from is a frozen baseline at its 1.0.7, and new gameplay is built here first.
 
-**Status: Milestone 6, release 1.0.4 (all systems ported, packaged for Windows; history in [CHANGELOG.md](CHANGELOG.md)).** A career of
+**Status: Milestone 6, release 1.1.0 (all systems ported, packaged for Windows; history in [CHANGELOG.md](CHANGELOG.md)).** A career of
 five-minute shifts: fly the tug, tow and fight for salvage, and bank it at
 the carrier, against rival crews, debt collectors who net and tow the tug
 (or confiscate a fat load, or impound it), the law (wanted stars, patrols,
@@ -57,7 +56,20 @@ gamepad (typing the pilot name needs a keyboard).
 |---|---|
 | `crates/cj-sim` | The gameplay simulation: pure Rust, no window or audio, deterministic. |
 | `crates/cj-game` | The Windows game (`claim-jumpers.exe`): window, rendering, input, sound, HUD, menus and saves. |
-| `tools/golden` | Exports reference traces from the browser game for the simulation tests. |
+| `tools/golden` | Exported the original traces from the browser game (kept for reference). |
+
+## Stage build
+
+For trying a change before it ships, from the `native` folder:
+
+```bash
+powershell -ExecutionPolicy Bypass -File tools/stage.ps1
+```
+
+It builds the working tree, runs the `--smoke` check and refreshes `stage\`.
+Run `stage\play-stage.cmd` to play it: the window title says `[STAGE]`, and
+saves go in `stage\saves`, so it never touches your real career and test
+careers survive rebuilds. `stage\BUILD.txt` records what was built.
 
 ## Stack
 
@@ -251,7 +263,15 @@ Marge's lines are generated from the browser's tables by
 `node tools/gen_lines.cjs .. <claim-jumpers-game checkout>` (run from `native`),
 which writes `crates/cj-game/src/lines.rs`.
 
-To re-record the traces and career answers after changing the browser game
+The golden traces began as recordings of the browser game. This code now
+leads, so after a deliberate change re-record them from the simulation and
+check that only the expected ones moved:
+
+```bash
+UPDATE_GOLDEN=1 cargo test -p cj-sim --test golden
+```
+
+To re-record the traces and career answers from the browser game instead
 (needs Docker and a checkout of `claim-jumpers-game` with `claim-jumpers.html`
 built; run from this repository's root, with `CJ_BROWSER_REPO` set to that
 checkout's path):
@@ -260,7 +280,13 @@ checkout's path):
 docker run --rm -v "$PWD:/work" -v "$CJ_BROWSER_REPO:/browser" -e CJ_BROWSER_REPO=/browser -v /browser/tests/node_modules -w /browser/tests mcr.microsoft.com/playwright:v1.65.0-noble sh -c "npm ci --no-audit --no-fund && node /work/native/tools/golden/export.mjs && node /work/native/tools/golden/career.mjs"
 ```
 
-## Known differences from the browser version
+## Differences from the browser's 1.0.7 baseline
+
+Added here since the browser was frozen: radiation clouds from reactors, a
+shockwave when the tug is wrecked, wanted stars fading while nobody chases
+you, your shots passing through towed cargo, rivals sidestepping shots,
+missiles that can lose their lock, level 5 cannon lasers, refinery charges
+that come back, and crews adapting to how you fight.
 
 Everything in the browser game is ported. Deliberate differences:
 
@@ -297,6 +323,8 @@ Everything in the browser game is ported. Deliberate differences:
   folder (the browser keeps it in localStorage).
 - None of the game's fonts has the ★ and ☆ glyphs (the browser falls back
   to a system font), so wanted stars are drawn as star shapes.
+- Enemy bolts hit the hauler's drawn hull. (The browser uses a circle
+  smaller than the ship, so bolts cross its tail and corners.)
 - Opening Settings from the pause card freezes the shift behind it. (The
   browser runs its menu drift there, which moves the paused shift's cargo
   and clock.)

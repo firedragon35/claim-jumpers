@@ -6,10 +6,10 @@
 
 use cj_sim::career::{Career, Mode};
 use cj_sim::consts::*;
-use cj_sim::entities::{make_crab, make_rock_drifting, CrabState};
+use cj_sim::entities::{make_crab, make_rock_drifting, Bullet, CrabState, RadCloud};
 use cj_sim::field::*;
 use cj_sim::items::ItemType;
-use cj_sim::parts::Part;
+use cj_sim::parts::{Part, System};
 use cj_sim::rng::Rng;
 use cj_sim::{Input, World};
 
@@ -484,4 +484,236 @@ fn wrecked_jaws_are_tallied_even_in_a_no_blame_blast() {
     w.no_blame = true;
     w.hurt_jaws(999.0);
     assert_eq!(w.kills.jaws, 1);
+}
+
+#[test]
+fn bolts_hit_the_hauler_where_it_is_drawn() {
+    let c = Career::new(Mode::Standard);
+    let mut w = quiet(&c, Rng::Constant(0.5));
+    w.start_event(Event::Convoy);
+    let h = w.hauler.as_mut().expect("spawned");
+    (h.b.x, h.b.y, h.angle) = (1000.0, 1000.0, 0.0);
+    let hit = |h: &Hauler, x: f64, y: f64| h.hit_by_bolt(1000.0 + x, 1000.0 + y);
+    assert!(
+        hit(h, -36.0, 21.0),
+        "container corner, outside the old circle"
+    );
+    assert!(hit(h, -45.0, 15.0), "tail corner, outside the old circle");
+    assert!(hit(h, 39.0, 0.0), "nose tip");
+    assert!(!hit(h, 36.0, 20.0), "beside the tapered nose");
+    assert!(
+        !hit(h, -45.0, 21.0),
+        "the spine is narrower than the containers"
+    );
+    assert!(!hit(h, 0.0, 30.0), "clear of the hull");
+    // Facing +y, the hull's length runs along y.
+    h.angle = std::f64::consts::FRAC_PI_2;
+    assert!(hit(h, 21.0, -36.0));
+    assert!(!hit(h, -36.0, 21.0));
+}
+
+fn open_field() -> (World, f64, f64) {
+    let c = Career::new(Mode::Standard);
+    let mut w = quiet(&c, Rng::Constant(0.5));
+    w.rocks.clear();
+    w.wrecks.clear();
+    w.items.clear();
+    w.ship.angle = 0.0;
+    w.ship.invuln = 0.0;
+    let (x, y) = (w.ship.b.x, w.ship.b.y);
+    (w, x, y)
+}
+
+#[test]
+fn your_shots_pass_through_towed_cargo_but_not_loose_cargo() {
+    use cj_sim::Action;
+    let shot = |x: f64, y: f64| Bullet {
+        x,
+        y,
+        vx: 100.0,
+        life: 1.0,
+        dmg: 1.0,
+        ..Bullet::default()
+    };
+    let (mut w, sx, sy) = open_field();
+    let it = w.new_item(ItemType::Engine, sx + 60.0, sy, 0.0, 0.0);
+    w.items.push(it);
+    w.action(Action::Hook);
+    step(&mut w);
+    let b = w.items[0].b;
+    w.bullets.push(shot(b.x, b.y));
+    step(&mut w);
+    assert_eq!(w.bullets.len(), 1, "passes through the towed engine");
+
+    let (mut w, sx, sy) = open_field();
+    let it = w.new_item(ItemType::Engine, sx + 300.0, sy, 0.0, 0.0);
+    w.items.push(it);
+    let b = w.items[0].b;
+    w.bullets.push(shot(b.x, b.y));
+    step(&mut w);
+    assert!(w.bullets.is_empty(), "stopped by loose cargo");
+}
+
+#[test]
+fn the_wrecked_tug_throws_a_shockwave_nobody_blames_you_for() {
+    let (mut w, sx, sy) = open_field();
+    let mut j = w.new_jumper(sx + 100.0, sy, Some(Variant::Skiff));
+    j.hp = 0.1;
+    w.jumpers.push(j);
+    let it = w.new_item(ItemType::Scrap, sx + 150.0, sy, 0.0, 0.0);
+    w.items.push(it);
+    w.kill_ship();
+    assert!(w.jumpers[0].dead, "caught in the blast");
+    assert!(w.items[0].b.vx > 0.0, "debris thrown outward");
+    assert_eq!(w.stats.jumpers, 0);
+    assert_eq!(w.grudge, 0.0);
+}
+
+#[test]
+fn a_wanted_star_fades_only_while_nobody_is_chasing_you() {
+    use cj_sim::opposition::SheriffState;
+    let (mut w, _, _) = open_field();
+    w.wanted = 2;
+    for _ in 0..(WANTED_COOLDOWN / STEP).ceil() as usize + 2 {
+        step(&mut w);
+        w.sheriffs.clear();
+    }
+    assert_eq!(w.wanted, 1);
+    w.spawn_sheriff(false);
+    w.sheriffs[0].state = SheriffState::Pursuit;
+    w.wanted_cool_t = 1.0;
+    step(&mut w);
+    assert_eq!(w.wanted_cool_t, WANTED_COOLDOWN, "a chase holds the clock");
+}
+
+#[test]
+fn radiation_kills_shields_burns_the_hull_and_fades() {
+    let (mut w, sx, sy) = open_field();
+    w.clouds.push(RadCloud {
+        x: sx,
+        y: sy,
+        t: RAD_CLOUD_TIME,
+    });
+    let hp = w.ship.hp;
+    step(&mut w);
+    assert_eq!(w.ship.shield, 0.0);
+    assert!(
+        w.ship.hp < hp && w.ship.hp > hp - 1.0,
+        "a slow burn: {}",
+        w.ship.hp
+    );
+    assert!(w.in_cloud);
+    w.clouds[0].t = STEP / 2.0;
+    step(&mut w);
+    assert!(w.clouds.is_empty());
+}
+
+#[test]
+fn a_reactor_leaves_a_cloud_except_over_the_bay() {
+    for (dx, want) in [(-900.0, 1), (0.0, 0)] {
+        let (mut w, _, _) = open_field();
+        let it = w.new_item(ItemType::Reactor, BAY_X + dx, BAY_Y + dx.abs(), 0.0, 0.0);
+        w.items.push(it);
+        w.prime_reactor(0);
+        for _ in 0..5 {
+            step(&mut w);
+        }
+        assert_eq!(w.clouds.len(), want);
+    }
+}
+
+#[test]
+fn a_level_5_cannon_fires_a_laser_that_lands_instantly() {
+    let mut c = Career::new(Mode::Standard);
+    c.levels.set(System::Cannon, 5);
+    let mut w = quiet(&c, Rng::Constant(0.5));
+    w.rocks.clear();
+    w.wrecks.clear();
+    w.ship.angle = 0.0;
+    let (sx, sy) = (w.ship.b.x, w.ship.b.y);
+    let mut r = make_rock_drifting(&mut w.rng, 3, sx + LASER_RANGE * 0.7, sy);
+    r.hp = 500.0;
+    w.rocks.push(r);
+    let fire = Input {
+        fire: true,
+        ..Input::default()
+    };
+    w.step(&fire, STEP);
+    assert!(w.rocks[0].hp < 500.0, "hit in the step it fired");
+    assert!(w.bullets.is_empty());
+    assert!(w
+        .events
+        .iter()
+        .any(|e| matches!(e, cj_sim::events::Event::Laser { .. })));
+}
+
+#[test]
+fn light_rivals_sidestep_shots_and_brutes_do_not() {
+    let sideways = |v: Variant| {
+        let (mut w, sx, sy) = open_field();
+        let (x, y) = (sx - 1200.0, sy + 900.0);
+        let mut j = w.new_jumper(x, y, Some(v));
+        j.hp = 50.0;
+        j.hunter = true;
+        w.jumpers.push(j);
+        w.bullets.push(Bullet {
+            x: x - 100.0,
+            y,
+            vx: 820.0,
+            life: 1.0,
+            dmg: 1.0,
+            ..Bullet::default()
+        });
+        step(&mut w);
+        w.jumpers[0].b.vy.abs()
+    };
+    assert!(sideways(Variant::Skiff) > sideways(Variant::Brute) + 100.0);
+}
+
+#[test]
+fn some_missiles_lose_their_lock() {
+    let launch = |roll: f64| {
+        let mut c = Career::new(Mode::Standard);
+        c.wallet = 1e6;
+        c.buy_part(Part::Missiles).expect("bought");
+        let mut w = quiet(&c, Rng::Constant(roll));
+        w.rocks.clear();
+        w.wrecks.clear();
+        let (sx, sy) = (w.ship.b.x, w.ship.b.y);
+        let j = w.new_jumper(sx + 300.0, sy, Some(Variant::Cutter));
+        w.jumpers.push(j);
+        for _ in 0..3 {
+            step(&mut w);
+        }
+        w.missiles[0].tracking
+    };
+    assert_eq!(launch(0.5), 1.0);
+    assert_eq!(launch(0.1), MISSILE_WILD_TRACKING);
+}
+
+#[test]
+fn charges_return_only_when_none_are_left_and_the_vault_is_shut() {
+    let (mut w, _, _) = open_field();
+    w.spawn_refinery();
+    let charges = |w: &World| {
+        w.items
+            .iter()
+            .filter(|i| i.kind == ItemType::Charge)
+            .count()
+    };
+    assert_eq!(charges(&w), 4);
+    w.items.retain(|i| i.kind != ItemType::Charge);
+    for _ in 0..(cj_sim::opposition::CHARGE_RESPAWN_TIME / STEP).ceil() as usize + 2 {
+        step(&mut w);
+    }
+    assert_eq!(charges(&w), 4, "three empty sockets and a spare");
+
+    let (mut w, _, _) = open_field();
+    w.spawn_refinery();
+    w.items.retain(|i| i.kind != ItemType::Charge);
+    w.vault_opened = true;
+    for _ in 0..(cj_sim::opposition::CHARGE_RESPAWN_TIME / STEP).ceil() as usize + 2 {
+        step(&mut w);
+    }
+    assert_eq!(charges(&w), 0, "nothing left to open");
 }

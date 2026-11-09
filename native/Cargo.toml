@@ -1,5 +1,5 @@
-# Native Windows port of Claim Jumpers. The browser game (repository claim-jumpers-game) is
-# the reference implementation; this workspace must match its behaviour.
+# Native Windows port of Claim Jumpers. This workspace is the lead version; the browser game
+# (repository claim-jumpers-game) is a frozen baseline at its 1.0.7.
 #
 # crates/cj-sim   the pure, deterministic gameplay simulation (builds on any OS)
 # crates/cj-game  the macroquad application, claim-jumpers.exe (Windows)

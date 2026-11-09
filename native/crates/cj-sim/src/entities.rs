@@ -513,6 +513,8 @@ pub struct Jumper {
     pub flee_t: f64,
     /// Seconds left giving covering fire to a latched wingmate.
     pub cover_t: f64,
+    /// Seconds until it can try to dodge again.
+    pub dodge_t: f64,
     pub dead: bool,
 }
 
@@ -573,6 +575,7 @@ pub fn make_jumper(
         speed_mul: st.speed * v.speed,
         flee_t: 0.0,
         cover_t: 0.0,
+        dodge_t: 0.0,
         dead: false,
     }
 }
@@ -635,6 +638,15 @@ pub fn make_crab(rng: &mut Rng, state: CrabState, host: Option<u32>, x: f64, y: 
     }
 }
 
+/// A reactor's radiation cloud, centred where it blew.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RadCloud {
+    pub x: f64,
+    pub y: f64,
+    /// Seconds left.
+    pub t: f64,
+}
+
 /// A cannon round (yours) or a bolt (theirs).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Bullet {
@@ -646,6 +658,8 @@ pub struct Bullet {
     pub dmg: f64,
     /// A heavy grinder slug rather than a cutter round.
     pub slug: bool,
+    /// A level 5 cannon's beam: it lands in the step it is fired.
+    pub laser: bool,
     /// Fired by one of your sentries (passes through the law).
     pub sentry: bool,
     /// A sheriff's bolt: stuns (or SWAT's real round).

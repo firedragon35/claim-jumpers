@@ -1,6 +1,8 @@
-//! Golden traces: the Rust simulation must reproduce the browser's
-//! recorded state, step by step, for each scenario in golden/scenarios.json.
-//! Regenerate the traces with native/tools/golden/export.mjs.
+//! Golden traces: the simulation must reproduce its recorded state, step by
+//! step, for each scenario in golden/scenarios.json. They began as recordings
+//! of the browser game (1.0.7). This code now leads, so after a deliberate
+//! change, re-record with `UPDATE_GOLDEN=1 cargo test -p cj-sim --test golden`
+//! and review which traces moved.
 
 use cj_sim::consts::{rock_size, Variant, STEP};
 use cj_sim::entities::{make_crab, Body, CrabState, JumperState, Rock, Wreck};
@@ -22,6 +24,22 @@ const TOL: f64 = 1e-7;
 
 fn golden_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/golden")
+}
+
+thread_local! {
+    /// The step being rewritten, while re-recording.
+    static RECORDING: std::cell::RefCell<Option<Value>> = const { std::cell::RefCell::new(None) };
+}
+
+/// While re-recording, store what was computed instead of comparing it.
+fn record(what: &str, got: Value) -> bool {
+    RECORDING.with_borrow_mut(|step| {
+        let Some(step) = step else { return false };
+        let key = if what == "ship" { "s" } else { what };
+        let scalar = matches!(what, "grudge" | "banked");
+        step[key] = if scalar { got[0].clone() } else { got };
+        true
+    })
 }
 
 fn read_json(name: &str) -> Value {
@@ -245,6 +263,9 @@ fn input_for(keys: &[Value]) -> Input {
 
 /// Compare one recorded row of numbers with ours; returns the first mismatch.
 fn cmp_row(what: &str, want: &Value, got: &[f64]) -> Result<(), String> {
+    if record(what, Value::from(got.to_vec())) {
+        return Ok(());
+    }
     let want = want.as_array().unwrap();
     if want.len() != got.len() {
         return Err(format!(
@@ -263,6 +284,10 @@ fn cmp_row(what: &str, want: &Value, got: &[f64]) -> Result<(), String> {
 }
 
 fn cmp_list(what: &str, want: &Value, got: Vec<Vec<f64>>) -> Result<(), String> {
+    let rows: Vec<Value> = got.iter().map(|r| Value::from(r.clone())).collect();
+    if record(what, Value::from(rows)) {
+        return Ok(());
+    }
     let want = want.as_array().unwrap();
     if want.len() != got.len() {
         return Err(format!(
@@ -408,7 +433,7 @@ fn check_step(w: &World, want: &Value) -> Result<(), String> {
         .iter()
         .map(|v| v.as_str().unwrap())
         .collect();
-    if types != want_types {
+    if !record("types", Value::from(types.clone())) && types != want_types {
         return Err(format!(
             "item types: browser {want_types:?}, rust {types:?}"
         ));
@@ -548,7 +573,8 @@ fn run(name: &str) {
         .iter()
         .find(|s| s["name"] == name)
         .expect("scenario exists");
-    let trace = read_json(&format!("{name}.trace.json"));
+    let mut trace = read_json(&format!("{name}.trace.json"));
+    let update = std::env::var_os("UPDATE_GOLDEN").is_some();
     let mut w = build(sc, &trace["init"]);
 
     // The factories must agree with the browser's before any step runs.
@@ -591,8 +617,9 @@ fn run(name: &str) {
             (a["at"].as_u64().unwrap(), act)
         })
         .collect();
-    let steps = trace["steps"].as_array().unwrap();
+    let mut steps = trace["steps"].as_array().unwrap().clone();
     let mut k = 0u64;
+    let mut moved = false;
     for seg in sc["inputs"].as_array().unwrap() {
         let input = input_for(seg["keys"].as_array().unwrap());
         for _ in 0..seg["n"].as_u64().unwrap() {
@@ -603,13 +630,25 @@ fn run(name: &str) {
                 }
             }
             w.step(&input, STEP);
-            if let Err(e) = check_step(&w, &steps[k as usize]) {
+            let result = check_step(&w, &steps[k as usize]);
+            if update {
+                moved |= result.is_err();
+                RECORDING.set(Some(steps[k as usize].clone()));
+                check_step(&w, &steps[k as usize]).expect("recording cannot fail");
+                steps[k as usize] = RECORDING.take().expect("recording");
+            } else if let Err(e) = result {
                 panic!("{name}, step {k}: {e}");
             }
             k += 1;
         }
     }
     assert_eq!(k as usize, steps.len(), "{name}: step count");
+    // Only a trace that really moved is rewritten, so the diff shows what changed.
+    if moved {
+        trace["steps"] = Value::from(steps);
+        let path = golden_dir().join(format!("{name}.trace.json"));
+        std::fs::write(path, trace.to_string()).expect("write trace");
+    }
 }
 
 #[test]

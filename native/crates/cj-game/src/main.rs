@@ -50,7 +50,13 @@ use screens::{Act, Report};
 
 fn window_conf() -> Conf {
     Conf {
-        window_title: "Claim Jumpers".to_owned(),
+        // A stage build says so, so it can't be mistaken for the real game.
+        window_title: if std::env::var_os("CLAIM_JUMPERS_STAGE").is_some() {
+            "Claim Jumpers [STAGE]"
+        } else {
+            "Claim Jumpers"
+        }
+        .to_owned(),
         window_width: 1280,
         window_height: 720,
         high_dpi: true,

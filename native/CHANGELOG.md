@@ -5,6 +5,32 @@ format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the port uses [Semantic Versioning](https://semver.org/) as defined in
 [CLAUDE.md](CLAUDE.md#versioning).
 
+## [1.1.0] - 2026-11-09
+
+This version is the lead: the browser game is now a frozen baseline at 1.0.7.
+
+### Added
+
+- A destroyed reactor leaves a radiation cloud for 25 seconds. Inside it,
+  shields are out and the hull burns slowly. Clouds never settle over the bay.
+- A wrecked tug throws out a shockwave that shoves and damages what's nearby.
+- Wanted stars fade one every 20 seconds while nobody is chasing you.
+- Level 5 cannons fire instant lasers.
+- Rivals hunting you sidestep incoming shots: skiffs most, brutes never.
+- Missiles and torpedoes can lose their lock, less often at higher levels.
+- Crews adapt to how you usually kill them, and Marge warns you when they do.
+- New refinery charges arrive if none are left and the vault is still shut.
+- `tools/stage.ps1` builds a separate stage copy with its own saves.
+
+### Changed
+
+- Your shots pass through cargo you're towing, including reactors.
+
+### Fixed
+
+- Enemy bolts hit the escorted hauler's whole drawn hull, so they no longer
+  pass through its tail and corners.
+
 ## [1.0.4] - 2026-11-09
 
 Brings the port in line with the browser game's 1.0.6 and 1.0.7 review fixes.

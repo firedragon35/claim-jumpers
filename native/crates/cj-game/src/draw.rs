@@ -12,7 +12,7 @@ use crate::look::{col, rgba, text_centered, Look};
 use crate::settings::{key_label, Bind, Settings};
 use crate::tug;
 use cj_sim::consts::*;
-use cj_sim::entities::{Crab, Item, Jumper, Rock, ShapePt, Wreck};
+use cj_sim::entities::{Crab, Item, Jumper, RadCloud, Rock, ShapePt, Wreck};
 use cj_sim::items::ItemType;
 use cj_sim::rng::Rng;
 use cj_sim::World;
@@ -944,6 +944,24 @@ fn js_num(v: f64) -> String {
 }
 
 /// The dashed ring and label over the piece the claw would grab.
+/// A radiation cloud: a green wash and a marching edge, fading as it ends.
+fn draw_radiation(look: &Look, cl: &RadCloud, t: f32, scale: f32) {
+    const GREEN: u32 = 0x7dff5a;
+    let fade = (cl.t / 3.0).min(1.0) as f32;
+    let (p, r) = (v(cl.x, cl.y), RAD_CLOUD_RADIUS as f32);
+    draw_circle(p.x, p.y, r, rgba(GREEN, 0.10 * fade));
+    dashed(
+        &circle_pts(p, r, 72),
+        true,
+        12.0,
+        10.0,
+        t * 12.0,
+        2.0,
+        rgba(GREEN, 0.6 * fade),
+    );
+    crate::foes::tag(look, p.x, p.y - r - 14.0, "RADIATION", GREEN, scale);
+}
+
 fn draw_hook_target(
     look: &Look,
     w: &World,
@@ -1247,6 +1265,18 @@ pub fn render(sc: Scene) {
             }
         }
     }
+    for cl in &w.clouds {
+        if visible(cl.x, cl.y, RAD_CLOUD_RADIUS) {
+            draw_radiation(sc.look, cl, t, scale);
+        }
+    }
+    sc.look.additive(|| {
+        for &(x0, y0, x1, y1, left) in &sc.fx.beams {
+            let pts = [v(x0, y0), v(x1, y1)];
+            let fade = (left / crate::fx::BEAM_TIME) as f32;
+            glow_stroke(&pts, false, col::CABLE, 3.0, fade);
+        }
+    });
     for j in &w.jumpers {
         if visible(j.b.x, j.b.y, j.b.r) {
             draw_jumper(sc.look, w, j);

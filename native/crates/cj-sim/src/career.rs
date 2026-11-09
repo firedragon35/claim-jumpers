@@ -8,6 +8,7 @@
 //! this build doesn't use are kept exactly as they were read, so a save
 //! round-trips without losing them.
 
+use crate::consts::{HABIT_KEEP, HABIT_MIN_KILLS, HABIT_SHARE};
 use crate::field::*;
 use crate::js;
 use crate::mods::{compute_mods, Mods};
@@ -203,6 +204,37 @@ pub fn rank_for(earned: f64) -> &'static str {
         .map_or(RANKS[0].1, |r| r.1)
 }
 
+/// A way of killing rivals that the crews can adapt to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Habit {
+    Cannon,
+    Smash,
+    Missile,
+}
+
+/// Rival kills by method, fading a little each shift so a player can change style.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Habits {
+    pub cannon: f64,
+    pub smash: f64,
+    pub missile: f64,
+}
+
+impl Habits {
+    /// The method used for most kills, once there are enough to notice.
+    pub fn dominant(&self) -> Option<Habit> {
+        let total = self.cannon + self.smash + self.missile;
+        [
+            (self.cannon, Habit::Cannon),
+            (self.smash, Habit::Smash),
+            (self.missile, Habit::Missile),
+        ]
+        .into_iter()
+        .find(|(n, _)| total >= HABIT_MIN_KILLS && *n >= total * HABIT_SHARE)
+        .map(|(_, h)| h)
+    }
+}
+
 /// One player's saved career: money, loan, parts, upgrades, reputation and progress. The save file is this struct in the browser's JSON field names, with unknown fields kept in `extra`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Career {
@@ -241,13 +273,16 @@ pub struct Career {
     pub conditions: Option<(i32, [Condition; 5])>,
     /// Rogue cores stored in the shop.
     pub cores: u32,
+    /// How this player tends to kill rivals.
+    pub habits: Habits,
     /// Save fields this build doesn't use, kept verbatim.
     pub extra: Map<String, Value>,
 }
 
 /// Fields this build reads and writes itself; everything else in a save
 /// is carried through untouched.
-const OWN_KEYS: [&str; 25] = [
+const OWN_KEYS: [&str; 26] = [
+    "habits",
     "crew",
     "belt",
     "contract",
@@ -348,6 +383,7 @@ impl Career {
             chains_done: Vec::new(),
             conditions: None,
             cores: 0,
+            habits: Habits::default(),
             extra: Map::new(),
         }
     }
@@ -613,6 +649,11 @@ impl Career {
         self.wallet -= due;
         self.loan -= due;
         self.cores = (self.cores + w.cores_banked).min(CORES_MAX);
+        self.habits = Habits {
+            cannon: self.habits.cannon * HABIT_KEEP + w.habit_kills.cannon,
+            smash: self.habits.smash * HABIT_KEEP + w.habit_kills.smash,
+            missile: self.habits.missile * HABIT_KEEP + w.habit_kills.missile,
+        };
         // Contract chains advance (or end) with the contract.
         let chain_note = self.settle_chain(job.as_ref(), job_done);
 
@@ -719,6 +760,11 @@ impl Career {
                 json!({ "shift": shift, "map": m })
             }),
             "cores": self.cores,
+            "habits": {
+                "cannon": self.habits.cannon,
+                "smash": self.habits.smash,
+                "missile": self.habits.missile,
+            },
         });
         if let Value::Object(o) = own {
             m.extend(o);
@@ -933,6 +979,19 @@ impl Career {
             c.chain = chain_step(ch.get("id"), ch.get("step"));
         }
         c.cores = (num("cores", 0.0, 0.0).floor() as u32).min(CORES_MAX);
+        if let Some(h) = raw.get("habits") {
+            let kills = |k: &str| {
+                h.get(k)
+                    .and_then(Value::as_f64)
+                    .filter(|v| v.is_finite() && *v >= 0.0)
+                    .unwrap_or(0.0)
+            };
+            c.habits = Habits {
+                cannon: kills("cannon"),
+                smash: kills("smash"),
+                missile: kills("missile"),
+            };
+        }
         if let Some(Value::Array(done)) = raw.get("chainsDone") {
             for ch in done
                 .iter()

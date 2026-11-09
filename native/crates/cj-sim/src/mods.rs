@@ -29,6 +29,8 @@ pub struct Mods {
     pub barrels: Vec<f64>,
     /// Damage per cutter round.
     pub cannon_dmg: f64,
+    /// A level 5 cannon fires lasers.
+    pub laser: bool,
     /// Multipliers on the fire interval and on heat per shot.
     pub fire_mul: f64,
     pub heat_mul: f64,
@@ -50,6 +52,8 @@ pub struct Mods {
     pub missile_rack: u32,
     pub missile_reload: f64,
     pub missile_dmg: f64,
+    /// Chance a missile loses its lock at launch.
+    pub missile_miss: f64,
     pub missile_salvo: u32,
     pub torpedo: bool,
     pub drone_hp: f64,
@@ -124,6 +128,7 @@ pub fn compute_mods(mounted: &Mounted, levels: &Levels, tug_class: usize) -> Mod
         strafe_mul: ENGINE_STRAFE[lv(System::Thrust)],
         strafe_heat_mul: ENGINE_STRAFE_HEAT[lv(System::Thrust)],
         cannon_dmg: CANNON_DAMAGE[lv(System::Cannon)],
+        laser: has(Part::Cannon) && usize::from(System::Cannon.max()) == lv(System::Cannon) + 1,
         fire_mul: CANNON_RATE[lv(System::Cannon)],
         heat_mul: CANNON_HEAT[lv(System::Cannon)],
         cannon_spread: if has(Part::Cannon) {
@@ -134,6 +139,7 @@ pub fn compute_mods(mounted: &Mounted, levels: &Levels, tug_class: usize) -> Mod
         missile_rack: MISSILE_RACK_LV[ml],
         missile_reload: MISSILE_RELOAD_LV[ml],
         missile_dmg: MISSILE_DAMAGE_LV[ml],
+        missile_miss: MISSILE_MISS_LV[ml],
         missile_salvo: MISSILE_SALVO_LV[ml],
         torpedo: ml == 4,
         drone_hp: DRONE_HP_LV[dl],

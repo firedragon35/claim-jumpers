@@ -36,6 +36,8 @@ pub const ENGINE_OVERHEAT_THRUST: f64 = 0.45;
 
 /// Seconds between volleys from the auto-defense rack.
 pub const MISSILE_GAP: f64 = 0.5;
+/// Seconds with no charges left before a new set arrives.
+pub const CHARGE_RESPAWN_TIME: f64 = 20.0;
 /// How far a missile launch looks for a hostile, in px.
 pub const MISSILE_RANGE: f64 = 650.0;
 /// Range in px at which incoming nets are targeted before any other hostile.
@@ -394,6 +396,8 @@ pub struct Missile {
     pub target: Option<Tgt>,
     pub life: f64,
     pub torpedo: bool,
+    /// How well it turns toward its target (below 1 means it lost its lock).
+    pub tracking: f64,
 }
 
 /// A sentry drone orbiting the tug; every survivor goes rogue when the tug is gone.
@@ -615,21 +619,7 @@ impl World {
                 self.remove_item(i);
             }
         }
-        // Four charges (one spare) float on the side away from the jaws.
-        for _ in 0..4 {
-            let ca = r.angle + self.rng.range(-0.5, 0.5);
-            let cd = self.rng.range(380.0, 470.0);
-            let vx = r.b.vx + self.rng.range(-6.0, 6.0);
-            let vy = r.b.vy + self.rng.range(-6.0, 6.0);
-            let it = self.new_item(
-                ItemType::Charge,
-                x + ca.cos() * cd,
-                y + ca.sin() * cd,
-                vx,
-                vy,
-            );
-            self.items.push(it);
-        }
+        self.spawn_charges(r.b, r.angle, 4);
         self.refinery = Some(r);
         self.radio(Radio::Refinery, true, false);
     }
@@ -650,7 +640,58 @@ impl World {
     }
 
     /// Advances the refinery one step: drift and spin, then the logic for its current state.
+    /// `n` charges float in on the side away from the jaws.
+    fn spawn_charges(&mut self, hub: Body, angle: f64, n: usize) {
+        for _ in 0..n {
+            let ca = angle + self.rng.range(-0.5, 0.5);
+            let cd = self.rng.range(380.0, 470.0);
+            let vx = hub.vx + self.rng.range(-6.0, 6.0);
+            let vy = hub.vy + self.rng.range(-6.0, 6.0);
+            let it = self.new_item(
+                ItemType::Charge,
+                hub.x + ca.cos() * cd,
+                hub.y + ca.sin() * cd,
+                vx,
+                vy,
+            );
+            self.items.push(it);
+        }
+    }
+
+    /// With the vault still shut and no charges left anywhere, a new set
+    /// (one for each empty socket, plus a spare) arrives after a wait.
+    fn update_charge_respawn(&mut self, dt: f64) {
+        let Some(r) = self.refinery.as_ref() else {
+            return;
+        };
+        let (hub, angle) = (r.b, r.angle);
+        let needed = r.sockets.iter().filter(|k| !k.filled && !k.spent).count();
+        let waiting = matches!(r.state, RefineryState::Dormant | RefineryState::Locked)
+            && !self.vault_opened
+            && needed > 0;
+        let charge_left = self
+            .items
+            .iter()
+            .any(|i| !i.dead && i.kind == ItemType::Charge);
+        if !waiting || charge_left {
+            self.charge_respawn_t = CHARGE_RESPAWN_TIME;
+            return;
+        }
+        self.charge_respawn_t -= dt;
+        if self.charge_respawn_t <= 0.0 {
+            self.charge_respawn_t = CHARGE_RESPAWN_TIME;
+            self.spawn_charges(hub, angle, needed + 1);
+            self.radio_text(
+                Radio::ChargesRestocked,
+                false,
+                false,
+                "Somebody left more charges by the refinery. Try not to lose these.".to_owned(),
+            );
+        }
+    }
+
     pub(crate) fn update_refinery(&mut self, dt: f64) {
+        self.update_charge_respawn(dt);
         let Some(r) = self.refinery.as_mut() else {
             return;
         };
@@ -1551,6 +1592,7 @@ impl World {
     pub fn add_wanted(&mut self, n: u32, x: f64, y: f64) {
         let before = self.wanted;
         self.wanted = (self.wanted + n).min(WANTED_MAX);
+        self.wanted_cool_t = WANTED_COOLDOWN;
         if self.wanted > before {
             self.rep_delta.law += REP_STAR_GAINED_LAW * f64::from(self.wanted - before);
             self.popup(
@@ -1567,6 +1609,53 @@ impl World {
             self.radio(Radio::Swat, true, false);
             self.emit(Event::Unlock("fiveStar"));
         }
+    }
+
+    /// A wanted star fades after a stretch with nobody chasing you.
+    pub(crate) fn update_wanted_cooldown(&mut self, dt: f64) {
+        let chased = self
+            .sheriffs
+            .iter()
+            .any(|sh| !sh.dead && sh.state == SheriffState::Pursuit);
+        if self.wanted == 0 || chased {
+            self.wanted_cool_t = WANTED_COOLDOWN;
+            return;
+        }
+        self.wanted_cool_t -= dt;
+        if self.wanted_cool_t > 0.0 {
+            return;
+        }
+        self.wanted_cool_t = WANTED_COOLDOWN;
+        if self.wanted == 1 {
+            self.clear_record();
+        } else {
+            self.wanted -= 1;
+            let (x, y) = (self.ship.b.x, self.ship.b.y);
+            let stars = "★".repeat(self.wanted as usize);
+            self.popup(x, y - 48.0, format!("WANTED {stars}"), Tint::Law);
+        }
+    }
+
+    /// Marge passes on what the crews have adapted to, once the shift is under way.
+    pub(crate) fn update_rival_intel(&mut self) {
+        use crate::career::Habit;
+        let Some(habit) = self
+            .rival_counter
+            .filter(|_| !self.intel_told && self.t > 8.0)
+        else {
+            return;
+        };
+        self.intel_told = true;
+        let text = match habit {
+            Habit::Cannon => {
+                "Word is the crews have been studying your gunnery. Expect them to jink."
+            }
+            Habit::Smash => {
+                "The crews are bolting extra plate on against your swinging cargo. Hit harder."
+            }
+            Habit::Missile => "The crews are running decoys now. Your missiles will wander more.",
+        };
+        self.radio_text(Radio::Intel, false, false, text.to_owned());
     }
 
     /// Patrols come round more often when the law dislikes you.
@@ -2206,6 +2295,14 @@ impl World {
                         } else {
                             self.pick_missile_target(sb.x, sb.y).unwrap_or(first)
                         };
+                        let adapted = self.rival_counter == Some(crate::career::Habit::Missile);
+                        let miss =
+                            self.mods.missile_miss + if adapted { HABIT_MISSILE_MISS } else { 0.0 };
+                        let tracking = if self.rng.next() < miss {
+                            MISSILE_WILD_TRACKING
+                        } else {
+                            1.0
+                        };
                         let s = &mut self.ship;
                         s.missiles -= 1;
                         // Launch from the pods, kicked out sideways.
@@ -2221,6 +2318,7 @@ impl World {
                             target: Some(target),
                             life: MISSILE_LIFE * if torpedo { 1.5 } else { 1.0 },
                             torpedo,
+                            tracking,
                         });
                     }
                     self.sfx(Sfx::Missile);
@@ -2257,7 +2355,7 @@ impl World {
                 let (dx, dy) = (tb.x - m.x, tb.y - m.y);
                 let d = nonzero(js::hypot(dx, dy));
                 let tm = if m.torpedo { TORPEDO_SPEED } else { 1.0 };
-                let kk = (MISSILE_TURN * tm * dt).min(1.0);
+                let kk = (MISSILE_TURN * tm * m.tracking * dt).min(1.0);
                 m.vx += ((dx / d) * MISSILE_SPEED * tm - m.vx) * kk;
                 m.vy += ((dy / d) * MISSILE_SPEED * tm - m.vy) * kk;
             }
@@ -2281,6 +2379,13 @@ impl World {
                     } else {
                         let dmg = self.mods.missile_dmg;
                         self.hurt_target(t, dmg);
+                        if let Tgt::Jumper(id) = t {
+                            if self.jumper_index(id).is_some_and(|j| self.jumpers[j].dead)
+                                && !self.no_blame
+                            {
+                                self.habit_kills.missile += 1.0;
+                            }
+                        }
                     }
                     if self.missiles[k].torpedo {
                         self.torpedo_blast(k, t);

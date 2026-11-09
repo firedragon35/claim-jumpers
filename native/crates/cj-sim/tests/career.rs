@@ -477,3 +477,26 @@ fn a_chain_step_and_a_matching_ordinary_offer_are_different_jobs() {
     assert!(!c.offer_taken(0));
     assert!(c.offer_taken(1));
 }
+
+#[test]
+fn the_crews_adapt_to_a_dominant_habit_and_it_saves() {
+    use cj_sim::career::{Habit, Habits};
+    let few = Habits {
+        cannon: 5.0,
+        ..Habits::default()
+    };
+    assert_eq!(few.dominant(), None, "not enough kills to notice");
+    let mixed = Habits {
+        cannon: 4.0,
+        smash: 4.0,
+        missile: 4.0,
+    };
+    assert_eq!(mixed.dominant(), None, "no clear habit");
+    let mut c = Career::new(Mode::Standard);
+    c.habits.smash = 10.0;
+    assert_eq!(c.habits.dominant(), Some(Habit::Smash));
+    let back = Career::from_json(&c.to_json()).expect("loads");
+    assert_eq!(back.habits, c.habits);
+    let w = World::for_career(Rng::Constant(0.5), (1280.0, 720.0), &c);
+    assert_eq!(w.rival_counter, Some(Habit::Smash));
+}

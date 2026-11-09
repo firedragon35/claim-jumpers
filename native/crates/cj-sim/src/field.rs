@@ -5,6 +5,7 @@
 //! haulers, sealed holds and rogue cores (10c-salvage.js).
 
 use crate::consts::RIVAL_STAGES;
+use crate::consts::{RAD_CLOUD_RADIUS, RAD_HULL_DPS, RAD_SHIP_DPS};
 use crate::items::ItemType;
 use crate::js;
 use crate::rng::Rng;
@@ -620,6 +621,26 @@ pub struct Hauler {
     pub paid: bool,
 }
 
+impl Hauler {
+    /// Does a bolt at (x, y) strike the hull? The shape is the one
+    /// `foes::hauler` draws: a spine, wider containers and a tapered nose.
+    pub fn hit_by_bolt(&self, x: f64, y: f64) -> bool {
+        // The same 3 px of grace the bolt's own size gave the old circle.
+        const PAD: f64 = 3.0;
+        let (dx, dy) = (x - self.b.x, y - self.b.y);
+        let (sin, cos) = self.angle.sin_cos();
+        let (along, across) = (dx * cos + dy * sin, (dy * cos - dx * sin).abs());
+        let half_width = if along > 24.0 {
+            (40.0 - along) * 14.0 / 16.0
+        } else if (-40.0..=10.0).contains(&along) {
+            22.0
+        } else {
+            16.0
+        };
+        (-46.0 - PAD..=40.0 + PAD).contains(&along) && across < half_width + PAD
+    }
+}
+
 impl World {
     /// The claims adjuster haggles deductibles and impound fees down.
     pub fn crew_fee_mul(&self) -> f64 {
@@ -712,9 +733,73 @@ impl World {
         }
     }
 
+    /// Radiation clouds: inside one the tug's shields are out and its hull
+    /// burns; other ships burn too, and none of those kills are the player's.
+    fn update_radiation(&mut self, dt: f64) {
+        for c in &mut self.clouds {
+            c.t -= dt;
+        }
+        self.clouds.retain(|c| c.t > 0.0);
+        if self.clouds.is_empty() {
+            self.in_cloud = false;
+            return;
+        }
+        let clouds = self.clouds.clone();
+        let inside = |b: &crate::entities::Body| {
+            clouds
+                .iter()
+                .any(|c| js::dist(c.x, c.y, b.x, b.y) < RAD_CLOUD_RADIUS)
+        };
+        let n = RAD_SHIP_DPS * dt;
+        self.without_blame(|w| {
+            for i in 0..w.jumpers.len() {
+                if inside(&w.jumpers[i].b) {
+                    w.hurt_jumper(i, n, None);
+                }
+            }
+            for i in 0..w.collectors.len() {
+                if inside(&w.collectors[i].b) {
+                    w.hurt_collector(i, n, None);
+                }
+            }
+            for i in 0..w.sheriffs.len() {
+                if inside(&w.sheriffs[i].b) {
+                    w.hurt_sheriff(i, n, None);
+                }
+            }
+            for i in 0..w.miners.len() {
+                if inside(&w.miners[i].b) {
+                    w.hurt_miner(i, n, false);
+                }
+            }
+        });
+        let now_inside = self.ship.alive && inside(&self.ship.b);
+        if now_inside && !self.in_cloud {
+            self.radio_text(
+                Radio::Radiation,
+                true,
+                false,
+                "That's radiation, hotshot. Your shields are useless in there and the hull is cooking. Get out.".to_owned(),
+            );
+        }
+        self.in_cloud = now_inside;
+        if now_inside && self.ship.invuln <= 0.0 {
+            let delay = self.mods.shield_delay;
+            let burn = RAD_HULL_DPS * self.diff_damage * dt;
+            let s = &mut self.ship;
+            s.shield = 0.0;
+            s.shield_delay_t = delay;
+            s.hp -= burn;
+            if s.hp <= 0.0 {
+                self.kill_ship();
+            }
+        }
+    }
+
     /// Per-step field systems (updateEvents): the self-sealing hull, the
     /// escort, cores on the line, the ion storm, and the shift's event.
     pub(crate) fn update_events(&mut self, dt: f64) {
+        self.update_radiation(dt);
         let max_hp = self.mods.max_hp;
         let s = &mut self.ship;
         if s.alive && self.mods.hull_seal && s.hp < max_hp {

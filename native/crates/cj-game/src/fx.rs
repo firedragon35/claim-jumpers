@@ -10,6 +10,8 @@ use cj_sim::World;
 use std::f64::consts::PI;
 
 pub const MAX_PARTICLES: usize = 1400;
+/// Seconds a laser beam stays on screen.
+pub const BEAM_TIME: f64 = 0.09;
 const FIRE: [u32; 5] = [0xffffff, 0xfff3b0, 0xffd24a, 0xffb020, 0xff7a3c];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -50,6 +52,8 @@ pub struct Fx {
     rng: Rng,
     pub particles: Vec<Particle>,
     pub popups: Vec<Popup>,
+    /// Laser beams on screen: (x0, y0, x1, y1, seconds left).
+    pub beams: Vec<(f64, f64, f64, f64, f64)>,
     /// Recent positions of fast towed or thrown cargo, by item id (updateTrail).
     pub trails: std::collections::HashMap<u32, std::collections::VecDeque<(f64, f64)>>,
 }
@@ -60,6 +64,7 @@ impl Fx {
             rng,
             particles: Vec::new(),
             popups: Vec::new(),
+            beams: Vec::new(),
             trails: Default::default(),
         }
     }
@@ -248,6 +253,9 @@ impl Fx {
                     rgb: tint_rgb(*tint),
                     life: 1.4,
                 }),
+                Event::Laser { x0, y0, x1, y1 } => {
+                    self.beams.push((*x0, *y0, *x1, *y1, BEAM_TIME));
+                }
                 // A round striking something: a brief hot flash.
                 Event::Hit { x, y } => self.spark(*x, *y, 0.0, 0.0, 0.15, col::HAZARD, 3.0),
                 Event::Strafe {
@@ -382,5 +390,9 @@ impl Fx {
             p.life -= dt;
         }
         self.popups.retain(|p| p.life > 0.0);
+        for b in &mut self.beams {
+            b.4 -= dt;
+        }
+        self.beams.retain(|b| b.4 > 0.0);
     }
 }

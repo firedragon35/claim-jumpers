@@ -35,7 +35,9 @@ impl World {
             if b.life <= 0.0 {
                 continue;
             }
-            if self.bullet_hit(b) {
+            if b.laser {
+                self.fire_laser(b);
+            } else if self.bullet_hit(b) {
                 b.life = 0.0;
                 self.emit(Event::Hit { x: b.x, y: b.y });
             }
@@ -98,7 +100,7 @@ impl World {
                 let hit = self
                     .hauler
                     .as_ref()
-                    .is_some_and(|h| !h.dead && js::dist(b.x, b.y, h.b.x, h.b.y) < h.b.r + 3.0);
+                    .is_some_and(|h| !h.dead && h.hit_by_bolt(b.x, b.y));
                 if hit {
                     // Sheriff and rogue bolts carry their damage; rival
                     // and drone bolts do 4 to a hauler (5 to the tug).
@@ -139,6 +141,32 @@ impl World {
 
     /// Resolve one of your rounds against the field, in the browser's
     /// target order. Returns true if it struck something.
+    /// Walk a beam along its line until something stops it, using the same
+    /// hit rules as a cannon round.
+    fn fire_laser(&mut self, b: &mut Bullet) {
+        let (x0, y0) = (b.x, b.y);
+        let speed = js::hypot(b.vx, b.vy);
+        let (nx, ny) = (b.vx / speed, b.vy / speed);
+        let mut d = 0.0;
+        let mut struck = false;
+        while d < LASER_RANGE && !struck {
+            b.x = x0 + nx * d;
+            b.y = y0 + ny * d;
+            struck = self.bullet_hit(b);
+            d += LASER_STEP;
+        }
+        b.life = 0.0;
+        if struck {
+            self.emit(Event::Hit { x: b.x, y: b.y });
+        }
+        self.emit(Event::Laser {
+            x0,
+            y0,
+            x1: b.x,
+            y1: b.y,
+        });
+    }
+
     fn bullet_hit(&mut self, b: &Bullet) -> bool {
         let dmg = b.dmg;
         if let Some(i) = (0..self.rocks.len())
@@ -157,6 +185,9 @@ impl World {
             .find(|&i| !self.jumpers[i].dead && hits(b.x, b.y, &self.jumpers[i].b, 4.0))
         {
             self.hurt_jumper(i, dmg, None);
+            if self.jumpers[i].dead && !b.sentry {
+                self.habit_kills.cannon += 1.0;
+            }
             return true;
         }
         if let Some(i) = (0..self.drones.len())
@@ -236,9 +267,11 @@ impl World {
             self.kill_crab(c);
             return true;
         }
-        if let Some(i) = (0..self.items.len())
-            .find(|&i| !self.items[i].dead && hits(b.x, b.y, &self.items[i].b, 0.0))
-        {
+        if let Some(i) = (0..self.items.len()).find(|&i| {
+            let it = &self.items[i];
+            // Your own shots pass through what you're towing.
+            !it.dead && !it.towed && hits(b.x, b.y, &it.b, 0.0)
+        }) {
             // Shooting cargo nudges it; shooting a reactor is a very bad idea.
             let it = &mut self.items[i];
             it.b.vx += b.vx * 0.02 / it.b.mass;
@@ -372,6 +405,9 @@ impl World {
     /// it was cargo: a hit from three tonnes or more counts as a smash,
     /// which scatters its wingmates.
     pub fn hurt_jumper(&mut self, j: usize, n: f64, by_item: Option<f64>) {
+        let smash_braced =
+            by_item.is_some() && self.rival_counter == Some(crate::career::Habit::Smash);
+        let n = if smash_braced { n * HABIT_SMASH_MUL } else { n };
         let jm = &mut self.jumpers[j];
         if jm.dead {
             return;
@@ -383,6 +419,9 @@ impl World {
         }
         jm.dead = true;
         let (x, y, vx, vy) = (jm.b.x, jm.b.y, jm.b.vx, jm.b.vy);
+        if by_item.is_some() && !self.no_blame {
+            self.habit_kills.smash += 1.0;
+        }
         let variant = jm.variant;
         let hook = jm.hook.take();
         let boss = jm.boss.clone();
@@ -539,6 +578,14 @@ impl World {
             self.without_blame(|w| w.explode(x, y, REACTOR_BLAST_RADIUS, REACTOR_BLAST_DAMAGE));
         } else {
             self.explode(x, y, REACTOR_BLAST_RADIUS, REACTOR_BLAST_DAMAGE);
+        }
+        // Never over the bay, or a blast could shut down repairs for 25 s.
+        if js::dist(x, y, BAY_X, BAY_Y) > BAY_REPAIR_RANGE + RAD_CLOUD_RADIUS {
+            self.clouds.push(crate::entities::RadCloud {
+                x,
+                y,
+                t: RAD_CLOUD_TIME,
+            });
         }
         self.radio(Radio::Boom, true, false);
     }

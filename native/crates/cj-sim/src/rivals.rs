@@ -114,6 +114,52 @@ impl World {
         }
     }
 
+    /// A rival hunting you may sidestep a shot about to hit it, as real
+    /// movement, so a well-led shot can still land.
+    fn jumper_dodge(&mut self, j: usize, dt: f64) {
+        let jm = &mut self.jumpers[j];
+        jm.dodge_t -= dt;
+        if jm.dodge_t > 0.0 || jm.state != JumperState::Hunt {
+            return;
+        }
+        let jb = jm.b;
+        let threat = self.bullets.iter().find(|b| {
+            let (rx, ry) = (jb.x - b.x, jb.y - b.y);
+            let speed2 = b.vx * b.vx + b.vy * b.vy;
+            let when = (rx * b.vx + ry * b.vy) / speed2;
+            let (cx, cy) = (rx - b.vx * when, ry - b.vy * when);
+            !b.laser
+                && (0.0..=DODGE_LOOK).contains(&when)
+                && js::hypot(cx, cy) < jb.r + DODGE_MARGIN
+        });
+        let Some(&b) = threat else { return };
+        self.jumpers[j].dodge_t = DODGE_COOLDOWN;
+        let hull = match self.jumpers[j].variant {
+            Variant::Skiff => 0.7,
+            Variant::Cutter => 0.4,
+            Variant::Gunship => 0.2,
+            Variant::Brute => return,
+        };
+        let adapted = self.rival_counter == Some(crate::career::Habit::Cannon);
+        let chance = hull
+            + self.rival_stage() as f64 * DODGE_PER_STAGE
+            + if adapted { HABIT_DODGE_BONUS } else { 0.0 };
+        if self.rng.next() >= chance {
+            return;
+        }
+        let speed = nonzero(js::hypot(b.vx, b.vy));
+        let (px, py) = (-b.vy / speed, b.vx / speed);
+        // Away from the line the shot is on.
+        let side = if (jb.x - b.x) * px + (jb.y - b.y) * py >= 0.0 {
+            1.0
+        } else {
+            -1.0
+        };
+        let jm = &mut self.jumpers[j];
+        jm.b.vx += px * side * DODGE_IMPULSE;
+        jm.b.vy += py * side * DODGE_IMPULSE;
+    }
+
     /// Advances rival jumper `j` one step: steering, hooking cargo and firing.
     pub(crate) fn update_jumper(&mut self, j: usize, dt: f64) {
         {
@@ -145,6 +191,8 @@ impl World {
             }
             return;
         }
+
+        self.jumper_dodge(j, dt);
 
         // Hunters ignore the cargo: circle the tug tightly and keep firing.
         // A jumper giving covering fire to a latched wingmate does the same.

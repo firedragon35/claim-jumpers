@@ -274,14 +274,16 @@ pub const ENGINE_STRAFE_HEAT: [f64; 4] = [1.0, 0.85, 0.7, 0.55];
 pub const ARMOR_HP: [f64; 4] = [0.0, 25.0, 50.0, 75.0];
 /// Tonnes added to the tug by armor level. Indexed by system level minus one.
 pub const ARMOR_MASS: [f64; 4] = [0.0, 0.4, 0.8, 1.2];
+/// Chance a missile loses its lock at launch, by missile level.
+pub const MISSILE_MISS_LV: [f64; 5] = [0.25, 0.2, 0.15, 0.1, 0.15];
 /// Multiplier on cannon damage by cannon level. Indexed by system level minus one.
-pub const CANNON_DAMAGE: [f64; 4] = [1.0, 1.1, 1.2, 1.35];
+pub const CANNON_DAMAGE: [f64; 5] = [1.0, 1.1, 1.2, 1.35, 1.5];
 /// Extra angled shots per trigger pull by cannon level. Indexed by system level minus one.
-pub const CANNON_SPREAD: [u32; 4] = [0, 2, 2, 4];
+pub const CANNON_SPREAD: [u32; 5] = [0, 2, 2, 4, 4];
 /// Multiplier on the interval between cannon shots (lower fires faster), by cannon level. Indexed by system level minus one.
-pub const CANNON_RATE: [f64; 4] = [1.0, 0.9, 0.8, 0.7];
+pub const CANNON_RATE: [f64; 5] = [1.0, 0.9, 0.8, 0.7, 0.7];
 /// Multiplier on heat per shot by cannon level. Indexed by system level minus one.
-pub const CANNON_HEAT: [f64; 4] = [1.0, 0.9, 0.8, 0.7];
+pub const CANNON_HEAT: [f64; 5] = [1.0, 0.9, 0.8, 0.7, 0.7];
 /// Missiles held in the rack by missile level; level 5 is the torpedo launcher. Indexed by system level minus one.
 pub const MISSILE_RACK_LV: [u32; 5] = [4, 5, 6, 8, 6];
 /// Reload time by missile level. Indexed by system level minus one.
@@ -346,7 +348,7 @@ impl System {
 
     /// The highest level this system can reach.
     pub fn max(self) -> u8 {
-        if self == System::Missiles {
+        if matches!(self, System::Missiles | System::Cannon) {
             5
         } else {
             SYSTEM_MAX
@@ -370,6 +372,13 @@ impl System {
             System::Armor if lv == 1 => format!("Stock hull ({SHIP_MAX_HP})"),
             System::Armor => format!("+{} hull, +{} t", ARMOR_HP[i], ARMOR_MASS[i]),
             System::Cannon if lv == 1 => "Stock cutter".to_owned(),
+            System::Cannon if lv == 5 => format!(
+                "Lasers: instant beams, +{} spread beams, +{}% damage, {}% faster, {}% less heat",
+                CANNON_SPREAD[i],
+                pct(CANNON_DAMAGE[i] - 1.0),
+                pct(1.0 - CANNON_RATE[i]),
+                pct(1.0 - CANNON_HEAT[i])
+            ),
             System::Cannon => format!(
                 "+{} spread shots, +{}% damage, {}% faster, {}% less heat",
                 CANNON_SPREAD[i],

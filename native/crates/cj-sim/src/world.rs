@@ -125,6 +125,17 @@ pub struct World {
     pub net_tear: f64,
     /// Damage done now is not the player's (a rogue sentry's shot).
     pub no_blame: bool,
+    /// Reactor radiation clouds, and whether the tug is in one.
+    pub clouds: Vec<RadCloud>,
+    pub in_cloud: bool,
+    /// Seconds until the next wanted star fades.
+    pub wanted_cool_t: f64,
+    /// Seconds until a new set of refinery charges arrives.
+    pub charge_respawn_t: f64,
+    /// Rival kills this shift by method, and the habit the crews have adapted to.
+    pub habit_kills: crate::career::Habits,
+    pub rival_counter: Option<crate::career::Habit>,
+    pub(crate) intel_told: bool,
     pub vault_opened: bool,
     /// The money side of the opposition, settled at the end of the shift.
     pub impounded: bool,
@@ -243,6 +254,13 @@ impl World {
             collector_from: 2,
             net_tear: 1.0,
             no_blame: false,
+            clouds: Vec::new(),
+            in_cloud: false,
+            wanted_cool_t: WANTED_COOLDOWN,
+            charge_respawn_t: crate::opposition::CHARGE_RESPAWN_TIME,
+            habit_kills: Default::default(),
+            rival_counter: None,
+            intel_told: false,
             vault_opened: false,
             impounded: false,
             impound_fee: 0.0,
@@ -312,6 +330,7 @@ impl World {
         w.grudge = c.grudge + if bad { 2.0 } else { 0.0 };
         w.rivals_good = tier(c.rep.rivals) == Tier::Good;
         w.career = Some(c.clone());
+        w.rival_counter = c.habits.dominant();
         w.setup_career_field(c);
         w.setup_opposition();
         w.start_shift();
@@ -580,6 +599,8 @@ impl World {
         self.update_bay(dt);
         self.update_tutorial(dt);
         self.update_events(dt);
+        self.update_wanted_cooldown(dt);
+        self.update_rival_intel();
         self.update_opposition_spawns(dt);
         self.update_spawns(dt);
         self.shake = (self.shake - dt * 30.0).max(0.0);
@@ -828,6 +849,7 @@ impl World {
                     life: BULLET_LIFE,
                     dmg: mods.cannon_dmg,
                     slug: false,
+                    laser: mods.laser,
                     ..Bullet::default()
                 });
             }
@@ -843,6 +865,7 @@ impl World {
                         life: BULLET_LIFE,
                         dmg: mods.cannon_dmg,
                         slug: false,
+                        laser: mods.laser,
                         ..Bullet::default()
                     });
                 }
@@ -1027,6 +1050,8 @@ impl World {
             self.collector_queue.push(self.t + 20.0);
         }
         self.explosion_fx(x, y, 150.0, Tint::Hazard);
+        // The shockwave. Not the player's kills: dying near a sheriff earns no stars.
+        self.without_blame(|w| w.explode(x, y, TUG_WRECK_BLAST_RADIUS, 0.0));
         self.shake = 18.0;
         self.sfx(Sfx::Boom);
         self.radio(Radio::Dead, true, false);

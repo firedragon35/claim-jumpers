@@ -92,6 +92,12 @@ pub enum Sfx {
 /// Lines Marge can say (the radio keys in src/js/04-dispatcher-radio.js).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Radio {
+    /// Entering a radiation cloud.
+    Radiation,
+    /// The crews have adapted to how the player fights.
+    Intel,
+    /// A new set of refinery charges has arrived.
+    ChargesRestocked,
     Start,
     Hook,
     Heavy,
@@ -259,6 +265,13 @@ pub enum Event {
         y: f64,
         text: String,
         tint: Tint,
+    },
+    /// A laser beam from (x0, y0) to where it stopped.
+    Laser {
+        x0: f64,
+        y0: f64,
+        x1: f64,
+        y1: f64,
     },
     /// Controller rumble: strength 0..1 and duration in milliseconds.
     Rumble {

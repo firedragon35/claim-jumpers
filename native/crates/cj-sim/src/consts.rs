@@ -175,6 +175,42 @@ pub const REACTOR_BLAST_DAMAGE: f64 = 45.0;
 /// Seconds between a reactor priming and blowing, so chain reactions
 /// ripple outward instead of recursing.
 pub const REACTOR_FUSE: f64 = 0.05;
+/// Seconds a reactor's radiation cloud lasts.
+pub const RAD_CLOUD_TIME: f64 = 25.0;
+/// Radius of the radiation cloud: the reach of the blast that made it.
+pub const RAD_CLOUD_RADIUS: f64 = REACTOR_BLAST_RADIUS;
+/// Hull damage per second to the tug inside a cloud (overlaps don't stack).
+pub const RAD_HULL_DPS: f64 = 3.0;
+/// Damage per second to other ships inside a cloud.
+pub const RAD_SHIP_DPS: f64 = 0.5;
+/// Reach of the shockwave when the tug is wrecked.
+pub const TUG_WRECK_BLAST_RADIUS: f64 = 200.0;
+/// Seconds without pursuit that take one wanted star off.
+pub const WANTED_COOLDOWN: f64 = 20.0;
+/// How far a laser beam reaches, in px, and the size of each check along it.
+pub const LASER_RANGE: f64 = BULLET_SPEED * BULLET_LIFE;
+pub const LASER_STEP: f64 = 8.0;
+/// Seconds a rival looks ahead for incoming shots.
+pub const DODGE_LOOK: f64 = 0.35;
+/// How close a shot must pass, beyond the hull, to be worth dodging.
+pub const DODGE_MARGIN: f64 = 16.0;
+/// Sideways speed of a dodge, in px/s, and the seconds between attempts.
+pub const DODGE_IMPULSE: f64 = 260.0;
+pub const DODGE_COOLDOWN: f64 = 1.4;
+/// Extra dodge chance per grudge stage.
+pub const DODGE_PER_STAGE: f64 = 0.05;
+/// Tracking of a missile that lost its lock (1 is a clean lock).
+pub const MISSILE_WILD_TRACKING: f64 = 0.2;
+/// Kills needed, and share of them, before the crews adapt to a habit.
+pub const HABIT_MIN_KILLS: f64 = 8.0;
+pub const HABIT_SHARE: f64 = 0.5;
+/// Share of the habit tally carried into the next shift.
+pub const HABIT_KEEP: f64 = 0.7;
+/// What a habit's counter is worth: extra dodge chance, the share of a cargo
+/// smash that lands, and extra chance a missile loses its lock.
+pub const HABIT_DODGE_BONUS: f64 = 0.2;
+pub const HABIT_SMASH_MUL: f64 = 0.7;
+pub const HABIT_MISSILE_MISS: f64 = 0.15;
 /// Closing speed at which volatile cargo primes on impact.
 pub const VOLATILE_IMPACT: f64 = 400.0;
 /// Shove a blast gives a body of mass 1 at its centre, px/s.
