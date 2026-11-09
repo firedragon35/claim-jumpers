@@ -473,3 +473,15 @@ fn cargo_taken_in_an_arrest_counts_as_lost() {
     w.arrest(0);
     assert_eq!(w.stats.lost, cargo);
 }
+
+#[test]
+fn wrecked_jaws_are_tallied_even_in_a_no_blame_blast() {
+    use cj_sim::opposition::RefineryState;
+    let c = Career::new(Mode::Standard);
+    let mut w = quiet(&c, Rng::Constant(0.5));
+    w.spawn_refinery();
+    w.refinery.as_mut().expect("spawned").state = RefineryState::Hungry;
+    w.no_blame = true;
+    w.hurt_jaws(999.0);
+    assert_eq!(w.kills.jaws, 1);
+}

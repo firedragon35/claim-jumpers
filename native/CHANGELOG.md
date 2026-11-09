@@ -14,7 +14,8 @@ Golden traces are re-recorded from browser 1.0.7.
 
 - Rivals, drones and collectors crashing into rocks no longer earn bounties,
   grudge or tally. Nor do reactors you didn't set off: one knocked while not
-  towed or thrown, or shot by enemy fire.
+  towed or thrown, or shot by enemy fire. Wrecked Kessler jaws always count on
+  the kill tally, as in the browser.
 - A blast or torpedo no longer also hits the fragments it just made, so
   boulders split instead of vanishing.
 - A crab on the hull lets go of the cargo it crawled off, so banking that

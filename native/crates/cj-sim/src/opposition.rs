@@ -833,7 +833,8 @@ impl World {
         r.state = RefineryState::Wrecked;
         r.hunger = 0.0;
         let r = r.clone();
-        self.count_kill(|k| k.jaws += 1);
+        // Always tallied, even in a no-blame blast, as the browser's wreckJaws does.
+        self.kills.jaws += 1;
         let (mx, my) = r.maw();
         for kind in [
             ItemType::Engine,
