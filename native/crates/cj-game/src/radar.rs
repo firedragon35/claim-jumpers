@@ -189,14 +189,19 @@ pub fn indicators(look: &Look, w: &World, view: (f32, f32), dpi: f32) {
         }
     }
     for j in &w.jumpers {
-        if !s.alive || js::hypot(j.b.x - s.b.x, j.b.y - s.b.y) < 2600.0 {
+        if (!s.alive || js::hypot(j.b.x - s.b.x, j.b.y - s.b.y) < 2600.0) && sees(w, j.b.x, j.b.y) {
             arrow(j.b.x, j.b.y, col::JUMPER, "", 0.0);
         }
     }
     for co in &w.collectors {
-        arrow(co.b.x, co.b.y, col::COLLECTOR, "", 0.0);
+        if sees(w, co.b.x, co.b.y) {
+            arrow(co.b.x, co.b.y, col::COLLECTOR, "", 0.0);
+        }
     }
     for sh in &w.sheriffs {
+        if !sees(w, sh.b.x, sh.b.y) {
+            continue;
+        }
         let chasing = sh.state == SheriffState::Pursuit;
         let rgb = if chasing && pursuit_blink() {
             col::DANGER

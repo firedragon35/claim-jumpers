@@ -9,6 +9,7 @@
 use crate::controls::Device;
 use crate::fx::{Fx, Kind};
 use crate::look::{col, rgba, text_centered, Look};
+use crate::settings::{key_label, Bind, Settings};
 use crate::tug;
 use cj_sim::consts::*;
 use cj_sim::entities::{Crab, Item, Jumper, Rock, ShapePt, Wreck};
@@ -943,7 +944,14 @@ fn js_num(v: f64) -> String {
 }
 
 /// The dashed ring and label over the piece the claw would grab.
-fn draw_hook_target(look: &Look, w: &World, t: f32, device: Device, scale: f32) {
+fn draw_hook_target(
+    look: &Look,
+    w: &World,
+    t: f32,
+    device: Device,
+    settings: &Settings,
+    scale: f32,
+) {
     let Some(i) = w.find_hook_target() else {
         return;
     };
@@ -961,7 +969,11 @@ fn draw_hook_target(look: &Look, w: &World, t: f32, device: Device, scale: f32) 
         2.0,
         crate::look::hex(c),
     );
-    let key = if device == Device::Pad { "Y" } else { "E" };
+    let key = if device == Device::Pad {
+        "Y".to_owned()
+    } else {
+        key_label(&settings.codes_for(Bind::Hook)[0])
+    };
     let line1 = if too_heavy {
         "TOO HEAVY".to_owned()
     } else {
@@ -1134,6 +1146,8 @@ pub struct Scene<'a> {
     /// Visual-only randomness (flame flicker, shake).
     pub rng: &'a mut Rng,
     pub device: Device,
+    /// For the key names in the net and hook prompts.
+    pub settings: &'a Settings,
     /// Logical viewport size and the display's pixel ratio.
     pub view: (f32, f32),
     pub dpi: f32,
@@ -1257,7 +1271,7 @@ pub fn render(sc: Scene) {
     if sc.show_tug {
         draw_ship(sc.look, w, t, sc.rng, sc.paint);
         draw_partner(sc.look, w, t, sc.rng, scale);
-        crate::foes::net_on_ship(sc.look, w, t, sc.device, scale);
+        crate::foes::net_on_ship(sc.look, w, t, sc.device, sc.settings, scale);
         crate::foes::cuff_meter(sc.look, w, t, scale);
     }
     draw_particles(sc.look, sc.fx, visible, || draw_shots(sc.look, w));
@@ -1274,7 +1288,7 @@ pub fn render(sc: Scene) {
         );
     }
     if sc.playing && !w.shift_over {
-        draw_hook_target(sc.look, w, t, sc.device, scale);
+        draw_hook_target(sc.look, w, t, sc.device, sc.settings, scale);
     }
 
     // Screen-space overlays.

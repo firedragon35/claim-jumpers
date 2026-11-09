@@ -5,7 +5,7 @@ A native Rust port of Claim Jumpers for Windows 10 and 11. The browser game
 reference implementation; the port must match its gameplay, rules,
 controls, balance and look unless a change is explicitly approved.
 
-**Status: Milestone 6, release 1.0.3 (all systems ported, packaged for Windows; history in [CHANGELOG.md](CHANGELOG.md)).** A career of
+**Status: Milestone 6, release 1.0.4 (all systems ported, packaged for Windows; history in [CHANGELOG.md](CHANGELOG.md)).** A career of
 five-minute shifts: fly the tug, tow and fight for salvage, and bank it at
 the carrier, against rival crews, debt collectors who net and tow the tug
 (or confiscate a fat load, or impound it), the law (wanted stars, patrols,
@@ -257,7 +257,7 @@ built; run from this repository's root, with `CJ_BROWSER_REPO` set to that
 checkout's path):
 
 ```bash
-docker run --rm -v "$PWD:/work" -v "$CJ_BROWSER_REPO:/browser" -e CJ_BROWSER_REPO=/browser -v /browser/tests/node_modules -w /browser/tests mcr.microsoft.com/playwright:v1.49.1-noble sh -c "npm ci --no-audit --no-fund && node /work/native/tools/golden/export.mjs && node /work/native/tools/golden/career.mjs"
+docker run --rm -v "$PWD:/work" -v "$CJ_BROWSER_REPO:/browser" -e CJ_BROWSER_REPO=/browser -v /browser/tests/node_modules -w /browser/tests mcr.microsoft.com/playwright:v1.65.0-noble sh -c "npm ci --no-audit --no-fund && node /work/native/tools/golden/export.mjs && node /work/native/tools/golden/career.mjs"
 ```
 
 ## Known differences from the browser version

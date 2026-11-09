@@ -125,7 +125,8 @@ impl World {
                     b.life = 0.0;
                     self.burst(b.x, b.y, 5, Tint::Danger, 100.0);
                     if self.item_hit(i, 1.0) {
-                        self.prime_reactor(i);
+                        // Enemy fire, so the blast isn't the player's.
+                        self.prime_reactor_as(i, true);
                     }
                     break;
                 }
@@ -513,9 +514,16 @@ impl World {
     /// Reactors blow on a short fuse so chain reactions ripple instead of
     /// recursing.
     pub fn prime_reactor(&mut self, i: usize) {
+        let no_blame = self.no_blame;
+        self.prime_reactor_as(i, no_blame);
+    }
+
+    /// Prime reactor `i`; `no_blame` marks a blast the player didn't set off.
+    pub fn prime_reactor_as(&mut self, i: usize, no_blame: bool) {
         let it = &mut self.items[i];
         if !it.dead && it.fuse <= 0.0 {
             it.fuse = REACTOR_FUSE;
+            it.no_blame = no_blame;
         }
     }
 
@@ -525,8 +533,13 @@ impl World {
             return;
         }
         let (x, y) = (self.items[i].b.x, self.items[i].b.y);
+        let no_blame = self.items[i].no_blame;
         self.remove_item(i);
-        self.explode(x, y, REACTOR_BLAST_RADIUS, REACTOR_BLAST_DAMAGE);
+        if no_blame {
+            self.without_blame(|w| w.explode(x, y, REACTOR_BLAST_RADIUS, REACTOR_BLAST_DAMAGE));
+        } else {
+            self.explode(x, y, REACTOR_BLAST_RADIUS, REACTOR_BLAST_DAMAGE);
+        }
         self.radio(Radio::Boom, true, false);
     }
 
@@ -553,8 +566,10 @@ impl World {
             b.vx += a.cos() * imp;
             b.vy += a.sin() * imp;
         };
+        // Fixed first: breaking a rock appends fragments this blast must not hit.
+        let rocks = self.rocks.len();
         let mut i = 0;
-        while i < self.rocks.len() {
+        while i < rocks {
             let f = falloff(&self.rocks[i].b);
             if f > 0.0 {
                 shove(&mut self.rocks[i].b, f);

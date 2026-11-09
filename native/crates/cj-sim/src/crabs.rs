@@ -102,6 +102,8 @@ impl World {
                         let off_a = self.rng.range(0.0, TAU);
                         let cr = &mut self.crabs[c];
                         cr.state = CrabState::Latched;
+                        // No host once on the hull: banking that cargo must not kill it.
+                        cr.host = None;
                         cr.off_a = off_a;
                         self.radio(Radio::CrabHull, true, false);
                     } else {

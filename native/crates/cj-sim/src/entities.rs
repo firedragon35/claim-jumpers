@@ -196,6 +196,8 @@ pub struct Item {
     pub thrown_t: f64,
     /// Seconds until a primed reactor blows; 0 when not primed.
     pub fuse: f64,
+    /// The player did not set this reactor off, so its blast is not credited.
+    pub no_blame: bool,
     /// The rival (jumper id) dragging this item off, if any.
     pub hooked_by: Option<u32>,
     /// Seconds until a towed rogue core next tries to zap the tug.
@@ -285,6 +287,7 @@ pub fn make_item(
         tension: 0.0,
         thrown_t: 0.0,
         fuse: 0.0,
+        no_blame: false,
         hooked_by: None,
         zap_t: 1.0,
         shape,

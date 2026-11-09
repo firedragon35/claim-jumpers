@@ -336,7 +336,10 @@ impl World {
             Handle::Item(i) => {
                 // Volatile salvage primes on a hard hit instead of dealing damage.
                 if self.items[i].def().volatile && rel > VOLATILE_IMPACT {
-                    self.prime_reactor(i);
+                    // A hard knock is the player's doing only if they towed or threw it.
+                    let it = &self.items[i];
+                    let not_yours = !(it.towed || it.thrown_t > 0.0);
+                    self.prime_reactor_as(i, not_yours);
                     return;
                 }
                 let me_b = self.items[i].b;
@@ -397,17 +400,17 @@ impl World {
             }
             Handle::Jumper(j) => {
                 if matches!(other, Handle::Rock(_) | Handle::Wreck(_)) && rel > 220.0 {
-                    self.hurt_jumper(j, 1.0, None);
+                    self.without_blame(|w| w.hurt_jumper(j, 1.0, None));
                 }
             }
             Handle::Drone(d) => {
                 if matches!(other, Handle::Rock(_) | Handle::Wreck(_)) && rel > 220.0 {
-                    self.hurt_drone(d, 1.0);
+                    self.without_blame(|w| w.hurt_drone(d, 1.0));
                 }
             }
             Handle::Collector(c) => {
                 if matches!(other, Handle::Rock(_) | Handle::Wreck(_)) && rel > 220.0 {
-                    self.hurt_collector(c, 0.5, None);
+                    self.without_blame(|w| w.hurt_collector(c, 0.5, None));
                 }
             }
             Handle::Rock(_)

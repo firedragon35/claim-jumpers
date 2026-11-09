@@ -553,12 +553,13 @@ impl World {
 
     /// Places the refinery 1,700 to 2,000 px from the carrier, away from the bay, with a random drift and spin.
     pub fn spawn_refinery(&mut self) {
-        // Far enough from the carrier that the jaws can never reach the bay.
+        // Far enough from the carrier that the jaws can never reach the bay. The
+        // drift is tangential, so the station doesn't close on the carrier.
         let a = self.rng.range(0.0, TAU);
         let d = self.rng.range(1700.0, 2000.0);
         let x = (CARRIER_X + a.cos() * d).clamp(600.0, WORLD_W - 600.0);
         let y = (CARRIER_Y + a.sin() * d).clamp(600.0, WORLD_H - 600.0);
-        let da = self.rng.range(0.0, TAU);
+        let da = a + if self.rng.next() < 0.5 { 1.0 } else { -1.0 } * (PI / 2.0);
         let drift = 6.0;
         let angle = self.rng.range(0.0, TAU);
         let spin = 0.05 * if self.rng.next() < 0.5 { 1.0 } else { -1.0 };
@@ -1891,7 +1892,7 @@ impl World {
     /// Arrested. The fine (FINE_PER_STAR per star) comes out of the cargo
     /// on your line first, then this shift's earnings; the record resets
     /// and the tug goes back to the bay. The shift goes on.
-    fn arrest(&mut self, k: usize) {
+    pub fn arrest(&mut self, k: usize) {
         // Every unit stands down once someone has you.
         for u in &mut self.sheriffs {
             u.state = SheriffState::Leave;
@@ -1916,7 +1917,7 @@ impl World {
         self.banked -= from_earnings;
         self.fines += from_cargo + from_earnings;
         self.fine_from_cargo += from_cargo;
-        self.seized += cargo;
+        self.stats.lost += cargo;
         self.arrests += 1;
         self.wanted = 0;
         if self.ship.net.is_some() {
@@ -2319,8 +2320,10 @@ impl World {
                 TORPEDO_SPLASH_DAMAGE * (1.0 - d.max(0.0) / TORPEDO_SPLASH),
             );
         }
+        // Fixed first: breaking a rock appends fragments this blast must not hit.
+        let rocks = self.rocks.len();
         let mut r = 0;
-        while r < self.rocks.len() {
+        while r < rocks {
             let rk = &self.rocks[r];
             if !rk.dead && js::dist(rk.b.x, rk.b.y, mx, my) < TORPEDO_SPLASH + rk.b.r {
                 self.damage_rock(r, 2.0);

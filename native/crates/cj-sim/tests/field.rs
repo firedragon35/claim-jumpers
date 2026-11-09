@@ -6,6 +6,7 @@
 
 use cj_sim::career::{Career, Mode};
 use cj_sim::consts::*;
+use cj_sim::entities::{make_crab, make_rock_drifting, CrabState};
 use cj_sim::field::*;
 use cj_sim::items::ItemType;
 use cj_sim::parts::Part;
@@ -348,4 +349,127 @@ fn the_camera_frames_both_tugs() {
     let base = (VIEW.0.min(VIEW.1) / 900.0).clamp(0.5, 1.1);
     let want = base * 750.0 / gap;
     assert!((w.cam.zoom - want).abs() < 0.01, "{} vs {want}", w.cam.zoom);
+}
+
+/// A quiet field with one rival, nearly dead, next to (x, y).
+fn with_frail_rival(x: f64, y: f64) -> World {
+    let c = Career::new(Mode::Standard);
+    let mut w = quiet(&c, Rng::Constant(0.5));
+    w.rocks.clear();
+    w.wrecks.clear();
+    let mut j = w.new_jumper(x, y, Some(Variant::Skiff));
+    j.hp = 0.1;
+    w.jumpers.push(j);
+    w
+}
+
+fn no_credit_taken(w: &World) {
+    assert_eq!(w.stats.jumpers, 0, "no kill on the shift report");
+    assert_eq!(w.kills.skiff, 0, "no kill on the tally");
+    assert_eq!(w.grudge, 0.0, "no grudge");
+    assert_eq!(w.bounties, 0.0, "no bounty");
+}
+
+#[test]
+fn a_rival_crashing_into_a_rock_is_not_your_kill() {
+    let (x, y) = (BAY_X - 900.0, BAY_Y + 900.0);
+    let mut w = with_frail_rival(x, y);
+    let rock = make_rock_drifting(&mut w.rng, 3, x + 30.0, y);
+    w.rocks.push(rock);
+    w.jumpers[0].b.vx = 1500.0;
+    for _ in 0..3 {
+        step(&mut w);
+    }
+    assert!(w.jumpers.is_empty(), "the crash killed it");
+    no_credit_taken(&w);
+}
+
+#[test]
+fn only_a_reactor_you_set_off_earns_the_kill() {
+    let (x, y) = (BAY_X - 900.0, BAY_Y + 900.0);
+    for blamed in [false, true] {
+        let mut w = with_frail_rival(x, y);
+        let it = w.new_item(ItemType::Reactor, x + 80.0, y, 0.0, 0.0);
+        w.items.push(it);
+        let i = w.items.len() - 1;
+        if blamed {
+            w.prime_reactor(i);
+        } else {
+            w.prime_reactor_as(i, true);
+        }
+        for _ in 0..10 {
+            step(&mut w);
+        }
+        assert!(w.jumpers.is_empty(), "the blast killed it");
+        if blamed {
+            assert_eq!(w.stats.jumpers, 1);
+        } else {
+            no_credit_taken(&w);
+        }
+    }
+}
+
+#[test]
+fn a_blast_splits_a_boulder_without_erasing_the_fragments() {
+    let c = Career::new(Mode::Standard);
+    let mut w = quiet(&c, Rng::Constant(0.5));
+    w.rocks.clear();
+    let (x, y) = (BAY_X - 900.0, BAY_Y + 900.0);
+    let mut r = make_rock_drifting(&mut w.rng, 3, x, y);
+    r.hp = 1.0;
+    w.rocks.push(r);
+    w.explode(x, y, 230.0, 0.0);
+    let alive = w.rocks.iter().filter(|r| !r.dead).count();
+    assert!(alive >= 2, "fragments survive: {alive}");
+}
+
+#[test]
+fn a_crab_on_the_hull_lets_go_of_its_cargo() {
+    use cj_sim::Action;
+    let c = Career::new(Mode::Standard);
+    let mut w = quiet(&c, Rng::Constant(0.5));
+    w.ship.angle = 0.0;
+    let (sx, sy) = (w.ship.b.x, w.ship.b.y);
+    let it = w.new_item(ItemType::Engine, sx + 60.0, sy, 0.0, 0.0);
+    let id = it.id;
+    w.items.push(it);
+    w.action(Action::Hook);
+    step(&mut w);
+    let mut crab = make_crab(&mut w.rng, CrabState::Crawl, Some(id), sx + 60.0, sy);
+    crab.t = 0.9999;
+    w.crabs.push(crab);
+    step(&mut w);
+    assert_eq!(w.crabs[0].state, CrabState::Latched);
+    assert_eq!(w.crabs[0].host, None);
+}
+
+#[test]
+fn the_refinery_drifts_around_the_carrier_not_at_it() {
+    for seed in 1..40 {
+        let mut w = World::empty(Rng::seeded(seed), VIEW);
+        w.spawn_refinery();
+        let r = w.refinery.as_ref().expect("spawned");
+        let along = (r.b.x - CARRIER_X) * r.b.vx + (r.b.y - CARRIER_Y) * r.b.vy;
+        assert!(along.abs() < 1e-6, "seed {seed}: {along}");
+    }
+}
+
+#[test]
+fn cargo_taken_in_an_arrest_counts_as_lost() {
+    use cj_sim::Action;
+    let c = Career::new(Mode::Standard);
+    let mut w = quiet(&c, Rng::Constant(0.5));
+    w.ship.angle = 0.0;
+    let (sx, sy) = (w.ship.b.x, w.ship.b.y);
+    let it = w.new_item(ItemType::Engine, sx + 60.0, sy, 0.0, 0.0);
+    w.items.push(it);
+    w.action(Action::Hook);
+    step(&mut w);
+    let cargo = w.line_value();
+    assert!(cargo > 0.0);
+    w.wanted = 1;
+    w.spawn_sheriff(false);
+    w.sheriffs[0].shakedown = false;
+    w.arrest(0);
+    assert_eq!(w.stats.lost, cargo);
 }

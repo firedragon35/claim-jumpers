@@ -133,7 +133,6 @@ pub struct World {
     pub loan_credit: f64,
     pub fines: f64,
     pub fine_from_cargo: f64,
-    pub seized: f64,
     pub arrests: u32,
     /// The belt being worked and its condition this shift.
     pub belt: crate::field::Belt,
@@ -251,7 +250,6 @@ impl World {
             loan_credit: 0.0,
             fines: 0.0,
             fine_from_cargo: 0.0,
-            seized: 0.0,
             arrests: 0,
             belt: crate::field::Belt::Hollis,
             cond: crate::field::Condition::Normal,
@@ -937,6 +935,15 @@ impl World {
         if shield_up {
             self.sfx(Sfx::ShieldUp);
         }
+    }
+
+    /// Run `f` with any kill it causes left uncredited: no bounty, grudge,
+    /// wanted stars or tally (withoutBlame).
+    pub(crate) fn without_blame(&mut self, f: impl FnOnce(&mut World)) {
+        let was = self.no_blame;
+        self.no_blame = true;
+        f(self);
+        self.no_blame = was;
     }
 
     /// All hull damage funnels through here, so the difficulty scale applies once.

@@ -408,26 +408,23 @@ impl App {
         } else {
             self.store.save_career(c);
         }
-        let mut rep = match self.report.take() {
-            Some(r) => r,
-            None => Report::new(
-                Settlement {
-                    earned: 0.0,
-                    due: 0.0,
-                    contract: None,
-                    wage: 0.0,
-                    chain_note: String::new(),
-                    rep_delta: [0.0; 3],
-                    outcome: Outcome::Continue,
-                },
-                &self.world,
-                c,
-                self.bests.get(c.mode).unwrap_or(0.0),
-                false,
-            ),
-        };
-        rep.settlement.outcome = outcome;
-        rep.career = c.clone();
+        // No shift behind this report: blankShiftReport in the browser.
+        let mut rep = Report::new(
+            Settlement {
+                earned: 0.0,
+                due: 0.0,
+                contract: None,
+                wage: 0.0,
+                chain_note: String::new(),
+                rep_delta: [0.0; 3],
+                outcome,
+            },
+            &self.world,
+            c,
+            self.bests.get(c.mode).unwrap_or(0.0),
+            false,
+        );
+        rep.no_shift = true;
         self.report = Some(rep);
         self.open(Screen::Report);
     }
@@ -908,6 +905,7 @@ async fn main() {
             dpi,
             show_tug: app.screen != Screen::Title,
             playing: app.screen == Screen::Play,
+            settings: &app.settings,
             paint: app.profile.paint_colours(),
         });
         if matches!(app.screen, Screen::Play | Screen::Paused) {

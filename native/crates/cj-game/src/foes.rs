@@ -9,6 +9,7 @@ use crate::draw::{
     v, Xf,
 };
 use crate::look::{col, rgba, text_centered, Look};
+use crate::settings::{key_label, Bind, Settings};
 use cj_sim::opposition::*;
 use cj_sim::rng::Rng;
 use cj_sim::World;
@@ -342,7 +343,14 @@ pub fn net_mesh(x: f32, y: f32, r: f32, spin: f32, alpha: f32) {
 }
 
 /// The net wrapped over the tug, its integrity ring, and the prompt.
-pub fn net_on_ship(look: &Look, w: &World, t: f32, device: Device, scale: f32) {
+pub fn net_on_ship(
+    look: &Look,
+    w: &World,
+    t: f32,
+    device: Device,
+    settings: &Settings,
+    scale: f32,
+) {
     let s = &w.ship;
     let Some(net) = s.net.filter(|_| s.alive) else {
         return;
@@ -365,9 +373,11 @@ pub fn net_on_ship(look: &Look, w: &World, t: f32, device: Device, scale: f32) {
         .collect();
     polyline(&ring, false, 3.0, c(col::COLLECTOR));
     let keys = if device == Device::Pad {
-        "STICK ◀ ▶ ◀ ▶"
+        "STICK ◀ ▶ ◀ ▶".to_owned()
     } else {
-        "A ◀ D ▶ A ◀ D ▶"
+        let left = key_label(&settings.codes_for(Bind::Left)[0]);
+        let right = key_label(&settings.codes_for(Bind::Right)[0]);
+        format!("{left} ◀ {right} ▶ {left} ◀ {right} ▶")
     };
     let rgb = if (t * 8.0).sin() > 0.0 {
         col::COLLECTOR
@@ -473,7 +483,8 @@ pub fn cuff_meter(look: &Look, w: &World, t: f32, scale: f32) {
     let Some(sh) = w
         .sheriffs
         .iter()
-        .find(|x| x.state == SheriffState::Pursuit && x.cuff > 0.0)
+        .filter(|x| x.state == SheriffState::Pursuit && x.cuff > 0.0)
+        .max_by(|a, b| (a.cuff / a.cuff_time).total_cmp(&(b.cuff / b.cuff_time)))
         .filter(|_| s.alive)
     else {
         return;

@@ -576,6 +576,8 @@ pub struct Report {
     pub is_best: bool,
     /// The day of a daily challenge (its report reads differently).
     pub daily: Option<String>,
+    /// A payoff from the shop: no shift behind it, so its rows read "—".
+    pub no_shift: bool,
     /// The shift's highlight clip, and when the report opened (it loops).
     pub highlight: Option<crate::replay::Highlight>,
     pub shown_at: f64,
@@ -619,6 +621,7 @@ impl Report {
             best,
             is_best,
             daily: None,
+            no_shift: false,
             highlight: None,
             shown_at: get_time(),
         }
@@ -834,7 +837,8 @@ pub fn report(
         ("Jumpers scrapped", fmt_credits(f64::from(rep.jumpers))),
         ("Stolen / lost", cr(rep.lost)),
         ("Tugs wrecked", fmt_credits(f64::from(rep.deaths))),
-    ];
+    ]
+    .map(|(l, v)| (l, if rep.no_shift { "—".to_owned() } else { v }));
     for (i, (l, v)) in stats.iter().enumerate() {
         let sx = x + (i % 3) as f32 * 190.0;
         let sy = y + (i / 3) as f32 * 66.0;
@@ -960,6 +964,13 @@ pub fn report(
                 _ => (l, v, colr),
             })
             .collect()
+    } else if rep.no_shift {
+        rows.into_iter()
+            .map(|(l, v, colr)| match l {
+                "Wallet" | "Loan remaining" => (l, v, colr),
+                _ => (l, "—".to_owned(), col::TEXT),
+            })
+            .collect()
     } else {
         rows
     };
@@ -1017,7 +1028,9 @@ pub fn report(
     {
         act = Some(Act::ToMenu);
     }
-    let best = if rep.daily.is_some() {
+    let best = if rep.no_shift {
+        String::new()
+    } else if rep.daily.is_some() {
         format!("Your best today: {}", cr(rep.best))
     } else {
         format!(

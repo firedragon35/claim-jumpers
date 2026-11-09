@@ -449,3 +449,31 @@ fn sentries_need_a_mounted_drone_bay_with_room() {
     let w = World::for_career(Rng::seeded(1), (1280.0, 720.0), &c);
     assert_eq!(w.sentries.len(), SENTRY_MAX as usize);
 }
+
+#[test]
+fn offers_survive_a_reload_and_one_bad_entry_drops_the_set() {
+    let mut c = Career::new(Mode::Standard);
+    c.shift = 4;
+    c.ensure_offers(&mut Rng::seeded(3));
+    let back = Career::from_json(&c.to_json()).expect("loads");
+    assert_eq!(back.offers, c.offers);
+    assert_eq!(back.offers_shift, 4);
+
+    let mut raw: Value = serde_json::from_str(&c.to_json()).unwrap();
+    raw["offers"][1] = serde_json::json!({ "kind": "nope" });
+    let bad = Career::from_json(&raw.to_string()).expect("loads");
+    assert!(bad.offers.is_empty(), "the shop rolls a new set");
+}
+
+#[test]
+fn a_chain_step_and_a_matching_ordinary_offer_are_different_jobs() {
+    let mut c = Career::new(Mode::Standard);
+    let chain = chain_contract(Chain::HollisFreight, 0);
+    let mut ordinary = chain.clone();
+    ordinary.chain = None;
+    c.offers = vec![chain, ordinary.clone()];
+    c.contract = Some(ordinary);
+    c.contract_shift = c.shift;
+    assert!(!c.offer_taken(0));
+    assert!(c.offer_taken(1));
+}

@@ -231,8 +231,7 @@ pub struct Career {
     /// The accepted contract, and the shift it's for.
     pub contract: Option<Contract>,
     pub contract_shift: i32,
-    /// This shift's three offers and the shift they were drawn for (kept
-    /// in memory; a loaded career draws fresh ones, as the browser does).
+    /// This shift's three offers and the shift they were drawn for.
     pub offers: Vec<Contract>,
     pub offers_shift: i32,
     /// An open contract chain (its next step), and the chains finished.
@@ -878,39 +877,55 @@ impl Career {
                 .filter(|s| s.fract() == 0.0 && *s >= 0.0)? as usize;
             (s < ch.def().steps.len()).then_some((ch, s))
         };
-        // Contracts are rebuilt rather than trusted, and kept only if
-        // well-formed and still for the upcoming shift.
-        let shift_ok = raw.get("contractShift").and_then(Value::as_f64) == Some(f64::from(c.shift));
-        if let Some(k) = raw.get("contract").filter(|_| shift_ok) {
+        // Contracts are rebuilt rather than trusted: None unless well-formed.
+        let restore_contract = |k: &Value| -> Option<Contract> {
             if let Some((ch, s)) = chain_step(k.get("chain"), k.get("step")) {
-                c.contract = Some(chain_contract(ch, s));
-                c.contract_shift = c.shift;
-            } else if let Some(kind) = k
+                return Some(chain_contract(ch, s));
+            }
+            let kind = k
                 .get("kind")
                 .and_then(Value::as_str)
-                .and_then(ContractKind::from_key)
+                .and_then(ContractKind::from_key)?;
+            let number = |key: &str| k.get(key).and_then(Value::as_f64).filter(|v| v.is_finite());
+            let (n, reward) = (number("n")?, number("reward")?);
+            let cargo = k
+                .get("type")
+                .and_then(Value::as_str)
+                .and_then(crate::items::ItemType::from_key)
+                .filter(|t| DELIVER_COUNTS.iter().any(|d| d.0 == *t));
+            if kind == ContractKind::Deliver && cargo.is_none() {
+                return None;
+            }
+            Some(Contract {
+                kind,
+                n,
+                cargo,
+                reward: reward.min(20000.0),
+                chain: None,
+            })
+        };
+        // Both are kept only for the upcoming shift.
+        let this_shift =
+            |key: &str| raw.get(key).and_then(Value::as_f64) == Some(f64::from(c.shift));
+        if this_shift("contractShift") {
+            if let Some(k) = raw.get("contract").and_then(restore_contract) {
+                c.contract = Some(k);
+                c.contract_shift = c.shift;
+            }
+        }
+        // Offers stay fixed until the shift is played. One bad entry drops the set.
+        if this_shift("offersShift") {
+            if let Some(Value::Array(list)) = raw
+                .get("offers")
+                .filter(|o| o.as_array().is_some_and(|a| a.len() == 3))
             {
-                let n = k.get("n").and_then(Value::as_f64).filter(|v| v.is_finite());
-                let reward = k
-                    .get("reward")
-                    .and_then(Value::as_f64)
-                    .filter(|v| v.is_finite());
-                let cargo = k
-                    .get("type")
-                    .and_then(Value::as_str)
-                    .and_then(crate::items::ItemType::from_key)
-                    .filter(|t| DELIVER_COUNTS.iter().any(|d| d.0 == *t));
-                if let (Some(n), Some(reward)) = (n, reward) {
-                    if kind != ContractKind::Deliver || cargo.is_some() {
-                        c.contract = Some(Contract {
-                            kind,
-                            n,
-                            cargo,
-                            reward: reward.min(20000.0),
-                            chain: None,
-                        });
-                        c.contract_shift = c.shift;
-                    }
+                if let Some(offers) = list
+                    .iter()
+                    .map(&restore_contract)
+                    .collect::<Option<Vec<_>>>()
+                {
+                    c.offers = offers;
+                    c.offers_shift = c.shift;
                 }
             }
         }
@@ -1026,7 +1041,11 @@ impl Career {
         let (Some(c), Some(o)) = (&self.contract, self.offers.get(i)) else {
             return false;
         };
-        self.contract_shift == self.shift && c.kind == o.kind && c.n == o.n && c.cargo == o.cargo
+        self.contract_shift == self.shift
+            && c.kind == o.kind
+            && c.n == o.n
+            && c.cargo == o.cargo
+            && c.chain == o.chain
     }
 
     /// Accept offer `i`, or drop it if it's already accepted.

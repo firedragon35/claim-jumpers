@@ -5,6 +5,31 @@ format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the port uses [Semantic Versioning](https://semver.org/) as defined in
 [CLAUDE.md](CLAUDE.md#versioning).
 
+## [1.0.4] - 2026-11-09
+
+Brings the port in line with the browser game's 1.0.6 and 1.0.7 review fixes.
+Golden traces are re-recorded from browser 1.0.7.
+
+### Fixed
+
+- Rivals, drones and collectors crashing into rocks no longer earn bounties,
+  grudge or tally. Nor do reactors you didn't set off: one knocked while not
+  towed or thrown, or shot by enemy fire.
+- A blast or torpedo no longer also hits the fragments it just made, so
+  boulders split instead of vanishing.
+- A crab on the hull lets go of the cargo it crawled off, so banking that
+  cargo no longer kills it.
+- The refinery drifts around the carrier instead of possibly towards it.
+- Cargo taken in an arrest counts in the report's Stolen / lost figure.
+- Contract offers survive a restart instead of being rerolled.
+- A chain step and an ordinary offer with the same target no longer both show
+  as accepted.
+- Paying off the loan in the shop shows a blank report instead of the last
+  shift's figures and replay.
+- The net and hook prompts show rebound keys.
+- The cuff meter follows the sheriff closest to making the arrest.
+- Night-shift arrows no longer reveal contacts the radar can't see.
+
 ## [1.0.3] - 2026-11-09
 
 ### Fixed
