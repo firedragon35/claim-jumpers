@@ -31,6 +31,7 @@ pub enum SlotType {
 }
 
 impl SlotType {
+    /// The lower-case word for this slot type, used in shop messages.
     pub fn label(self) -> &'static str {
         match self {
             SlotType::Weapon => "weapon",
@@ -40,6 +41,7 @@ impl SlotType {
     }
 }
 
+/// The shop data for one part: its save key, name, slot type, price and descriptions.
 pub struct PartDef {
     /// Key in the browser's save file.
     pub key: &'static str,
@@ -53,6 +55,7 @@ pub struct PartDef {
     pub unique: bool,
 }
 
+/// Every part, in the shop catalogue's display order.
 pub const PARTS: [Part; 11] = [
     Part::Cannon,
     Part::Twin,
@@ -68,6 +71,7 @@ pub const PARTS: [Part; 11] = [
 ];
 
 impl Part {
+    /// The shop data for this part.
     pub fn def(self) -> &'static PartDef {
         use SlotType::*;
         const fn d(
@@ -179,6 +183,7 @@ impl Part {
         }
     }
 
+    /// Looks a part up by its save-file key; `None` for an unknown key.
     pub fn from_key(key: &str) -> Option<Part> {
         PARTS.into_iter().find(|p| p.def().key == key)
     }
@@ -192,6 +197,7 @@ pub struct Slot {
     pub label: &'static str,
 }
 
+/// The tug's hardpoints, in the order the career's `mounted` array uses.
 pub const SLOTS: [Slot; 5] = [
     Slot {
         key: "w1",
@@ -234,6 +240,7 @@ pub enum System {
     Drones,
 }
 
+/// Every upgradable system, in shop order.
 pub const SYSTEMS: [System; 6] = [
     System::Shield,
     System::Thrust,
@@ -246,32 +253,55 @@ pub const SYSTEMS: [System; 6] = [
 /// Price of going from level i+1 to i+2 (the fourth step only exists for
 /// the five-level missile rack).
 pub const SYSTEM_PRICES: [f64; 4] = [1500.0, 3000.0, 5000.0, 8000.0];
+/// Highest level of a system; the missile rack goes one higher (see `System::max`).
 pub const SYSTEM_MAX: u8 = 4;
 
+/// Shield capacity by shield level. Indexed by system level minus one.
 pub const SHIELD_CAP: [f64; 4] = [40.0, 60.0, 80.0, 100.0];
+/// Shield recharge per second by shield level. Indexed by system level minus one.
 pub const SHIELD_REGEN: [f64; 4] = [3.0, 4.0, 5.0, 6.0];
+/// Seconds after a hit before the shield recharges, by shield level. Indexed by system level minus one.
 pub const SHIELD_WAIT: [f64; 4] = [5.0, 4.5, 4.0, 3.5];
+/// Multiplier on engine thrust by engine level. Indexed by system level minus one.
 pub const ENGINE_THRUST: [f64; 4] = [1.0, 1.12, 1.24, 1.36];
+/// Multiplier on turn rate by engine level. Indexed by system level minus one.
 pub const ENGINE_TURN: [f64; 4] = [1.0, 1.06, 1.12, 1.18];
+/// Multiplier on side-thruster force by engine level. Indexed by system level minus one.
 pub const ENGINE_STRAFE: [f64; 4] = [1.0, 1.15, 1.3, 1.45];
+/// Multiplier on the heat strafing builds, by engine level. Indexed by system level minus one.
 pub const ENGINE_STRAFE_HEAT: [f64; 4] = [1.0, 0.85, 0.7, 0.55];
+/// Hull points added by armor level. Indexed by system level minus one.
 pub const ARMOR_HP: [f64; 4] = [0.0, 25.0, 50.0, 75.0];
+/// Tonnes added to the tug by armor level. Indexed by system level minus one.
 pub const ARMOR_MASS: [f64; 4] = [0.0, 0.4, 0.8, 1.2];
+/// Multiplier on cannon damage by cannon level. Indexed by system level minus one.
 pub const CANNON_DAMAGE: [f64; 4] = [1.0, 1.1, 1.2, 1.35];
+/// Extra angled shots per trigger pull by cannon level. Indexed by system level minus one.
 pub const CANNON_SPREAD: [u32; 4] = [0, 2, 2, 4];
+/// Multiplier on the interval between cannon shots (lower fires faster), by cannon level. Indexed by system level minus one.
 pub const CANNON_RATE: [f64; 4] = [1.0, 0.9, 0.8, 0.7];
+/// Multiplier on heat per shot by cannon level. Indexed by system level minus one.
 pub const CANNON_HEAT: [f64; 4] = [1.0, 0.9, 0.8, 0.7];
+/// Missiles held in the rack by missile level; level 5 is the torpedo launcher. Indexed by system level minus one.
 pub const MISSILE_RACK_LV: [u32; 5] = [4, 5, 6, 8, 6];
+/// Reload time by missile level. Indexed by system level minus one.
 pub const MISSILE_RELOAD_LV: [f64; 5] = [3.0, 2.6, 2.2, 1.8, 2.4];
+/// Damage per missile (per torpedo at level 5) by missile level. Indexed by system level minus one.
 pub const MISSILE_DAMAGE_LV: [f64; 5] = [2.5, 3.0, 3.0, 3.6, 9.0];
+/// Missiles fired per volley by missile level. Indexed by system level minus one.
 pub const MISSILE_SALVO_LV: [u32; 5] = [1, 2, 2, 3, 2];
+/// Blast radius of a torpedo, in px.
 pub const TORPEDO_SPLASH: f64 = 120.0;
+/// Sentry drone hit points by firmware level. Indexed by system level minus one.
 pub const DRONE_HP_LV: [f64; 4] = [6.0, 8.0, 10.0, 13.0];
+/// Sentry drone shot damage by firmware level. Indexed by system level minus one.
 pub const DRONE_DAMAGE_LV: [f64; 4] = [0.6, 0.75, 0.9, 1.1];
+/// Seconds between sentry drone shots by firmware level. Indexed by system level minus one.
 pub const DRONE_FIRE_LV: [f64; 4] = [0.8, 0.7, 0.6, 0.5];
 
 /// Sentry drones: at most this many, at this price each.
 pub const SENTRY_MAX: u32 = 3;
+/// Price of one sentry drone, in credits.
 pub const SENTRY_PRICE: f64 = 900.0;
 
 /// The browser's `Math.round` on a percentage, for shop descriptions.
@@ -280,6 +310,7 @@ fn pct(x: f64) -> i64 {
 }
 
 impl System {
+    /// The system's key in the browser's save file.
     pub fn key(self) -> &'static str {
         match self {
             System::Shield => "shield",
@@ -291,6 +322,7 @@ impl System {
         }
     }
 
+    /// The system's name as the shop shows it.
     pub fn name(self) -> &'static str {
         match self {
             System::Shield => "Shield generator",
@@ -312,6 +344,7 @@ impl System {
         }
     }
 
+    /// The highest level this system can reach.
     pub fn max(self) -> u8 {
         if self == System::Missiles {
             5
@@ -386,6 +419,7 @@ impl Default for Levels {
 }
 
 impl Levels {
+    /// The current level of a system (1 is stock).
     pub fn get(&self, s: System) -> u8 {
         match s {
             System::Shield => self.shield,
@@ -397,6 +431,7 @@ impl Levels {
         }
     }
 
+    /// Sets a system's level, clamped to 1 through its maximum.
     pub fn set(&mut self, s: System, v: u8) {
         let v = v.clamp(1, s.max());
         match s {
@@ -433,6 +468,7 @@ pub struct TugClass {
 /// The starting loan (LOAN_START).
 pub const LOAN_START: f64 = 40000.0;
 
+/// The five tug classes in order. Paying off a loan trades up to the next one, with a bigger loan.
 #[rustfmt::skip]
 pub const TUG_CLASSES: [TugClass; 5] = [
     TugClass { name: "Second Mortgage", mk: "Mk I", loan: LOAN_START, hp: 0.0, shield: 0.0, thrust: 1.0, turn: 1.0, winch: 0.0, hull: 0x2a1d06, trim: 0xffb02e },

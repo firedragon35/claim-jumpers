@@ -11,17 +11,22 @@ pub const MAX_STEPS_PER_FRAME: u32 = 5;
 /// Longest real frame time fed to the accumulator, in seconds.
 pub const MAX_FRAME_DT: f64 = 0.1;
 
+/// Playfield width, in px.
 pub const WORLD_W: f64 = 5200.0;
+/// Playfield height, in px.
 pub const WORLD_H: f64 = 5200.0;
 /// Length of one shift, in seconds.
 pub const SHIFT_SECONDS: f64 = 300.0;
 
+/// Tug body mass, in tonnes.
 pub const SHIP_MASS: f64 = 3.0;
+/// Tug collision radius, in px.
 pub const SHIP_RADIUS: f64 = 18.0;
 /// Main engine force; acceleration is this divided by the tug's mass.
 pub const SHIP_THRUST: f64 = 960.0;
 /// Maximum turn rate with no load, rad/s.
 pub const SHIP_TURN: f64 = 3.4;
+/// Stock hull points; armor upgrades and the tug class add to this (see `mods`).
 pub const SHIP_MAX_HP: f64 = 100.0;
 /// Seconds of respawn invulnerability (and the start-of-shift grace).
 pub const SHIP_INVULN: f64 = 2.0;
@@ -92,11 +97,13 @@ pub const CARRIER_Y: f64 = WORLD_H / 2.0;
 /// The bay intake ring, on the carrier's port side.
 pub const BAY_X: f64 = CARRIER_X - 330.0;
 pub const BAY_Y: f64 = CARRIER_Y;
+/// Radius of the bay intake ring, in px; cargo that reaches it is banked.
 pub const BAY_R: f64 = 120.0;
 /// The bay's tractor reaches this many bay radii out.
 pub const BAY_TRACTOR_REACH: f64 = 2.2;
 /// Tractor acceleration at the ring, px/s², falling to 0 at the reach.
 pub const BAY_TRACTOR_PULL: f64 = 260.0;
+/// Distance from the bay centre inside which a parked tug is repaired and its shield recharges faster.
 pub const BAY_REPAIR_RANGE: f64 = 180.0;
 /// Hull points repaired per second inside BAY_REPAIR_RANGE.
 pub const BAY_REPAIR_RATE: f64 = 14.0;
@@ -121,6 +128,7 @@ pub const START_ITEMS: usize = 10;
 
 /// Seconds between cannon shots at cannon level 1.
 pub const FIRE_INTERVAL: f64 = 0.13;
+/// Speed of a cutter round, in px/s.
 pub const BULLET_SPEED: f64 = 950.0;
 /// Seconds a cutter round lives.
 pub const BULLET_LIFE: f64 = 0.85;
@@ -182,8 +190,10 @@ pub const CRAB_HULL_DPS: f64 = 4.0;
 pub const CRAB_SPIN_TO_SHAKE: f64 = 1.6;
 /// Engine force while any crab is latched (they chew the thruster housings).
 pub const CRAB_LATCHED_THRUST: f64 = 0.65;
+/// Crab body radius, in px.
 pub const CRAB_RADIUS: f64 = 9.0;
 
+/// Base rival hit points; the hull variant and grudge stage add to it.
 pub const JUMPER_HP: f64 = 4.0;
 /// A rival's pull while hauling, versus the tug's ~320 unloaded.
 pub const JUMPER_HAUL_ACCEL: f64 = 210.0;
@@ -197,6 +207,7 @@ pub const SCATTER_TIME: f64 = 4.0;
 /// From Hostile on, rivals this close to a latched one give covering fire.
 pub const COVER_RANGE: f64 = 900.0;
 pub const COVER_TIME: f64 = 5.0;
+/// Velocity damping of rival ships, 1/s.
 pub const JUMPER_DAMP: f64 = 0.5;
 /// A rival this far outside the field with your cargo has escaped.
 pub const JUMPER_ESCAPE_MARGIN: f64 = 150.0;
@@ -217,18 +228,27 @@ pub fn jumper_interval_for(shift: i32, t: f64) -> f64 {
 /// Rival hull variants (JUMPER_VARIANTS). Each multiplies the base jumper.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Variant {
+    /// Small, fast and fragile; slower to cut a line.
     Skiff,
+    /// The baseline hull: every multiplier is 1.
     Cutter,
+    /// Big, slow and tough; hauls hard and is quick to cut a line.
     Brute,
+    /// Fires two-bolt volleys and always hunts the tug; does not appear in the first stage.
     Gunship,
 }
 
+/// The numbers that make one rival hull variant different from the base jumper.
 pub struct VariantDef {
+    /// Name shown in the radio and report.
     pub name: &'static str,
+    /// Collision radius, in px.
     pub r: f64,
+    /// Body mass, in tonnes.
     pub mass: f64,
     /// Extra hit points over JUMPER_HP.
     pub hp: f64,
+    /// Multiplier on the rival's speed.
     pub speed: f64,
     /// Multiplier on JUMPER_HAUL_ACCEL.
     pub haul: f64,
@@ -242,6 +262,7 @@ pub struct VariantDef {
     /// the palette's jumper colour.
     pub hull: u32,
     pub stroke: Option<u32>,
+    /// Credits paid when this hull is scrapped.
     pub bounty: f64,
     /// Spawn weight at each rival stage (Business..Vendetta).
     pub weights: [f64; 4],
@@ -258,6 +279,7 @@ pub const VARIANTS: [Variant; 4] = [
 ];
 
 impl Variant {
+    /// The numbers for this hull variant.
     pub fn def(self) -> &'static VariantDef {
         const SKIFF: VariantDef = VariantDef {
             name: "Skiff",
@@ -333,12 +355,16 @@ impl Variant {
 }
 
 /// Rival grudge stages (RIVAL_STAGES), each reached at grudge `at`.
+/// One rung of the rivals' escalation ladder: how aggressive they are at a given grudge.
 pub struct RivalStage {
+    /// Stage name (Business, Annoyed, Hostile, Vendetta).
     pub name: &'static str,
     pub at: f64,
     /// Seconds between shots, random within the range.
     pub fire: (f64, f64),
+    /// Multiplier on rival speed.
     pub speed: f64,
+    /// Extra rival hit points.
     pub hp: f64,
     /// Share that come for the tug instead of the cargo.
     pub hunters: f64,
@@ -351,6 +377,7 @@ pub struct RivalStage {
     pub pack: bool,
 }
 
+/// The four stages in order of grudge, from Business to Vendetta.
 #[rustfmt::skip]
 pub const RIVAL_STAGES: [RivalStage; 4] = [
     RivalStage { name: "Business", at: 0.0, fire: (1.6, 2.4), speed: 1.0, hp: 0.0, hunters: 0.0, rate: 1.0, cap: 0.0, haul_fire: false, pack: false },
