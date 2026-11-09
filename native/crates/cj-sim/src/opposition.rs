@@ -215,6 +215,7 @@ pub struct LawTier {
     pub swat: bool,
 }
 
+/// The law's response for each wanted level; index 0 is one star.
 #[rustfmt::skip]
 pub const LAW_TIERS: [LawTier; 5] = [
     LawTier { name: "Sheriff", units: 1, hp: 14.0, speed: 430.0, fire: (1.4, 2.0), dmg: 3.0, stun: true, cuff: 3.0, swat: false },
@@ -224,6 +225,7 @@ pub const LAW_TIERS: [LawTier; 5] = [
     LawTier { name: "Galactic SWAT", units: 4, hp: 26.0, speed: 540.0, fire: (0.6, 0.9), dmg: 7.0, stun: false, cuff: 2.0, swat: true },
 ];
 
+/// The law's response for a star count (capped at `WANTED_MAX`); `None` when not wanted.
 pub fn law_tier(stars: u32) -> Option<&'static LawTier> {
     (stars >= 1).then(|| &LAW_TIERS[(stars.min(WANTED_MAX) - 1) as usize])
 }
@@ -252,6 +254,7 @@ pub struct Drone {
     pub dead: bool,
 }
 
+/// What a debt collector is doing.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CollectorState {
     /// Hold station off the tug and fire nets when lined up (or shadow it).
@@ -264,6 +267,7 @@ pub enum CollectorState {
     Leave,
 }
 
+/// A debt collector: shadows the tug, then nets and tows it when payment is at risk.
 #[derive(Clone, Debug)]
 pub struct Collector {
     pub id: u32,
@@ -310,6 +314,7 @@ pub struct NetHold {
     pub hp: f64,
 }
 
+/// What a sheriff (or other law unit) is doing.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SheriffState {
     Patrol,
@@ -317,6 +322,7 @@ pub enum SheriffState {
     Leave,
 }
 
+/// A law unit: sheriff, deputy, marshal or SWAT, depending on the wanted level.
 #[derive(Clone, Debug)]
 pub struct Sheriff {
     pub id: u32,
@@ -345,6 +351,7 @@ pub struct Sheriff {
     pub dead: bool,
 }
 
+/// A mining-crew tug that drills rocks and turns on the player if shot.
 #[derive(Clone, Debug)]
 pub struct Miner {
     pub id: u32,
@@ -376,6 +383,7 @@ pub enum Tgt {
     Jaws,
 }
 
+/// An auto-defense missile or torpedo in flight.
 #[derive(Clone, Debug)]
 pub struct Missile {
     pub x: f64,
@@ -388,6 +396,7 @@ pub struct Missile {
     pub torpedo: bool,
 }
 
+/// A sentry drone orbiting the tug; every survivor goes rogue when the tug is gone.
 #[derive(Clone, Debug)]
 pub struct Sentry {
     pub id: u32,
@@ -406,6 +415,7 @@ pub struct Sentry {
     pub dead: bool,
 }
 
+/// The stages of the Kessler refinery's vault and jaws.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RefineryState {
     /// Arrived, quiet; charges float nearby.
@@ -422,6 +432,7 @@ pub enum RefineryState {
     Wrecked,
 }
 
+/// One of the refinery's three vault sockets: its angle on the station and whether it holds a charge.
 #[derive(Clone, Copy, Debug)]
 pub struct Socket {
     pub a: f64,
@@ -429,6 +440,7 @@ pub struct Socket {
     pub spent: bool,
 }
 
+/// The Kessler refinery: a rotating station with a vault, security drones and processing jaws.
 #[derive(Clone, Debug)]
 pub struct Refinery {
     pub b: Body,
@@ -507,6 +519,7 @@ fn out_of_field(x: f64, y: f64, m: f64) -> bool {
 }
 
 impl World {
+    /// Hands out the next unique hostile id from the world's counter.
     pub(crate) fn fresh_id(&mut self) -> u32 {
         let id = self.next_id;
         self.next_id += 1;
@@ -520,6 +533,7 @@ impl World {
             .as_ref()
             .map_or(Tier::Neutral, |c| tier(c.rep.bank))
     }
+    /// The law's standing tier for the career being played (neutral with no career).
     pub(crate) fn standing_law(&self) -> Tier {
         self.career
             .as_ref()
@@ -537,6 +551,7 @@ impl World {
 
     /* ------------------------------ Refinery ------------------------------ */
 
+    /// Places the refinery 1,700 to 2,000 px from the carrier, away from the bay, with a random drift and spin.
     pub fn spawn_refinery(&mut self) {
         // Far enough from the carrier that the jaws can never reach the bay.
         let a = self.rng.range(0.0, TAU);
@@ -633,6 +648,7 @@ impl World {
         self.radio(Radio::Drones, true, false);
     }
 
+    /// Advances the refinery one step: drift and spin, then the logic for its current state.
     pub(crate) fn update_refinery(&mut self, dt: f64) {
         let Some(r) = self.refinery.as_mut() else {
             return;
@@ -795,6 +811,7 @@ impl World {
         self.radio(Radio::Vault, true, false);
     }
 
+    /// Damages the jaws by `n`; ignored unless they are awake (see `jaws_vulnerable`). Wrecks them at zero.
     pub fn hurt_jaws(&mut self, n: f64) {
         let Some(r) = self.refinery.as_mut() else {
             return;
@@ -1008,6 +1025,7 @@ impl World {
         });
     }
 
+    /// Advances refinery security drone `i` one step: orbiting the station and attacking.
     pub(crate) fn update_drone(&mut self, i: usize, dt: f64) {
         let r = self.refinery.as_ref().map(|r| r.b);
         let s = self.ship.b;
