@@ -11,6 +11,7 @@ use crate::rng::Rng;
 
 /* ------------------------------- Contracts ------------------------------ */
 
+/// The kinds of job a contract can ask for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ContractKind {
     Deliver,
@@ -21,6 +22,7 @@ pub enum ContractKind {
     Escort,
 }
 
+/// Every contract kind, in the browser's order.
 pub const CONTRACT_KINDS: [ContractKind; 6] = [
     ContractKind::Deliver,
     ContractKind::Bank,
@@ -31,6 +33,7 @@ pub const CONTRACT_KINDS: [ContractKind; 6] = [
 ];
 
 impl ContractKind {
+    /// The kind's key in the browser's save file.
     pub fn key(self) -> &'static str {
         match self {
             ContractKind::Deliver => "deliver",
@@ -41,6 +44,7 @@ impl ContractKind {
             ContractKind::Escort => "escort",
         }
     }
+    /// Looks a contract kind up by its save-file key; `None` if unknown.
     pub fn from_key(k: &str) -> Option<ContractKind> {
         CONTRACT_KINDS.into_iter().find(|c| c.key() == k)
     }
@@ -66,6 +70,7 @@ pub const DELIVER_COUNTS: [(ItemType, u32, &str); 4] = [
     (ItemType::Engine, 2, "engine blocks"),
 ];
 
+/// One contract: the job, its target and its reward.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Contract {
     pub kind: ContractKind,
@@ -148,11 +153,13 @@ pub enum Chain {
     SaltyDog,
 }
 
+/// Every contract chain.
 pub const CHAINS: [Chain; 2] = [Chain::HollisFreight, Chain::SaltyDog];
 /// Chains are offered from this shift, half the time a slot is free.
 pub const CHAIN_FROM_SHIFT: i32 = 3;
 pub const CHAIN_OFFER_CHANCE: f64 = 0.5;
 
+/// The fixed data of a contract chain: client, steps, rewards and the part it unlocks.
 pub struct ChainDef {
     pub key: &'static str,
     pub client: &'static str,
@@ -163,6 +170,7 @@ pub struct ChainDef {
 }
 
 impl Chain {
+    /// The fixed data for this chain.
     pub fn def(self) -> &'static ChainDef {
         use crate::parts::Part;
         const HOLLIS: ChainDef = ChainDef {
@@ -192,6 +200,7 @@ impl Chain {
             Chain::SaltyDog => &SALTY,
         }
     }
+    /// Looks a chain up by its save-file key; `None` if unknown.
     pub fn from_key(k: &str) -> Option<Chain> {
         CHAINS.into_iter().find(|c| c.def().key == k)
     }
@@ -220,11 +229,13 @@ pub enum Crew {
     Broker,
 }
 
+/// Every crew member, in hiring-screen order.
 pub const CREWS: [Crew; 4] = [Crew::Rigger, Crew::Adjuster, Crew::Fixer, Crew::Broker];
 /// The broker's sale price, and the adjuster's fee multiplier.
 pub const BROKER_RATE: f64 = 1.1;
 pub const ADJUSTER_FEES: f64 = 0.4;
 
+/// The fixed data of a crew member: who they are, their wage and their perk.
 pub struct CrewDef {
     pub key: &'static str,
     pub name: &'static str,
@@ -234,6 +245,7 @@ pub struct CrewDef {
 }
 
 impl Crew {
+    /// The fixed data for this crew member.
     pub fn def(self) -> &'static CrewDef {
         const RIGGER: CrewDef = CrewDef {
             key: "rigger",
@@ -270,6 +282,7 @@ impl Crew {
             Crew::Broker => &BROKER,
         }
     }
+    /// Looks a crew member up by key; `None` if unknown.
     pub fn from_key(k: &str) -> Option<Crew> {
         CREWS.into_iter().find(|c| c.def().key == k)
     }
@@ -277,6 +290,7 @@ impl Crew {
 
 /* ------------------------------ Belts ------------------------------ */
 
+/// The five belts the sector map offers, from the safest to the most dangerous.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Belt {
     Quiet,
@@ -286,6 +300,7 @@ pub enum Belt {
     Frontier,
 }
 
+/// Every belt, in sector-map order.
 pub const BELTS: [Belt; 5] = [
     Belt::Quiet,
     Belt::Hollis,
@@ -320,6 +335,7 @@ pub struct BeltDef {
 }
 
 impl Belt {
+    /// The fixed data for this belt.
     #[rustfmt::skip]
     pub fn def(self) -> &'static BeltDef {
         const QUIET: BeltDef = BeltDef { key: "quiet", name: "Quiet Drift", value: 0.75, rivals: 0.55, collectors: -1, lawless: false, grudge_floor: 0.0, event: None, unlock: 0,
@@ -340,6 +356,7 @@ impl Belt {
             Belt::Frontier => &FRONTIER,
         }
     }
+    /// Looks a belt up by its save-file key; `None` if unknown.
     pub fn from_key(k: &str) -> Option<Belt> {
         BELTS.into_iter().find(|b| b.def().key == k)
     }
@@ -347,6 +364,7 @@ impl Belt {
 
 /* ---------------------------- Belt conditions ---------------------------- */
 
+/// A belt's condition for one shift; `roll_conditions` rolls one per belt.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Condition {
     Normal,
@@ -358,6 +376,7 @@ pub enum Condition {
     Night,
 }
 
+/// Every condition, in the browser's order.
 pub const CONDITIONS: [Condition; 7] = [
     Condition::Normal,
     Condition::OreBoom,
@@ -392,6 +411,7 @@ pub struct ConditionDef {
 }
 
 impl Condition {
+    /// The fixed data for this condition.
     #[rustfmt::skip]
     pub fn def(self) -> &'static ConditionDef {
         const fn d(key: &'static str, name: &'static str, text: &'static str, weight: f64) -> ConditionDef {
@@ -414,6 +434,7 @@ impl Condition {
             Condition::Night => &NIGHT,
         }
     }
+    /// Looks a condition up by its save-file key; `None` if unknown.
     pub fn from_key(k: &str) -> Option<Condition> {
         CONDITIONS.into_iter().find(|c| c.def().key == k)
     }
@@ -471,7 +492,9 @@ pub enum Event {
 
 /// Seconds into the shift when the event can fire, and the ion storm's length.
 pub const EVENT_WINDOW: (f64, f64) = (80.0, 160.0);
+/// Seconds an ion storm keeps shields from recharging.
 pub const ION_STORM_TIME: f64 = 25.0;
+/// Names a boss crew can be given; one is picked at random.
 pub const BOSS_NAMES: [&str; 6] = [
     "\"Rust Queen\" Ivanna",
     "Big Sal Moreno",
@@ -480,6 +503,7 @@ pub const BOSS_NAMES: [&str; 6] = [
     "Mad Hattie Okonkwo",
     "Deacon Vrell",
 ];
+/// Multiplier on a rival jumper's hit points when it becomes a boss.
 pub const BOSS_HP_MUL: f64 = 4.0;
 
 /// The derelict freighter's hold.
@@ -499,7 +523,9 @@ pub const FREIGHTER_CONTENTS: [ItemType; 11] = [
 
 /* ------------------------------ Escort haulers ------------------------------ */
 
+/// Hit points of an escorted freight hauler.
 pub const HAULER_HP: f64 = 40.0;
+/// Cruising speed of an escorted hauler, in px/s.
 pub const HAULER_SPEED: f64 = 55.0;
 /// Distance from the bay that counts as delivered.
 pub const HAULER_ARRIVE: f64 = 220.0;
@@ -510,8 +536,11 @@ pub const ESCORT_CONTRACT_AT: f64 = 45.0;
 
 /* ------------------------------ Sealed holds ------------------------------ */
 
+/// Chance, each shift from `LOCKED_FROM_SHIFT`, that one wreck is sealed.
 pub const LOCKED_HOLD_CHANCE: f64 = 0.5;
+/// First shift that can have a sealed wreck.
 pub const LOCKED_FROM_SHIFT: i32 = 2;
+/// What a sealed wreck holds once it is opened.
 pub const LOCKED_CONTENTS: [ItemType; 8] = [
     ItemType::Ingot,
     ItemType::Ingot,
@@ -527,16 +556,22 @@ pub const KEYCARD_MIN_DIST: f64 = 1400.0;
 
 /* ------------------------------ Rogue cores ------------------------------ */
 
+/// Credits paid for selling one stored rogue core.
 pub const CORE_SELL: f64 = 900.0;
 /// Per second while towed, a core zaps the tug.
 pub const CORE_ZAP_CHANCE: f64 = 0.15;
+/// Damage to the tug from one core zap.
 pub const CORE_ZAP_DAMAGE: f64 = 4.0;
+/// Most rogue cores a career can store.
 pub const CORES_MAX: u32 = 9;
 
 /* ------------------------------ Night shifts ------------------------------ */
 
+/// How far the radar sees on a night shift, in px.
 pub const NIGHT_RADAR: f64 = 1100.0;
+/// Radius around the tug that stays fully lit on a night shift, in px.
 pub const NIGHT_LIGHT: f64 = 200.0;
+/// Radius at which the night darkness reaches full strength, in px.
 pub const NIGHT_FADE: f64 = 560.0;
 
 /* --------------------------------- Truces --------------------------------- */
