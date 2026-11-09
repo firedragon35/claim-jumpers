@@ -228,6 +228,7 @@ fn js_round(x: f64) -> i64 {
     cj_sim::js::round(x) as i64
 }
 
+/// Draws a refinery security drone: a dark diamond with a pulsing red eye. `t` is the animation clock in seconds; the outline turns white while the drone flashes from a hit.
 pub fn drone(look: &Look, d: &Drone, t: f32) {
     let xf = Xf::new(d.b.x, d.b.y, d.angle);
     let pts = xf.pts(&[(15.0, 0.0), (0.0, -11.0), (-11.0, 0.0), (0.0, 11.0)]);
@@ -245,6 +246,7 @@ pub fn drone(look: &Look, d: &Drone, t: f32) {
     let _ = look;
 }
 
+/// Draws a debt collector, plus the tether to the tug while the collector holds it in a net. `t` is the animation clock in seconds.
 pub fn collector(look: &Look, w: &World, k: &Collector, t: f32, rng: &mut Rng, scale: f32) {
     let s = &w.ship;
     // The tether to a netted tug.
@@ -383,6 +385,7 @@ pub fn net_on_ship(look: &Look, w: &World, t: f32, device: Device, scale: f32) {
     );
 }
 
+/// Draws a law unit: a patrol ship, or a bigger armoured gunship for SWAT. `t` is the animation clock in seconds.
 pub fn sheriff(look: &Look, sh: &Sheriff, t: f32) {
     let chasing = sh.state == SheriffState::Pursuit;
     let xf = Xf::new(sh.b.x, sh.b.y, sh.angle);
@@ -555,6 +558,7 @@ pub fn miner(m: &Miner, w: &World, t: f32, rng: &mut Rng) {
     polyline(&xf.pts(&[(-5.0, -9.0), (-5.0, 9.0)]), false, 1.0, stripe);
 }
 
+/// Draws a sentry drone, which has a hexagonal body. `t` is the animation clock in seconds.
 pub fn sentry(look: &Look, d: &Sentry, t: f32) {
     let xf = Xf::new(d.x, d.y, d.angle);
     let hex: Vec<Vec2> = (0..6)

@@ -80,6 +80,7 @@ fn neg(n: f64) -> String {
 
 /* ------------------------------- Title -------------------------------- */
 
+/// What the title screen shows, borrowed from the app's state.
 pub struct TitleView<'a> {
     /// The pilot name, and the text being typed while it is edited.
     pub pilot: &'a str,
@@ -96,6 +97,7 @@ pub struct TitleView<'a> {
 
 const GUIDE_TABS: [&str; 4] = ["Keyboard", "Gamepad", "Bay rates", "Field notes"];
 
+/// Draws the title screen and returns the action the player picked, if any. Tab input cycles the field-guide tabs.
 pub fn title(
     look: &Look,
     u: &mut Ui,
@@ -439,6 +441,7 @@ fn guide(look: &Look, u: &Ui, tab: usize, x: f32, y: f32, w: f32) {
 
 /* ------------------------------- Pause -------------------------------- */
 
+/// Draws the pause menu and returns the action the player picked, if any. `voice_on` is Marge's voice setting and `armed_menu` is whether the main-menu button is waiting for a second press to end the shift.
 pub fn pause(
     look: &Look,
     u: &mut Ui,
@@ -579,6 +582,7 @@ pub struct Report {
 }
 
 impl Report {
+    /// Captures the report from the settlement, the world's stats and kills, the career and the best score. `is_best` marks a new best.
     pub fn new(st: Settlement, w: &World, career: &Career, best: f64, is_best: bool) -> Report {
         let k = &w.kills;
         Report {
@@ -774,6 +778,7 @@ impl Report {
     }
 }
 
+/// Draws the shift report and returns the action the player picked, if any.
 pub fn report(
     look: &Look,
     u: &mut Ui,
@@ -1036,6 +1041,7 @@ pub fn report(
 
 /* ---------------------------- Machine shop ---------------------------- */
 
+/// What the machine shop shows, borrowed from the app's state.
 pub struct ShopView<'a> {
     pub career: &'a Career,
     pub profile: &'a crate::profile::Profile,
@@ -1047,6 +1053,7 @@ pub struct ShopView<'a> {
 
 const SHOP_TABS: [&str; 4] = ["Tug", "Parts", "Jobs & crew", "Map & standing"];
 
+/// Draws the machine shop and returns the action the player picked, if any. Tab input cycles its four tabs.
 pub fn shop(
     look: &Look,
     u: &mut Ui,
@@ -2276,6 +2283,7 @@ fn draw_marge(r: Rect) {
 
 /* ------------------------- Settings, records, board ------------------------- */
 
+/// What the settings screen shows: the settings, the key being rebound (if any) and a status message.
 pub struct SettingsView<'a> {
     pub settings: &'a crate::settings::Settings,
     pub rebinding: Option<crate::settings::Bind>,
@@ -2548,6 +2556,7 @@ pub fn records(
     (pr || input.back).then_some(Act::Back)
 }
 
+/// What the leaderboard shows: the score rows, the selected tab, the pilot's name and today's date.
 pub struct BoardView<'a> {
     pub rows: &'a [crate::profile::Score],
     /// 0..3 the difficulties, 3 the daily challenge.

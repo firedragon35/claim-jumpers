@@ -5,6 +5,7 @@ use crate::audio::Audio;
 use crate::marge::Voice;
 use cj_sim::events::Sfx;
 
+/// One step in a sound-test item's script.
 #[derive(Clone, Copy)]
 pub enum Cue {
     Sfx(Sfx),
@@ -20,6 +21,7 @@ pub enum Cue {
     Done,
 }
 
+/// One entry on the sound test: its label, how long it runs and its timed cues.
 pub struct Item {
     pub label: &'static str,
     /// Seconds the item takes ("Play all" waits this long).
@@ -36,6 +38,7 @@ fn one(c: Cue) -> Vec<(f64, Cue)> {
     vec![(0.0, c)]
 }
 
+/// Every sound-test group, as a name and its items, in menu order.
 pub fn groups() -> Vec<(&'static str, Vec<Item>)> {
     let it = |label, dur, cues| Item { label, dur, cues };
     vec![
@@ -235,6 +238,7 @@ impl Bench {
         self.queue.push((now + t, Cue::Done));
     }
 
+    /// Stops the sound test: clears the queued cues and the now-playing label, silences the engine loop and cuts off Marge's voice.
     pub fn stop(&mut self, audio: &Audio, voice: &mut Voice) {
         self.queue.clear();
         self.now_playing.clear();
