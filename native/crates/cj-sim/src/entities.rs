@@ -30,10 +30,12 @@ impl Body {
         }
     }
 
+    /// Distance between this body's centre and `o`'s centre, in px.
     pub fn dist_to(&self, o: &Body) -> f64 {
         js::dist(self.x, self.y, o.x, o.y)
     }
 
+    /// Speed (the length of the velocity vector), in px/s.
     pub fn speed(&self) -> f64 {
         js::hypot(self.vx, self.vy)
     }
@@ -203,6 +205,7 @@ pub struct Item {
 }
 
 impl Item {
+    /// The static definition (grades and base properties) of this item's type.
     pub fn def(&self) -> &'static ItemDef {
         self.kind.def()
     }
@@ -297,6 +300,7 @@ pub struct Crater {
     pub s: f64,
 }
 
+/// A breakable asteroid. Each size has its own radius and hit points, and a veined rock drops ore when broken.
 #[derive(Clone, Debug)]
 pub struct Rock {
     /// Stable identity (a miner keeps cutting the same rock).
@@ -584,6 +588,7 @@ pub enum CrabState {
     Free,
 }
 
+/// A scrap crab: it rides salvage, crawls along the cable toward the tug and then chews the hull (see `CrabState`).
 #[derive(Clone, Debug)]
 pub struct Crab {
     pub state: CrabState,
@@ -606,6 +611,7 @@ pub struct Crab {
     pub dead: bool,
 }
 
+/// Creates a crab in `state` at (`x`, `y`), riding or crawling from the item `host`, with a random perch angle and leg phase.
 pub fn make_crab(rng: &mut Rng, state: CrabState, host: Option<u32>, x: f64, y: f64) -> Crab {
     let off_a = rng.angle();
     let leg_t = rng.angle();

@@ -22,8 +22,10 @@ pub struct Camera {
     pub zoom: f64,
 }
 
+/// Counters for the shift in progress, shown on the report and read by contracts.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Stats {
+    /// Items banked this shift (stored cores count too).
     pub items: u32,
     /// Largest single delivery (bankings within DELIVERY_WINDOW of each other).
     pub best_run: f64,
@@ -49,6 +51,7 @@ pub struct Kills {
     pub boss: u32,
 }
 
+/// The whole simulation state for one shift: the tug, cable, field entities, opposition, timers and the event queue. Stepping it advances the shift deterministically from `rng`.
 pub struct World {
     pub rng: Rng,
     /// Seconds simulated this shift.
@@ -334,12 +337,15 @@ impl World {
         w.radio(Radio::Start, true, false);
     }
 
+    /// Queues an event for the front end (sounds, radio lines, popups) to drain.
     pub(crate) fn emit(&mut self, e: Event) {
         self.events.push(e);
     }
+    /// Queues a sound effect event.
     pub(crate) fn sfx(&mut self, s: Sfx) {
         self.emit(Event::Sfx(s));
     }
+    /// Queues a stock radio line by key; `force` interrupts the radio's cooldown and `once` plays it at most once per shift.
     pub(crate) fn radio(&mut self, key: Radio, force: bool, once: bool) {
         self.emit(Event::Radio {
             key,
@@ -364,6 +370,7 @@ impl World {
             text: Some((text, say)),
         });
     }
+    /// Queues a floating text popup at (`x`, `y`) in world coordinates.
     pub(crate) fn popup(&mut self, x: f64, y: f64, text: String, tint: Tint) {
         self.emit(Event::Popup { x, y, text, tint });
     }
@@ -386,10 +393,12 @@ impl World {
         make_jumper(&mut self.rng, id, x, y, variant, stage, hunter_mul)
     }
 
+    /// Index of the item with this id in `items`, if it still exists.
     pub fn item_index(&self, id: u32) -> Option<usize> {
         self.items.iter().position(|it| it.id == id)
     }
 
+    /// Index of the rival with this id in `jumpers`, if it still exists.
     pub fn jumper_index(&self, id: u32) -> Option<usize> {
         self.jumpers.iter().position(|j| j.id == id)
     }

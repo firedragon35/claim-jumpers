@@ -11,14 +11,19 @@ use crate::js;
 use crate::world::World;
 use std::f64::consts::PI;
 
+/// Partner engine acceleration, in px/s² at full throttle.
 pub const P2_THRUST: f64 = 430.0;
+/// Partner turn rate, in radians per second at full stick.
 pub const P2_TURN: f64 = 3.6;
+/// Partner speed cap, in px/s.
 pub const P2_MAX_SPEED: f64 = 520.0;
+/// Partner body mass, used when the cable's rope solver pulls on it.
 pub const P2_MASS: f64 = 3.0;
 /// Distance to the cable's tail that allows latching.
 pub const P2_LATCH_RANGE: f64 = 160.0;
 /// Seconds between cutter shots.
 pub const P2_FIRE: f64 = 0.22;
+/// Damage of one partner cutter shot.
 pub const P2_DAMAGE: f64 = 0.7;
 /// The latch breaks if stretched past this × its length.
 pub const P2_BREAK: f64 = 2.2;
@@ -26,25 +31,37 @@ pub const P2_BREAK: f64 = 2.2;
 /// P2's controls this step (readP2); `latch` is the button held.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct P2Input {
+    /// Forward throttle, 0 to 1.
     pub thrust: f64,
+    /// Brake strength, 0 to 1; raises drag.
     pub brake: f64,
+    /// Steering, -1 to 1; positive values increase the heading angle.
     pub turn: f64,
+    /// Cutter button held.
     pub fire: bool,
     pub latch: bool,
 }
 
+/// The partner tug flown by player 2 (`world.p2`); present only in local co-op.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Partner {
+    /// The partner's physics body (position, velocity, radius, mass).
     pub b: Body,
+    /// Heading in radians; 0 points along +x.
     pub angle: f64,
+    /// True while latched onto the cable's tail.
     pub linked: bool,
+    /// Rope length of the latch: the distance when it was made, plus 4 px of slack.
     pub link: f64,
+    /// Seconds until the cutter may fire again.
     pub fire_t: f64,
+    /// Throttle applied this step (0 to 1), kept so the renderer can draw the exhaust.
     pub thrust: f64,
     prev_latch: bool,
 }
 
 impl World {
+    /// Creates the partner near the bay, heading toward -x (away from the carrier).
     pub fn spawn_partner(&mut self) {
         self.p2 = Some(Partner {
             b: Body {
@@ -70,6 +87,7 @@ impl World {
         self.chain.last().and_then(|id| self.item_index(*id))
     }
 
+    /// Advances the partner one step: steering, drag, rock bounces, the cutter, the latch toggle and the latch-break check.
     pub(crate) fn update_partner(&mut self, dt: f64) {
         let inp = self.p2_input;
         let Some(p) = self.p2.as_mut() else { return };

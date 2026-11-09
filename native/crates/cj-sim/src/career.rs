@@ -26,11 +26,16 @@ pub enum Mode {
     Hard,
 }
 
+/// Every mode, in menu order.
 pub const MODES: [Mode; 3] = [Mode::Relaxed, Mode::Standard, Mode::Hard];
 
+/// The tuning numbers for one difficulty mode. Multipliers are relative to Standard, which is 1 throughout.
 pub struct ModeDef {
+    /// Stable identifier stored in saves (`relaxed`, `standard`, `hard`).
     pub key: &'static str,
+    /// Name shown in the menus.
     pub label: &'static str,
+    /// One-line description shown under the name.
     pub blurb: &'static str,
     /// × loan installment.
     pub installment: f64,
@@ -52,6 +57,7 @@ pub struct ModeDef {
 }
 
 impl Mode {
+    /// The tuning numbers for this mode.
     pub fn def(self) -> &'static ModeDef {
         const RELAXED: ModeDef = ModeDef {
             key: "relaxed",
@@ -102,6 +108,7 @@ impl Mode {
         }
     }
 
+    /// Looks a mode up by its save key; `None` for an unknown key.
     pub fn from_key(key: &str) -> Option<Mode> {
         MODES.into_iter().find(|m| m.def().key == key)
     }
@@ -110,28 +117,45 @@ impl Mode {
 /// Faction standing (REP), each -100..100. The standing screen and most of
 /// its events arrive with phase 6 in milestone 5; the bank's rate, the
 /// rivals' grudge and the events that already exist are applied now.
+/// Standing with each faction, from -100 to 100.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Rep {
+    /// Kessler Mutual, the lender; shifts the installment rate.
     pub bank: f64,
+    /// The belt law.
     pub law: f64,
+    /// The rival crews.
     pub rivals: f64,
 }
 
+/// Standing is clamped to plus or minus this value.
 pub const REP_LIMIT: f64 = 100.0;
+/// Standing at or above this is the Good tier.
 pub const REP_GOOD: f64 = 40.0;
+/// Standing at or below this is the Bad tier.
 pub const REP_BAD: f64 = -40.0;
 /// Reputation per event (REP).
 pub const REP_SHIFT_SOLVENT_BANK: f64 = 4.0;
+/// Bank standing change when the wallet is below zero after the shift's installment.
 pub const REP_OVERDRAWN_BANK: f64 = -8.0;
+/// Bank standing gained per full 1,000 credits paid off the loan outside the installment.
 pub const REP_EXTRA_PAYMENT_BANK: f64 = 2.0;
+/// Law standing gained for a shift with no wanted stars, no arrests and no other law standing change.
 pub const REP_CLEAN_LAW: f64 = 3.0;
+/// Rival-crew standing gained for a shift in which no rivals were scrapped.
 pub const REP_CLEAN_RIVALS: f64 = 2.0;
+/// Rival-crew standing change for scrapping a rival.
 pub const REP_RIVAL_KILL: f64 = -3.0;
+/// Rival-crew standing change for buying a truce.
 pub const REP_TRUCE_RIVALS: f64 = 10.0;
+/// Rival-crew standing change for taking down a boss.
 pub const REP_BOSS_KILL_RIVALS: f64 = -5.0;
+/// Bank standing change for completing an escort contract.
 pub const REP_ESCORT_DONE_BANK: f64 = 6.0;
+/// Faction names shown on the standing screen, in the order bank, law, rivals.
 pub const REP_NAMES: [&str; 3] = ["Kessler Mutual", "Belt law", "Rival crews"];
 
+/// A standing band: Bad at or below `REP_BAD`, Good at or above `REP_GOOD`, otherwise Neutral.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Tier {
     Bad,
@@ -139,6 +163,7 @@ pub enum Tier {
     Good,
 }
 
+/// The standing band that a reputation value falls in.
 pub fn tier(v: f64) -> Tier {
     if v >= REP_GOOD {
         Tier::Good
@@ -151,6 +176,7 @@ pub fn tier(v: f64) -> Tier {
 
 /// Grudge kept at the end of each shift (rivals who respect you let go faster).
 pub const GRUDGE_COOLING: f64 = 0.6;
+/// The share of the grudge kept after a shift when the rival crews' standing is Good.
 pub const GRUDGE_COOLING_GOOD: f64 = 0.4;
 
 /// The bank tolerates a debt of up to a third of what is still owed.
@@ -173,6 +199,7 @@ pub const RANKS: [(f64, &str); 5] = [
     (16000.0, "Legend of the belt"),
 ];
 
+/// The best-shift rank title for the credits earned in a single shift.
 pub fn rank_for(earned: f64) -> &'static str {
     RANKS
         .iter()
@@ -180,6 +207,7 @@ pub fn rank_for(earned: f64) -> &'static str {
         .map_or(RANKS[0].1, |r| r.1)
 }
 
+/// One player's saved career: money, loan, parts, upgrades, reputation and progress. The save file is this struct in the browser's JSON field names, with unknown fields kept in `extra`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Career {
     pub shift: i32,
@@ -329,10 +357,12 @@ impl Career {
         }
     }
 
+    /// The tug class currently flown (it changes when a loan is paid off and the player trades up).
     pub fn tug(&self) -> &'static TugClass {
         &TUG_CLASSES[self.tug_class.min(TUG_CLASSES.len() - 1)]
     }
 
+    /// The combined effect of the mounted parts, system levels and tug class on the tug's numbers.
     pub fn mods(&self) -> Mods {
         compute_mods(&self.mounted, &self.levels, self.tug_class)
     }
@@ -355,14 +385,17 @@ impl Career {
             .min(js::round(base * self.bank_rate_mul() / 50.0) * 50.0)
     }
 
+    /// The debt the bank tolerates for this career: a third of the loan still owed.
     pub fn overdraft_limit(&self) -> f64 {
         overdraft_limit(self.loan)
     }
 
+    /// True if the part has been bought, whether or not it is mounted.
     pub fn owns(&self, p: Part) -> bool {
         self.owned.contains(&p)
     }
 
+    /// True if the part is currently on a hardpoint.
     pub fn is_mounted(&self, p: Part) -> bool {
         self.mounted.contains(&Some(p))
     }
@@ -381,6 +414,7 @@ impl Career {
         }
     }
 
+    /// Buys a part and mounts it if a matching hardpoint is free. The `Err` text is the shop's refusal message and the `Ok` text is its confirmation.
     pub fn buy_part(&mut self, p: Part) -> ShopResult {
         let d = p.def();
         if d.unique {
@@ -412,6 +446,7 @@ impl Career {
         })
     }
 
+    /// Mounts an owned part on a free hardpoint of its type.
     pub fn mount(&mut self, p: Part) -> ShopResult {
         let d = p.def();
         if !self.owns(p) || self.is_mounted(p) {
@@ -427,6 +462,7 @@ impl Career {
         Ok(format!("{} mounted.{}", d.name, self.cannon_note(p)))
     }
 
+    /// Takes a mounted part off its hardpoint; it stays owned.
     pub fn unmount(&mut self, p: Part) -> ShopResult {
         if !self.is_mounted(p) {
             return Err(format!("{} isn't mounted.", p.def().name));
@@ -455,6 +491,7 @@ impl Career {
         (lv < s.max()).then(|| SYSTEM_PRICES[usize::from(lv - 1)])
     }
 
+    /// Buys the next level of a system upgrade if it is available and affordable.
     pub fn buy_level(&mut self, s: System) -> ShopResult {
         let Some(price) = self.level_price(s) else {
             return Err(format!("{} can't be upgraded.", s.name()));
@@ -1084,6 +1121,7 @@ impl Career {
         ))
     }
 
+    /// Sells one stored rogue core for `CORE_SELL` credits.
     pub fn sell_core(&mut self) -> ShopResult {
         if self.cores == 0 {
             return Err("No cores stored.".to_owned());
