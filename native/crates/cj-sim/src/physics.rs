@@ -111,6 +111,7 @@ fn collide(a: &mut Body, b: &mut Body) -> Option<f64> {
 }
 
 impl World {
+    /// Moves the tug, rocks and other bodies one step with their damping.
     pub(crate) fn integrate_all(&mut self, dt: f64) {
         if self.ship.alive {
             // A netted tug has no wall: the collector can drag it out.

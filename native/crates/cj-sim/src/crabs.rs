@@ -18,6 +18,7 @@ fn crab_dist(c: &Crab, x: f64, y: f64) -> f64 {
 }
 
 impl World {
+    /// Kills crab `c` with a burst of sparks and a chip sound; a dead crab is ignored.
     pub fn kill_crab(&mut self, c: usize) {
         let cr = &mut self.crabs[c];
         if cr.dead {
@@ -39,6 +40,7 @@ impl World {
         cr.stun_t = 1.4;
     }
 
+    /// Advances crab `c` one step; a dead crab is skipped.
     pub(crate) fn update_crab(&mut self, c: usize, dt: f64) {
         if self.crabs[c].dead {
             return;

@@ -114,6 +114,7 @@ impl World {
         }
     }
 
+    /// Advances rival jumper `j` one step: steering, hooking cargo and firing.
     pub(crate) fn update_jumper(&mut self, j: usize, dt: f64) {
         {
             let jm = &mut self.jumpers[j];

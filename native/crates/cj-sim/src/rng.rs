@@ -18,6 +18,7 @@ pub enum Rng {
 }
 
 impl Rng {
+    /// A repeatable generator for a given seed.
     pub fn seeded(seed: u32) -> Rng {
         Rng::Mulberry32(seed)
     }

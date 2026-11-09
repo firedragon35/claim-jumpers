@@ -4,6 +4,7 @@
 use crate::consts::*;
 use crate::parts::*;
 
+/// The tug's computed performance numbers for the current loadout.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Mods {
     pub tug_class: usize,

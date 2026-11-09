@@ -25,6 +25,7 @@ fn hits(x: f64, y: f64, o: &Body, pad: f64) -> bool {
 }
 
 impl World {
+    /// Advances every bullet one step: movement, lifetime and what it hits.
     pub(crate) fn update_bullets(&mut self, dt: f64) {
         let mut bullets = std::mem::take(&mut self.bullets);
         for b in &mut bullets {
@@ -525,6 +526,7 @@ impl World {
         }
     }
 
+    /// Removes reactor `i` and explodes it where it was.
     pub(crate) fn detonate(&mut self, i: usize) {
         if self.items[i].dead {
             return;

@@ -190,6 +190,7 @@ pub enum Radio {
     P2Free,
 }
 
+/// Something the simulation tells the game about this step: sounds, radio lines, slow motion, effects and floating text.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Event {
     Sfx(Sfx),

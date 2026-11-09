@@ -44,6 +44,7 @@ pub const TUTORIAL: [(&str, &str); 5] = [
 const TUTORIAL_BEAT: f64 = 0.8;
 
 impl World {
+    /// Starts the tutorial at its first step and shows it.
     pub fn start_tutorial(&mut self) {
         self.tut = Some(Tutorial {
             step: 0,

@@ -27,6 +27,7 @@ pub enum Value {
     Range(f64, f64),
 }
 
+/// One quality grade of an item type: its name, value, spawn weight and physical tweaks.
 #[derive(Clone, Copy, Debug)]
 pub struct Grade {
     pub name: &'static str,
@@ -41,6 +42,7 @@ pub struct Grade {
     pub tint: Option<u32>,
 }
 
+/// The fixed physical and value data of an item type.
 #[derive(Clone, Copy, Debug)]
 pub struct ItemDef {
     pub r: f64,
@@ -126,6 +128,7 @@ const fn def(r: f64, mass: f64, grades: &'static [Grade]) -> ItemDef {
 }
 
 impl ItemType {
+    /// The fixed data for this item type.
     pub fn def(self) -> &'static ItemDef {
         use ItemType::*;
         static SCRAP_D: ItemDef = def(12.0, 1.0, &SCRAP);
@@ -187,6 +190,7 @@ impl ItemType {
         }
     }
 
+    /// Looks an item type up by its save-file key; `None` if unknown.
     pub fn from_key(key: &str) -> Option<ItemType> {
         use ItemType::*;
         [

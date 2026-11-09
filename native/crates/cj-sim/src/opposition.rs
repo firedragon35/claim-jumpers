@@ -1063,6 +1063,7 @@ impl World {
         }
     }
 
+    /// Damages refinery drone `i` by `n`; a dead drone is ignored.
     pub fn hurt_drone(&mut self, i: usize, n: f64) {
         let d = &mut self.drones[i];
         if d.dead {
@@ -1111,6 +1112,7 @@ impl World {
         projected < due * if trust == Tier::Bad { 1.25 } else { 1.0 }
     }
 
+    /// Spawns a debt collector just outside a field edge, at least 1,300 px from the tug (when a spot that far exists).
     pub fn spawn_collector(&mut self) {
         let (px, py) = self.edge_point(1300.0);
         let id = self.fresh_id();
@@ -1145,6 +1147,7 @@ impl World {
         self.sfx(Sfx::Siren);
     }
 
+    /// Finds a collector by its stable id; `None` if it has been swept.
     pub fn collector_index(&self, id: u32) -> Option<usize> {
         self.collectors.iter().position(|c| c.id == id)
     }
@@ -1205,6 +1208,7 @@ impl World {
         }
     }
 
+    /// Advances collector `i` one step according to its `CollectorState`.
     pub(crate) fn update_collector(&mut self, i: usize, dt: f64) {
         let s = self.ship.b;
         let alive = self.ship.alive;
@@ -1394,6 +1398,7 @@ impl World {
         }
     }
 
+    /// Collector `c`'s net has landed: the tug is netted and held by that collector.
     pub fn net_ship(&mut self, c: usize) {
         let s = self.ship.b;
         let cl = &mut self.collectors[c];
@@ -1437,6 +1442,7 @@ impl World {
         }
     }
 
+    /// Damages collector `c` by `n`; a dead one is ignored. `by_item` is set when cargo did the damage, and a value of 3 or more counts as a smash. Destroying a collector costs standing with the bank and earns a wanted star.
     pub fn hurt_collector(&mut self, c: usize, n: f64, by_item: Option<f64>) {
         let cl = &mut self.collectors[c];
         if cl.dead {
@@ -1674,6 +1680,7 @@ impl World {
         }
     }
 
+    /// Advances law unit `k` one step according to its `SheriffState`.
     pub(crate) fn update_sheriff(&mut self, k: usize, dt: f64) {
         let s = self.ship.b;
         let alive = self.ship.alive;
@@ -2177,6 +2184,7 @@ impl World {
         best
     }
 
+    /// Reloads and launches the tug's missiles, then flies the ones in the air.
     pub fn update_missiles(&mut self, dt: f64) {
         // Launching: reload the rack, then fire if a target is in range.
         if self.mods.missiles && self.ship.alive {
@@ -2452,6 +2460,7 @@ impl World {
             .find_map(|(t, b)| t.filter(|_| js::dist(x, y, b.x, b.y) <= b.r + 3.0))
     }
 
+    /// A rogue drone's bolt hit target `t`; it does twice `SENTRY_DAMAGE`.
     pub(crate) fn rogue_bolt_hit(&mut self, t: Tgt) {
         self.rogue_hit(t, SENTRY_DAMAGE * 2.0);
     }
@@ -2523,6 +2532,7 @@ impl World {
         }
     }
 
+    /// Advances sentry drone `i` one step; a rogue one wanders and hunts instead of orbiting.
     pub(crate) fn update_sentry(&mut self, i: usize, dt: f64) {
         let s = self.ship.b;
         let d = &mut self.sentries[i];
@@ -2583,6 +2593,7 @@ impl World {
         }
     }
 
+    /// Damages sentry drone `i` by `n`; a dead one is ignored.
     pub fn hurt_sentry(&mut self, i: usize, n: f64) {
         let d = &mut self.sentries[i];
         if d.dead {
@@ -2678,6 +2689,7 @@ impl World {
         best
     }
 
+    /// Advances mining-crew tug `i` one step: cutting its rock, or attacking the tug while angry.
     pub(crate) fn update_miner(&mut self, i: usize, dt: f64) {
         let s = self.ship.b;
         let m = &mut self.miners[i];
