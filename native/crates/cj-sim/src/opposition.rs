@@ -23,95 +23,167 @@ use std::f64::consts::{PI, TAU};
 /// Afterburner: seconds per burst, thrust multiplier, engine heat per
 /// burst (100 overheats), cooling per second, and the overheat penalty.
 pub const BURN_TIME: f64 = 3.0;
+/// Thrust multiplier while an afterburner burst lasts.
 pub const BURN_THRUST: f64 = 2.3;
+/// Engine heat added by one burst; the engine overheats at 100.
 pub const BURN_HEAT: f64 = 34.0;
+/// Engine heat shed per second while no burst is running.
 pub const ENGINE_COOL: f64 = 7.0;
+/// Seconds the engine stays crippled after overheating.
 pub const ENGINE_OVERHEAT_TIME: f64 = 6.0;
+/// Thrust multiplier while the engine is overheated.
 pub const ENGINE_OVERHEAT_THRUST: f64 = 0.45;
 
+/// Seconds between volleys from the auto-defense rack.
 pub const MISSILE_GAP: f64 = 0.5;
+/// How far a missile launch looks for a hostile, in px.
 pub const MISSILE_RANGE: f64 = 650.0;
+/// Range in px at which incoming nets are targeted before any other hostile.
 pub const MISSILE_NET_RANGE: f64 = 420.0;
+/// Speed missiles steer toward, in px/s.
 pub const MISSILE_SPEED: f64 = 620.0;
+/// How sharply a missile steers: velocity closes this fraction per second on its target velocity.
 pub const MISSILE_TURN: f64 = 6.0;
+/// Seconds a missile flies before it fizzles; torpedoes last 1.5 times as long.
 pub const MISSILE_LIFE: f64 = 3.0;
+/// Torpedo speed and turn rate as a fraction of a missile's.
 pub const TORPEDO_SPEED: f64 = 0.7;
+/// Torpedo blast radius, in px; damage falls off linearly to zero at the edge.
 pub const TORPEDO_SPLASH: f64 = 120.0;
+/// Torpedo splash damage at the blast centre.
 pub const TORPEDO_SPLASH_DAMAGE: f64 = 4.0;
 
+/// Radius of a sentry drone's orbit around the tug, in px.
 pub const SENTRY_ORBIT: f64 = 75.0;
+/// How far a sentry drone looks for a hostile, in px.
 pub const SENTRY_RANGE: f64 = 450.0;
+/// Damage of one sentry drone shot (a rogue's bolt hitting a drone does twice this).
 pub const SENTRY_DAMAGE: f64 = 0.6;
+/// How far a rogue drone looks for a target, in px.
 pub const ROGUE_RANGE: f64 = 480.0;
+/// Seconds between a rogue drone's shots.
 pub const ROGUE_FIRE: f64 = 1.1;
+/// Damage of one rogue drone bolt.
 pub const ROGUE_DAMAGE: f64 = 3.0;
+/// Speed of a rogue drone, in px/s.
 pub const ROGUE_SPEED: f64 = 150.0;
 
+/// Seconds before the refinery arrives on shifts after the first (shift 1 waits 75).
 pub const REFINERY_ARRIVE_AT: f64 = 40.0;
+/// Radius of the refinery's hub, in px.
 pub const REFINERY_HUB_R: f64 = 150.0;
+/// Distance of each vault socket from the refinery's centre, in px.
 pub const SOCKET_RADIUS: f64 = 178.0;
+/// How close a cargo item must be to an empty socket to fill it, in px.
 pub const SOCKET_CAPTURE: f64 = 80.0;
+/// Distance of the maw behind the refinery's centre, in px.
 pub const MAW_OFFSET: f64 = 250.0;
+/// Radius of the maw, in px: the area that eats cargo and takes hits.
 pub const MAW_R: f64 = 85.0;
+/// Strength of the maw's pull, an acceleration scaled by its hunger.
 pub const JAW_PULL: f64 = 170.0;
+/// Starting distance the maw pulls from, in px.
 pub const JAW_RANGE_START: f64 = 550.0;
+/// Greatest distance the maw can pull from, in px; it grows as it eats.
 pub const JAW_RANGE_MAX: f64 = 850.0;
+/// Hit points of the jaws.
 pub const JAW_HP: f64 = 60.0;
+/// Damage to the jaws from swallowing something volatile.
 pub const JAW_FEED_DAMAGE: f64 = 20.0;
+/// Seconds of countdown once all three sockets are filled.
 pub const ARM_SECONDS: f64 = 5.0;
 /// Vault loot: six ingots and eight ore, in that order.
 pub const VAULT_LOOT: [(ItemType, u32); 2] = [(ItemType::Ingot, 6), (ItemType::Ore, 8)];
 
+/// Hit points of a debt collector.
 pub const COLLECTOR_HP: f64 = 8.0;
+/// Mass of a debt collector's body.
 pub const COLLECTOR_MASS: f64 = 6.0;
+/// Acceleration, in px/s², with which a collector hauls a netted tug toward its exit.
 pub const COLLECTOR_HAUL_ACCEL: f64 = 260.0;
 /// Cutter rounds do a third; slugs, missiles and cargo do full damage.
 pub const COLLECTOR_BULLET_ARMOR: f64 = 0.35;
+/// Most collectors on the field at once.
 pub const COLLECTOR_MAX: usize = 2;
+/// Distance a collector keeps from the tug when payment is at risk or it is greedy, in px.
 pub const COLLECTOR_HOLD: f64 = 380.0;
 /// How far off a collector watches when your payment is covered, and for how long.
 pub const COLLECTOR_SHADOW: f64 = 520.0;
+/// Seconds a collector shadows a tug with payment covered before it leaves.
 pub const COLLECTOR_SHADOW_TIME: f64 = 30.0;
 /// Per second while shadowing a tug with cargo: jack the haul.
 pub const COLLECTOR_GREED_CHANCE: f64 = 1.0 / 250.0;
+/// Range at which a collector fires its net, in px.
 pub const COLLECTOR_FIRE_RANGE: f64 = 560.0;
 /// Collectors won't fire this close to the carrier's bay.
 pub const BAY_SANCTUARY: f64 = 450.0;
+/// Speed of a collector's net, in px/s.
 pub const NET_SPEED: f64 = 420.0;
+/// Seconds a net flies before it vanishes.
 pub const NET_LIFE: f64 = 1.8;
+/// Radius of a net, in px, for hitting the tug.
 pub const NET_RADIUS: f64 = 20.0;
+/// Hit points of a net on the tug; tearing it free depletes them.
 pub const NET_HP: f64 = 100.0;
+/// Net damage per thrust reversal (scaled by the net-tear factor).
 pub const NET_TEAR_PER_REVERSAL: f64 = 7.0;
+/// Net damage per second at full strafe.
 pub const NET_TEAR_STRAFE: f64 = 25.0;
+/// Net damage per second while thrusting.
 pub const NET_TEAR_THRUST: f64 = 4.0;
+/// Thrust multiplier while the tug is netted.
 pub const NETTED_THRUST: f64 = 0.35;
+/// Base impound fee, before the difficulty and crew multipliers.
 pub const IMPOUND_FEE: f64 = 1500.0;
+/// Seconds into the shift at which an unpaid installment summons a collector.
 pub const LOW_WALLET_CHECK_AT: f64 = 150.0;
+/// Cable value at which a collector confiscates the load instead of impounding the tug.
 pub const FAT_CABLE_VALUE: f64 = 2000.0;
+/// Seconds before a fat cable can summon a collector again.
 pub const FAT_CABLE_COOLDOWN: f64 = 60.0;
+/// Fraction of a confiscated load's value credited as payment.
 pub const CONFISCATE_RATE: f64 = 0.6;
+/// Range of seconds before a collector that took its payment is replaced.
 pub const COLLECTOR_RETURN: (f64, f64) = (60.0, 90.0);
 
+/// Most wanted stars.
 pub const WANTED_MAX: u32 = 5;
+/// Range at which a sheriff spots a one-star tug, in px.
 pub const SHERIFF_DETECT: f64 = 650.0;
+/// Extra spotting range per additional star, in px.
 pub const SHERIFF_DETECT_PER_STAR: f64 = 150.0;
+/// A sheriff starts losing the tug beyond its spotting range times this.
 pub const SHERIFF_LOSE_MULT: f64 = 1.7;
+/// Seconds out of range before a sheriff gives up the chase.
 pub const SHERIFF_LOSE_TIME: f64 = 7.0;
+/// Distance within which a sheriff's cuff meter fills, in px.
 pub const SHERIFF_CUFF_RANGE: f64 = 150.0;
+/// A new sheriff's starting patrol timer, in seconds.
 pub const SHERIFF_PATROL_TIME: f64 = 75.0;
+/// Fine per wanted star on arrest, in credits.
 pub const FINE_PER_STAR: f64 = 800.0;
+/// Seconds a sheriff's stun bolt leaves the tug sluggish.
 pub const STUN_TIME: f64 = 1.5;
 /// Per second, a patrol near a clean tug with cargo shakes it down.
 pub const SHAKEDOWN_CHANCE: f64 = 1.0 / 100.0;
 
+/// Hit points of a mining-crew tug.
 pub const MINER_HP: f64 = 5.0;
+/// How close a miner must be to a rock's edge to drill it, in px.
 pub const MINER_BEAM_RANGE: f64 = 150.0;
+/// Distance from a rock's edge at which a miner parks, in px.
 pub const MINER_STANDOFF: f64 = 90.0;
+/// Drill progress per second; each full point hits the rock for 1 damage.
 pub const MINER_DRILL_RATE: f64 = 1.4;
+/// Extra speed, in px/s, the pieces of a rock a miner breaks are flung with.
 pub const MINER_KICK: f64 = 140.0;
+/// Chance a rock of size 2 or more a miner breaks spills a piece of ore.
 pub const MINER_ORE_CHANCE: f64 = 0.25;
+/// Seconds a miner stays angry after being shot.
 pub const MINER_ANGRY_TIME: f64 = 5.0;
+/// Damage per second of an angry miner's beam on the tug.
 pub const MINER_BEAM_DPS: f64 = 10.0;
+/// Range at which an angry miner's beam hits the tug, in px.
 pub const MINER_ANGRY_RANGE: f64 = 260.0;
 
 /// Spotting range for a wanted tug.
