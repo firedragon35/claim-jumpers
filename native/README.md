@@ -1,7 +1,7 @@
 # Claim Jumpers: native Windows port
 
 A native Rust port of Claim Jumpers for Windows 10 and 11. The browser game
-in the repository root (`claim-jumpers.html`, built from `src/`) is the
+(maintained in its own repository, `claim-jumpers-game`) is the
 reference implementation; the port must match its gameplay, rules,
 controls, balance and look unless a change is explicitly approved.
 
@@ -200,7 +200,7 @@ cargo test
   wrecked. They agree to the last bit or two of an f64; the tolerance is
   1e-7.
 - `tests/opposition.rs` ports the browser's own Playwright tests for
-  these systems (tests/specs in the repository root): collectors only net
+  these systems (tests/specs in the `claim-jumpers-game` repository): collectors only net
   when the payment is at risk; a shakedown roll starts a chase in the same
   frame; a wrecked tug orphans its sentries and rogue kills are not
   blamed on you; missiles ignore collectors and the law until you hit
@@ -245,15 +245,16 @@ cargo test
   raises hit-stop, a highlight and the achievement.
 
 Marge's lines are generated from the browser's tables by
-`node tools/gen_lines.cjs ..` (run from `native`), which writes
-`crates/cj-game/src/lines.rs`.
+`node tools/gen_lines.cjs .. <claim-jumpers-game checkout>` (run from `native`),
+which writes `crates/cj-game/src/lines.rs`.
 
 To re-record the traces and career answers after changing the browser game
-(needs Docker; run from the repository root, after rebuilding
-`claim-jumpers.html`):
+(needs Docker and a checkout of `claim-jumpers-game` with `claim-jumpers.html`
+built; run from this repository's root, with `CJ_BROWSER_REPO` set to that
+checkout's path):
 
 ```bash
-docker run --rm -v "$PWD:/work" -v /work/tests/node_modules -w /work/tests mcr.microsoft.com/playwright:v1.49.1-noble sh -c "npm ci --no-audit --no-fund && node /work/native/tools/golden/export.mjs && node /work/native/tools/golden/career.mjs"
+docker run --rm -v "$PWD:/work" -v "$CJ_BROWSER_REPO:/browser" -e CJ_BROWSER_REPO=/browser -v /browser/tests/node_modules -w /browser/tests mcr.microsoft.com/playwright:v1.49.1-noble sh -c "npm ci --no-audit --no-fund && node /work/native/tools/golden/export.mjs && node /work/native/tools/golden/career.mjs"
 ```
 
 ## Known differences from the browser version

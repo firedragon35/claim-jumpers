@@ -4,16 +4,8 @@ desktop.ini
 .DS_Store
 .vscode/
 
-# Personal Claude Code settings (launch.json is shared)
+# Personal Claude Code settings
 .claude/settings.local.json
 
-# Local Docker overrides (bind address, port)
-.env
-
-# Test tooling output
-tests/node_modules/
-tests/test-results/
-tests/playwright-report/
-
-# Build tooling
+# Node tooling for native/tools (golden export scripts)
 node_modules/
