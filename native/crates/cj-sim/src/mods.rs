@@ -5,7 +5,7 @@ use crate::consts::*;
 use crate::parts::*;
 
 /// The tug's computed performance numbers for the current loadout.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Mods {
     pub tug_class: usize,
     /// Tonnes the winch can hold.

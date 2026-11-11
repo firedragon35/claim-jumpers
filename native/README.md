@@ -4,7 +4,7 @@ A native Rust port of Claim Jumpers for Windows 10 and 11. This is the lead
 version of the game. The browser game (`claim-jumpers-game`) it was ported
 from is a frozen baseline at its 1.0.7, and new gameplay is built here first.
 
-**Status: Milestone 6, release 1.2.0 (all systems ported, packaged for Windows; history in [CHANGELOG.md](CHANGELOG.md)).** A career of
+**Status: release 1.3.0, online co-op for up to 20 pilots (all systems ported, packaged for Windows; history in [CHANGELOG.md](CHANGELOG.md)).** A career of
 five-minute shifts: fly the tug, tow and fight for salvage, and bank it at
 the carrier, against rival crews, debt collectors who net and tow the tug
 (or confiscate a fat load, or impound it), the law (wanted stars, patrols,
@@ -103,6 +103,38 @@ The executable is `target\release\claim-jumpers.exe`. It is self-contained:
 fonts and the icon are embedded, and the C runtime is linked statically
 (`.cargo/config.toml`), so it needs only DLLs that ship with Windows and can
 be copied anywhere and run without Rust or the Visual C++ Redistributable.
+
+## Multiplayer
+
+The game opens on Single player, Host server or Join remote host. Hosting
+runs the server (`cj-server`'s library) on a thread in the game, and the
+host's game joins it over loopback like any other client. The player
+guide's PLAYING ONLINE section (`packaging/README.txt`) covers LAN play,
+the firewall, port forwarding and Tailscale.
+
+The headless server needs no window or audio and builds on Windows and
+Linux:
+
+```bash
+cargo run -p cj-server --release -- --players 8 --mode standard --careers careers
+```
+
+It listens on UDP port 47820 on every IPv4 interface (`--loopback`: this
+machine only). Careers are kept one file per player in `--careers DIR`
+(default `./careers`). `--record FILE` saves the first shift's recording
+and exits; `cj_server::replay` reproduces it exactly. IPv4 only: renet's
+netcode transport takes one socket, and a socket that takes both IPv4 and
+IPv6 on Windows needs a new dependency.
+
+Testing several players on one PC: give each extra copy its own data folder,
+or the server sees one player twice:
+
+```powershell
+$env:CLAIM_JUMPERS_DATA = "$env:TEMP\cj-p2"; .\target\release\claim-jumpers.exe
+```
+
+`CJ_NET_LAG_MS` (0 to 2000) adds that much round-trip delay to a client,
+for feel tests. `--join HOST:PORT` skips the Join screen.
 
 ## Release package
 

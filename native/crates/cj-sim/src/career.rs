@@ -22,7 +22,7 @@ use serde_json::{json, Map, Value};
 
 /// Difficulty modes (DIFFICULTY). The mode is chosen when a career starts
 /// and is locked for that career.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Mode {
     Relaxed,
     Standard,
@@ -118,7 +118,7 @@ impl Mode {
 }
 
 /// Standing with each faction (REP), from -100 to 100.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Rep {
     /// Kessler Mutual, the lender; shifts the installment rate.
     pub bank: f64,
@@ -156,7 +156,7 @@ pub const REP_ESCORT_DONE_BANK: f64 = 6.0;
 pub const REP_NAMES: [&str; 3] = ["Kessler Mutual", "Belt law", "Rival crews"];
 
 /// A standing band: Bad at or below `REP_BAD`, Good at or above `REP_GOOD`, otherwise Neutral.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Tier {
     Bad,
     Neutral,
@@ -223,7 +223,7 @@ fn faded_rival_standing(standing: f64, delta: f64) -> f64 {
 pub const CREW_UPGRADES: [&str; 3] = ["tougher hulls", "faster engines", "quicker guns"];
 
 /// A way of killing rivals that the crews can adapt to.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Habit {
     Cannon,
     Smash,
@@ -231,7 +231,7 @@ pub enum Habit {
 }
 
 /// Rival kills by method, fading a little each shift so a player can change style.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Habits {
     pub cannon: f64,
     pub smash: f64,
@@ -254,7 +254,7 @@ impl Habits {
 }
 
 /// One player's saved career: money, loan, parts, upgrades, reputation and progress. The save file is this struct in the browser's JSON field names, with unknown fields kept in `extra`.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Career {
     pub shift: i32,
     pub wallet: f64,
@@ -343,7 +343,7 @@ fn truthy(v: &Value) -> bool {
 }
 
 /// What the shift report shows and what happened to the career.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Outcome {
     /// The career continues to the machine shop.
     Continue,
@@ -357,7 +357,7 @@ pub enum Outcome {
 }
 
 /// The end-of-shift settlement, for the report screen.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Settlement {
     pub earned: f64,
     pub due: f64,
@@ -646,23 +646,25 @@ impl Career {
     /// charge the installment, pay the contract and the crew, update
     /// standing, and decide whether the career continues, is repossessed,
     /// or trades up.
-    pub fn settle(&mut self, w: &World) -> Settlement {
-        let earned = js::round(w.banked);
+    pub fn settle(&mut self, w: &World, p: usize) -> Settlement {
+        let earned = js::round(w.pilots[p].banked);
         // Collectors that confiscated a fat load credited it to the loan
         // during the shift (career.loan in the browser), before the
         // installment below is worked out.
-        self.loan = (self.loan - w.loan_credit).max(0.0);
+        self.loan = (self.loan - w.pilots[p].loan_credit).max(0.0);
         let keep = if tier(self.rep.rivals) == Tier::Good {
             GRUDGE_COOLING_GOOD
         } else {
             GRUDGE_COOLING
         };
         self.grudge = (w.grudge * keep).floor();
-        let job = w.contract.clone();
-        let job_done = job.as_ref().is_some_and(|k| w.contract_progress(k) >= k.n);
+        let job = w.pilots[p].contract.clone();
+        let job_done = job
+            .as_ref()
+            .is_some_and(|k| w.contract_progress(p, k) >= k.n);
         // Sentries that survived go back in the bay; destroyed or rogue
         // ones are gone for good.
-        if w.mods.drone_bay {
+        if w.pilots[p].mods.drone_bay {
             self.sentries = w.sentries.iter().filter(|d| !d.dead && !d.rogue).count() as u32;
         }
         // Unspent money stays in the wallet. The installment is always
@@ -680,11 +682,11 @@ impl Career {
         self.contract = None;
         self.wallet -= due;
         self.loan -= due;
-        self.cores = (self.cores + w.cores_banked).min(CORES_MAX);
+        self.cores = (self.cores + w.pilots[p].cores_banked).min(CORES_MAX);
         self.habits = Habits {
-            cannon: self.habits.cannon * HABIT_KEEP + w.habit_kills.cannon,
-            smash: self.habits.smash * HABIT_KEEP + w.habit_kills.smash,
-            missile: self.habits.missile * HABIT_KEEP + w.habit_kills.missile,
+            cannon: self.habits.cannon * HABIT_KEEP + w.pilots[p].habit_kills.cannon,
+            smash: self.habits.smash * HABIT_KEEP + w.pilots[p].habit_kills.smash,
+            missile: self.habits.missile * HABIT_KEEP + w.pilots[p].habit_kills.missile,
         };
         // Contract chains advance (or end) with the contract.
         let mut chain_note = self.settle_chain(job.as_ref(), job_done);
@@ -702,16 +704,16 @@ impl Career {
         }
 
         // Standing: this shift's events plus end-of-shift standing.
-        let mut d = w.rep_delta;
+        let mut d = w.pilots[p].rep_delta;
         if self.wallet >= 0.0 {
             d.bank += REP_SHIFT_SOLVENT_BANK;
         } else {
             d.bank += REP_OVERDRAWN_BANK;
         }
-        if w.wanted == 0 && w.arrests == 0 && d.law == 0.0 {
+        if w.pilots[p].wanted == 0 && w.pilots[p].arrests == 0 && d.law == 0.0 {
             d.law += REP_CLEAN_LAW;
         }
-        if w.stats.jumpers == 0 {
+        if w.pilots[p].stats.jumpers == 0 {
             d.rivals += REP_CLEAN_RIVALS;
         }
         let clamp = |v: f64| v.clamp(-REP_LIMIT, REP_LIMIT);
@@ -728,7 +730,7 @@ impl Career {
         self.extra.insert(
             "lastShift".to_owned(),
             json!({
-                "earned": earned, "deaths": w.stats.deaths, "kills": w.stats.jumpers, "arrests": w.arrests,
+                "earned": earned, "deaths": w.pilots[p].stats.deaths, "kills": w.pilots[p].stats.jumpers, "arrests": w.pilots[p].arrests,
                 "wallet": self.wallet,
                 "contract": job.as_ref().map(|_| if job_done { "done" } else { "missed" }),
                 "boss": w.boss_down, "hold": w.hold_opened, "escort": w.escort_done,

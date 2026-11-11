@@ -26,8 +26,8 @@ fn quiet(c: &Career, rng: Rng) -> World {
     w.patrol_t = 1e9;
     w.collector_queue.clear();
     w.event_done = true;
-    w.ship.b.x = BAY_X + 1400.0;
-    w.ship.b.y = BAY_Y;
+    w.pilots[0].ship.b.x = BAY_X + 1400.0;
+    w.pilots[0].ship.b.y = BAY_Y;
     w
 }
 
@@ -65,8 +65,8 @@ fn a_contract_chain_advances_and_its_last_step_awards_a_unique_part() {
     c.contract_shift = 6;
     let mut w = quiet(&c, Rng::seeded(5));
     // The "clean" step: bank 3,500 without being wrecked.
-    w.banked = 9000.0;
-    c.settle(&w);
+    w.pilots[0].banked = 9000.0;
+    c.settle(&w, 0);
     assert!(c.owns(Part::Grapple));
     assert_eq!(c.chain, None);
     assert_eq!(c.chains_done, vec![Chain::SaltyDog]);
@@ -103,7 +103,7 @@ fn escorting_a_hauler_home_meets_the_escort_contract() {
             break;
         }
         step(&mut w);
-        w.ship.hp = 999.0;
+        w.pilots[0].ship.hp = 999.0;
     }
     let h = w.hauler.as_mut().expect("the hauler arrives on schedule");
     h.b.x = BAY_X + 300.0;
@@ -114,9 +114,9 @@ fn escorting_a_hauler_home_meets_the_escort_contract() {
         }
         step(&mut w);
     }
-    let k = w.contract.clone().unwrap();
+    let k = w.pilots[0].contract.clone().unwrap();
     assert!(w.escort_done);
-    assert!(w.contract_progress(&k) >= k.n);
+    assert!(w.contract_progress(0, &k) >= k.n);
 }
 
 #[test]
@@ -177,7 +177,7 @@ fn a_rogue_sentry_drops_a_core_that_can_be_stored_and_reprogrammed() {
     c.owned.push(Part::DroneBay);
     c.mounted[3] = Some(Part::DroneBay);
     let mut w = quiet(&c, Rng::seeded(13));
-    let mut d = w.make_sentry(0, 1);
+    let mut d = w.make_sentry(0, 0, 1);
     d.rogue = true;
     d.wander = (0.0, 0.0);
     d.vx = 0.0;
@@ -191,8 +191,8 @@ fn a_rogue_sentry_drops_a_core_that_can_be_stored_and_reprogrammed() {
         .position(|i| i.kind == ItemType::Core)
         .expect("the rogue leaves its core");
     w.bank_item(core);
-    w.banked = 5000.0;
-    c.settle(&w);
+    w.pilots[0].banked = 5000.0;
+    c.settle(&w, 0);
     assert_eq!(c.cores, 1);
     c.reprogram_core().expect("a drone bay with room");
     assert_eq!((c.cores, c.sentries), (0, 1));
@@ -209,19 +209,23 @@ fn the_awarded_self_sealing_hull_mounts_and_repairs_the_hull() {
     c.contract_shift = 8;
     let mut w = quiet(&c, Rng::seeded(3));
     w.vault_opened = true;
-    w.banked = 4000.0;
-    c.settle(&w);
+    w.pilots[0].banked = 4000.0;
+    c.settle(&w, 0);
     assert!(c.owns(Part::HullSeal), "the chain's last step awards it");
     c.mount(Part::HullSeal).expect("an awarded part mounts");
 
     let mut w = quiet(&c, Rng::seeded(3));
-    assert!(w.mods.hull_seal);
-    w.ship.hp = 50.0;
+    assert!(w.pilots[0].mods.hull_seal);
+    w.pilots[0].ship.hp = 50.0;
     for _ in 0..60 {
         step(&mut w);
     }
     // One second of steps; the bay is far away, so this is the seal alone.
-    assert!((w.ship.hp - 51.5).abs() < 1e-6, "hull {}", w.ship.hp);
+    assert!(
+        (w.pilots[0].ship.hp - 51.5).abs() < 1e-6,
+        "hull {}",
+        w.pilots[0].ship.hp
+    );
 }
 
 /// Training (guided-first-shift.js): rivals and the field event wait while
@@ -244,11 +248,11 @@ fn training_holds_rivals_and_advances_on_each_action() {
     assert_eq!(w.tut.as_ref().map(|t| t.step), Some(0));
 
     // Step 1: fly clear of the bay, held for 0.8 s.
-    w.ship.b.x = BAY_X + 600.0;
-    w.ship.b.y = BAY_Y;
+    w.pilots[0].ship.b.x = BAY_X + 600.0;
+    w.pilots[0].ship.b.y = BAY_Y;
     for _ in 0..60 {
-        w.ship.b.x = BAY_X + 600.0;
-        w.ship.b.vx = 0.0;
+        w.pilots[0].ship.b.x = BAY_X + 600.0;
+        w.pilots[0].ship.b.vx = 0.0;
         step(&mut w);
     }
     assert_eq!(w.tut.as_ref().map(|t| t.step), Some(1));
@@ -268,8 +272,8 @@ fn local_coop_partner_latches_onto_the_cable_and_pulls() {
     c.shift = 2;
     let mut w = quiet(&c, Rng::seeded(6));
     w.spawn_partner();
-    w.ship.angle = 0.0;
-    let (sx, sy) = (w.ship.b.x, w.ship.b.y);
+    w.pilots[0].ship.angle = 0.0;
+    let (sx, sy) = (w.pilots[0].ship.b.x, w.pilots[0].ship.b.y);
     let it = w.new_item(ItemType::Engine, sx + 60.0, sy, 0.0, 0.0);
     let id = it.id;
     w.items.push(it);
@@ -299,8 +303,8 @@ fn local_coop_partner_latches_onto_the_cable_and_pulls() {
     };
     for _ in 0..90 {
         step(&mut w);
-        w.ship.b.vx = 0.0;
-        w.ship.b.vy = 0.0;
+        w.pilots[0].ship.b.vx = 0.0;
+        w.pilots[0].ship.b.vy = 0.0;
     }
     let x1 = w.items[w.item_index(id).unwrap()].b.x;
     assert!(x1 - x0 > 10.0, "pulled {x0} -> {x1}");
@@ -314,17 +318,17 @@ fn a_cargo_smash_raises_hit_stop_and_a_highlight() {
     let mut c = Career::new(Mode::Standard);
     c.shift = 3;
     let mut w = quiet(&c, Rng::seeded(2));
-    let (sx, sy) = (w.ship.b.x, w.ship.b.y);
+    let (sx, sy) = (w.pilots[0].ship.b.x, w.pilots[0].ship.b.y);
     let j = w.new_jumper(sx + 200.0, sy, Some(cj_sim::consts::Variant::Cutter));
     w.jumpers.push(j);
     w.events.clear();
     let n = w.jumpers.len() - 1;
     w.hurt_jumper(n, 99.0, Some(7.0));
-    assert!(w.events.contains(&Event::HitStop(HITSTOP_SMASH)));
-    assert!(w.events.iter().any(
+    assert!(w.heard(&Event::HitStop(HITSTOP_SMASH)));
+    assert!(w.events.iter().map(|n| &n.event).any(
         |e| matches!(e, Event::Highlight { text, .. } if text == "Smashed a rival with cargo")
     ));
-    assert!(w.events.contains(&Event::Unlock("smash")));
+    assert!(w.heard(&Event::Unlock(cj_sim::events::Achievement::Smash)));
 }
 
 /// updateCamera in co-op: centred between the tugs, zoomed out to fit them.
@@ -336,16 +340,16 @@ fn the_camera_frames_both_tugs() {
     w.wrecks.clear();
     w.spawn_partner();
     let p = w.p2.as_mut().expect("partner");
-    p.b.x = w.ship.b.x - 1500.0;
-    p.b.y = w.ship.b.y;
+    p.b.x = w.pilots[0].ship.b.x - 1500.0;
+    p.b.y = w.pilots[0].ship.b.y;
     // Long enough for the camera's easing to settle.
     for _ in 0..900 {
         step(&mut w);
     }
     let p = w.p2.as_ref().expect("partner");
-    let mid = (w.ship.b.x + p.b.x) / 2.0;
+    let mid = (w.pilots[0].ship.b.x + p.b.x) / 2.0;
     assert!((w.cam.x - mid).abs() < 1.0, "{} vs {mid}", w.cam.x);
-    let gap = (w.ship.b.x - p.b.x).hypot(w.ship.b.y - p.b.y);
+    let gap = (w.pilots[0].ship.b.x - p.b.x).hypot(w.pilots[0].ship.b.y - p.b.y);
     let base = (VIEW.0.min(VIEW.1) / 900.0).clamp(0.5, 1.1);
     let want = base * 750.0 / gap;
     assert!((w.cam.zoom - want).abs() < 0.01, "{} vs {want}", w.cam.zoom);
@@ -364,10 +368,10 @@ fn with_frail_rival(x: f64, y: f64) -> World {
 }
 
 fn no_credit_taken(w: &World) {
-    assert_eq!(w.stats.jumpers, 0, "no kill on the shift report");
-    assert_eq!(w.kills.skiff, 0, "no kill on the tally");
+    assert_eq!(w.pilots[0].stats.jumpers, 0, "no kill on the shift report");
+    assert_eq!(w.pilots[0].kills.skiff, 0, "no kill on the tally");
     assert_eq!(w.grudge, 0.0, "no grudge");
-    assert_eq!(w.bounties, 0.0, "no bounty");
+    assert_eq!(w.pilots[0].bounties, 0.0, "no bounty");
 }
 
 #[test]
@@ -395,14 +399,14 @@ fn only_a_reactor_you_set_off_earns_the_kill() {
         if blamed {
             w.prime_reactor(i);
         } else {
-            w.prime_reactor_as(i, true);
+            w.prime_reactor_by(i, cj_sim::world::Blame::Nobody);
         }
         for _ in 0..10 {
             step(&mut w);
         }
         assert!(w.jumpers.is_empty(), "the blast killed it");
         if blamed {
-            assert_eq!(w.stats.jumpers, 1);
+            assert_eq!(w.pilots[0].stats.jumpers, 1);
         } else {
             no_credit_taken(&w);
         }
@@ -428,8 +432,8 @@ fn a_crab_on_the_hull_lets_go_of_its_cargo() {
     use cj_sim::Action;
     let c = Career::new(Mode::Standard);
     let mut w = quiet(&c, Rng::Constant(0.5));
-    w.ship.angle = 0.0;
-    let (sx, sy) = (w.ship.b.x, w.ship.b.y);
+    w.pilots[0].ship.angle = 0.0;
+    let (sx, sy) = (w.pilots[0].ship.b.x, w.pilots[0].ship.b.y);
     let it = w.new_item(ItemType::Engine, sx + 60.0, sy, 0.0, 0.0);
     let id = it.id;
     w.items.push(it);
@@ -459,19 +463,19 @@ fn cargo_taken_in_an_arrest_counts_as_lost() {
     use cj_sim::Action;
     let c = Career::new(Mode::Standard);
     let mut w = quiet(&c, Rng::Constant(0.5));
-    w.ship.angle = 0.0;
-    let (sx, sy) = (w.ship.b.x, w.ship.b.y);
+    w.pilots[0].ship.angle = 0.0;
+    let (sx, sy) = (w.pilots[0].ship.b.x, w.pilots[0].ship.b.y);
     let it = w.new_item(ItemType::Engine, sx + 60.0, sy, 0.0, 0.0);
     w.items.push(it);
     w.action(Action::Hook);
     step(&mut w);
-    let cargo = w.line_value();
+    let cargo = w.line_value(0);
     assert!(cargo > 0.0);
-    w.wanted = 1;
-    w.spawn_sheriff(false);
+    w.pilots[0].wanted = 1;
+    w.spawn_sheriff(0, false);
     w.sheriffs[0].shakedown = false;
     w.arrest(0);
-    assert_eq!(w.stats.lost, cargo);
+    assert_eq!(w.pilots[0].stats.lost, cargo);
 }
 
 #[test]
@@ -481,9 +485,9 @@ fn wrecked_jaws_are_tallied_even_in_a_no_blame_blast() {
     let mut w = quiet(&c, Rng::Constant(0.5));
     w.spawn_refinery();
     w.refinery.as_mut().expect("spawned").state = RefineryState::Hungry;
-    w.no_blame = true;
+    w.blame = cj_sim::world::Blame::Nobody;
     w.hurt_jaws(999.0);
-    assert_eq!(w.kills.jaws, 1);
+    assert_eq!(w.pilots[0].kills.jaws, 1);
 }
 
 #[test]
@@ -518,9 +522,9 @@ fn open_field() -> (World, f64, f64) {
     w.rocks.clear();
     w.wrecks.clear();
     w.items.clear();
-    w.ship.angle = 0.0;
-    w.ship.invuln = 0.0;
-    let (x, y) = (w.ship.b.x, w.ship.b.y);
+    w.pilots[0].ship.angle = 0.0;
+    w.pilots[0].ship.invuln = 0.0;
+    let (x, y) = (w.pilots[0].ship.b.x, w.pilots[0].ship.b.y);
     (w, x, y)
 }
 
@@ -562,10 +566,10 @@ fn the_wrecked_tug_throws_a_shockwave_nobody_blames_you_for() {
     w.jumpers.push(j);
     let it = w.new_item(ItemType::Scrap, sx + 150.0, sy, 0.0, 0.0);
     w.items.push(it);
-    w.kill_ship();
+    w.kill_ship(0);
     assert!(w.jumpers[0].dead, "caught in the blast");
     assert!(w.items[0].b.vx > 0.0, "debris thrown outward");
-    assert_eq!(w.stats.jumpers, 0);
+    assert_eq!(w.pilots[0].stats.jumpers, 0);
     assert_eq!(w.grudge, 0.0);
 }
 
@@ -573,17 +577,20 @@ fn the_wrecked_tug_throws_a_shockwave_nobody_blames_you_for() {
 fn a_wanted_star_fades_only_while_nobody_is_chasing_you() {
     use cj_sim::opposition::SheriffState;
     let (mut w, _, _) = open_field();
-    w.wanted = 2;
+    w.pilots[0].wanted = 2;
     for _ in 0..(WANTED_COOLDOWN / STEP).ceil() as usize + 2 {
         step(&mut w);
         w.sheriffs.clear();
     }
-    assert_eq!(w.wanted, 1);
-    w.spawn_sheriff(false);
+    assert_eq!(w.pilots[0].wanted, 1);
+    w.spawn_sheriff(0, false);
     w.sheriffs[0].state = SheriffState::Pursuit;
-    w.wanted_cool_t = 1.0;
+    w.pilots[0].wanted_cool_t = 1.0;
     step(&mut w);
-    assert_eq!(w.wanted_cool_t, WANTED_COOLDOWN, "a chase holds the clock");
+    assert_eq!(
+        w.pilots[0].wanted_cool_t, WANTED_COOLDOWN,
+        "a chase holds the clock"
+    );
 }
 
 #[test]
@@ -594,15 +601,15 @@ fn radiation_kills_shields_burns_the_hull_and_fades() {
         y: sy,
         t: RAD_CLOUD_TIME,
     });
-    let hp = w.ship.hp;
+    let hp = w.pilots[0].ship.hp;
     step(&mut w);
-    assert_eq!(w.ship.shield, 0.0);
+    assert_eq!(w.pilots[0].ship.shield, 0.0);
     assert!(
-        w.ship.hp < hp && w.ship.hp > hp - 1.0,
+        w.pilots[0].ship.hp < hp && w.pilots[0].ship.hp > hp - 1.0,
         "a slow burn: {}",
-        w.ship.hp
+        w.pilots[0].ship.hp
     );
-    assert!(w.in_cloud);
+    assert!(w.pilots[0].in_cloud);
     w.clouds[0].t = STEP / 2.0;
     step(&mut w);
     assert!(w.clouds.is_empty());
@@ -629,8 +636,8 @@ fn a_level_5_cannon_fires_a_laser_that_lands_instantly() {
     let mut w = quiet(&c, Rng::Constant(0.5));
     w.rocks.clear();
     w.wrecks.clear();
-    w.ship.angle = 0.0;
-    let (sx, sy) = (w.ship.b.x, w.ship.b.y);
+    w.pilots[0].ship.angle = 0.0;
+    let (sx, sy) = (w.pilots[0].ship.b.x, w.pilots[0].ship.b.y);
     let mut r = make_rock_drifting(&mut w.rng, 3, sx + LASER_RANGE * 0.7, sy);
     r.hp = 500.0;
     w.rocks.push(r);
@@ -644,6 +651,7 @@ fn a_level_5_cannon_fires_a_laser_that_lands_instantly() {
     assert!(w
         .events
         .iter()
+        .map(|n| &n.event)
         .any(|e| matches!(e, cj_sim::events::Event::Laser { .. })));
 }
 
@@ -679,7 +687,7 @@ fn some_missiles_lose_their_lock() {
         let mut w = quiet(&c, Rng::Constant(roll));
         w.rocks.clear();
         w.wrecks.clear();
-        let (sx, sy) = (w.ship.b.x, w.ship.b.y);
+        let (sx, sy) = (w.pilots[0].ship.b.x, w.pilots[0].ship.b.y);
         let j = w.new_jumper(sx + 300.0, sy, Some(Variant::Cutter));
         w.jumpers.push(j);
         for _ in 0..3 {

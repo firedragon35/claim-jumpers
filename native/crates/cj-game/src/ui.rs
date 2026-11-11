@@ -642,6 +642,38 @@ pub fn backdrop(view: (f32, f32)) {
     );
 }
 
+/// An opaque splash that hides the field: a deep, faintly graded fill with
+/// the game's name across it. Online, menus sit on it because the shared
+/// shift goes on underneath, where a dimmed view would only distract.
+pub fn splash(look: &Look, view: (f32, f32), dpi: f32) {
+    crate::draw::screen_camera(view);
+    let top = Color::new(10.0 / 255.0, 14.0 / 255.0, 24.0 / 255.0, 1.0);
+    let bottom = Color::new(3.0 / 255.0, 4.0 / 255.0, 8.0 / 255.0, 1.0);
+    // A vertical grade in bands (macroquad has no gradient fill).
+    let bands = 24;
+    for i in 0..bands {
+        let t = i as f32 / (bands - 1) as f32;
+        let c = Color::new(
+            top.r + (bottom.r - top.r) * t,
+            top.g + (bottom.g - top.g) * t,
+            top.b + (bottom.b - top.b) * t,
+            1.0,
+        );
+        let h = view.1 / bands as f32;
+        draw_rectangle(0.0, h * i as f32, view.0, h + 1.0, c);
+    }
+    let size = (view.0 / 9.0).clamp(48.0, 160.0);
+    crate::look::text_centered(
+        "CLAIM JUMPERS",
+        view.0 / 2.0,
+        view.1 - size * 0.9,
+        size,
+        &look.fonts.display,
+        rgba(col::HAZARD, 0.06),
+        dpi,
+    );
+}
+
 /// dl.ledger: muted labels, right-aligned values, 13 px mono, columns
 /// sized to their widest entry (gap 2 px rows, 18 px columns). Returns the
 /// block's size. A value's colour marks it (.pos amber, .neg danger).

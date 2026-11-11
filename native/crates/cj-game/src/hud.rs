@@ -53,7 +53,7 @@ pub fn draw(look: &Look, w: &World, career: Option<&Career>, view: (f32, f32), d
     // Left: banked credits and what's on the line.
     label(look, "Banked", pad, top, crate::look::hex(col::MUTED));
     text_left(
-        &fmt_credits(w.banked),
+        &fmt_credits(w.me().banked),
         pad,
         top + 16.0,
         34.0,
@@ -62,6 +62,7 @@ pub fn draw(look: &Look, w: &World, career: Option<&Career>, view: (f32, f32), d
     );
     // Sealed pods stay secret on the HUD too: their value shows as "+ ?".
     let chain = w
+        .me()
         .chain
         .iter()
         .filter_map(|id| w.item_index(*id))
@@ -95,9 +96,9 @@ pub fn draw(look: &Look, w: &World, career: Option<&Career>, view: (f32, f32), d
         online(&s, ly, colr);
     }
     // The accepted contract and its progress; cable once it is met.
-    if let Some(k) = &w.contract {
+    if let Some(k) = &w.me().contract {
         ly += 18.0;
-        let prog = k.n.min(w.contract_progress(k));
+        let prog = k.n.min(w.contract_progress(0, k));
         let money = matches!(
             k.kind,
             cj_sim::field::ContractKind::Bank | cj_sim::field::ContractKind::Clean
@@ -107,7 +108,7 @@ pub fn draw(look: &Look, w: &World, career: Option<&Career>, view: (f32, f32), d
         } else {
             format!("{prog} / {}", k.n)
         };
-        let failed = k.kind == cj_sim::field::ContractKind::Clean && w.stats.deaths > 0;
+        let failed = k.kind == cj_sim::field::ContractKind::Clean && w.me().stats.deaths > 0;
         let (s, colr) = if failed {
             (format!("Contract failed · {}", k.text()), col::HAZARD)
         } else if prog >= k.n {
@@ -117,11 +118,11 @@ pub fn draw(look: &Look, w: &World, career: Option<&Career>, view: (f32, f32), d
         };
         online(&s, ly, colr);
     }
-    if w.mods.grinder || w.ship.slugs > 0 {
+    if w.me().mods.grinder || w.me().ship.slugs > 0 {
         ly += 18.0;
-        online(&format!("Slugs {}", w.ship.slugs), ly, col::TEXT);
+        online(&format!("Slugs {}", w.me().ship.slugs), ly, col::TEXT);
     }
-    if w.mods.missiles {
+    if w.me().mods.missiles {
         ly += 18.0;
         let lw = text_left(
             "Missiles ",
@@ -131,8 +132,8 @@ pub fn draw(look: &Look, w: &World, career: Option<&Career>, view: (f32, f32), d
             &look.fonts.mono,
             crate::look::hex(col::HAZARD),
         );
-        let rack = w.mods.missile_rack as usize;
-        let n = (w.ship.missiles as usize).min(rack);
+        let rack = w.me().mods.missile_rack as usize;
+        let n = (w.me().ship.missiles as usize).min(rack);
         crate::ui::pips(
             pad + lw,
             ly + 8.0,
@@ -142,7 +143,7 @@ pub fn draw(look: &Look, w: &World, career: Option<&Career>, view: (f32, f32), d
             crate::look::hex(col::HAZARD),
         );
     }
-    if w.mods.drone_bay {
+    if w.me().mods.drone_bay {
         ly += 18.0;
         let alive = w.sentries.iter().filter(|d| !d.dead && !d.rogue).count();
         let max = cj_sim::parts::SENTRY_MAX as usize;
@@ -175,7 +176,7 @@ pub fn draw(look: &Look, w: &World, career: Option<&Career>, view: (f32, f32), d
     // coming for you once wanted; flashing while anyone is in pursuit.
     {
         use cj_sim::opposition::{law_tier, SheriffState, WANTED_MAX};
-        let tier = law_tier(w.wanted);
+        let tier = law_tier(w.me().wanted);
         let note = match tier {
             Some(t) => format!(" · {}", t.name.to_uppercase()),
             None if w.sheriffs.iter().any(|s| s.shakedown) => " · SHAKEDOWN".to_owned(),
@@ -183,14 +184,14 @@ pub fn draw(look: &Look, w: &World, career: Option<&Career>, view: (f32, f32), d
         };
         let pursuit = w.sheriffs.iter().any(|s| s.state == SheriffState::Pursuit);
         let flash = pursuit && (get_time() * 4.0).floor() as i64 % 2 == 1;
-        let color = if w.wanted == 0 {
+        let color = if w.me().wanted == 0 {
             crate::look::rgba(col::MUTED, 0.55)
         } else if tier.is_some_and(|t| t.swat) || flash {
             crate::look::hex(col::DANGER)
         } else {
             crate::look::hex(col::LAW)
         };
-        let font = if w.wanted == 0 {
+        let font = if w.me().wanted == 0 {
             &look.fonts.mono_light
         } else {
             &look.fonts.mono
@@ -203,7 +204,7 @@ pub fn draw(look: &Look, w: &World, career: Option<&Career>, view: (f32, f32), d
         let mut x = (vw - total) / 2.0;
         x += text_left(head, x, cy, 13.0, font, color);
         for i in 0..WANTED_MAX {
-            crate::look::star(x + star_w / 2.0, cy + 7.0, 5.5, i < w.wanted, color);
+            crate::look::star(x + star_w / 2.0, cy + 7.0, 5.5, i < w.me().wanted, color);
             x += star_w;
         }
         text_left(&note, x, cy, 13.0, font, color);
@@ -223,7 +224,7 @@ pub fn draw(look: &Look, w: &World, career: Option<&Career>, view: (f32, f32), d
         );
         cy += 15.0;
     }
-    if w.under_attack_t > 0.0 {
+    if w.me().under_attack_t > 0.0 {
         let txt = "⚠ UNDER ATTACK";
         let tw = text_width(txt, 13.0, &look.fonts.mono);
         text_left(
@@ -252,8 +253,8 @@ pub fn draw(look: &Look, w: &World, career: Option<&Career>, view: (f32, f32), d
     // Right: meters, 220 px wide (or 40% of a narrow window).
     let mw = 220.0f32.min(vw * 0.4);
     let mx = vw - pad - mw;
-    let s = &w.ship;
-    let m = &w.mods;
+    let s = &w.me().ship;
+    let m = &w.me().mods;
     meter(
         look,
         "Shield",
@@ -300,7 +301,7 @@ pub fn draw(look: &Look, w: &World, career: Option<&Career>, view: (f32, f32), d
         // The browser styles no "hot" state for this bar: always amber.
         col::HAZARD,
     );
-    let load = w.tow_mass();
+    let load = w.tow_mass(0);
     let frac = (load / m.winch_cap) as f32;
     meter(
         look,

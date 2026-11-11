@@ -249,7 +249,7 @@ pub fn drone(look: &Look, d: &Drone, t: f32) {
 
 /// Draws a debt collector, plus the tether to the tug while the collector holds it in a net. `t` is the animation clock in seconds.
 pub fn collector(look: &Look, w: &World, k: &Collector, t: f32, rng: &mut Rng, scale: f32) {
-    let s = &w.ship;
+    let s = &w.me().ship;
     // The tether to a netted tug.
     if k.state == CollectorState::Tow && s.alive && s.net.is_some_and(|n| n.by == k.id) {
         let pts = [v(k.b.x, k.b.y), v(s.b.x, s.b.y)];
@@ -351,7 +351,7 @@ pub fn net_on_ship(
     settings: &Settings,
     scale: f32,
 ) {
-    let s = &w.ship;
+    let s = &w.me().ship;
     let Some(net) = s.net.filter(|_| s.alive) else {
         return;
     };
@@ -479,7 +479,7 @@ pub fn sheriff(look: &Look, sh: &Sheriff, t: f32) {
 
 /// While a sheriff closes in, a ring around the tug fills toward arrest.
 pub fn cuff_meter(look: &Look, w: &World, t: f32, scale: f32) {
-    let s = &w.ship;
+    let s = &w.me().ship;
     let Some(sh) = w
         .sheriffs
         .iter()
@@ -518,7 +518,8 @@ pub fn cuff_meter(look: &Look, w: &World, t: f32, scale: f32) {
 /// A mining drone, plus its beam while cutting.
 pub fn miner(m: &Miner, w: &World, t: f32, rng: &mut Rng) {
     if let Some((bx, by)) = m.beam {
-        let angry = m.angry_t > 0.0 && w.ship.alive && (bx, by) == (w.ship.b.x, w.ship.b.y);
+        let angry =
+            m.angry_t > 0.0 && w.me().ship.alive && (bx, by) == (w.me().ship.b.x, w.me().ship.b.y);
         let tip = v(m.b.x + m.angle.cos() * 18.0, m.b.y + m.angle.sin() * 18.0);
         let width = 1.5 + (t * 30.0).sin().abs() * 1.5;
         glow_stroke(

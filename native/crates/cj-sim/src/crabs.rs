@@ -46,7 +46,6 @@ impl World {
             return;
         }
         self.crabs[c].leg_t += dt * 12.0;
-        let alive = self.ship.alive;
         match self.crabs[c].state {
             CrabState::Ride => {
                 let host = self.crabs[c].host.and_then(|id| self.item_index(id));
@@ -58,6 +57,9 @@ impl World {
                 };
                 let hi = &self.items[h];
                 let (hx, hy, ha, hr, towed) = (hi.b.x, hi.b.y, hi.angle, hi.b.r, hi.towed);
+                // Towed cargo belongs to a pilot: that cable is the one to climb.
+                let owner = hi.owner.unwrap_or(0);
+                let alive = self.pilots[owner].ship.alive;
                 let cr = &mut self.crabs[c];
                 cr.x = hx + (ha + cr.off_a).cos() * hr * 0.75;
                 cr.y = hy + (ha + cr.off_a).sin() * hr * 0.75;
@@ -65,22 +67,27 @@ impl World {
                     cr.ride_t += dt;
                     if cr.ride_t > 0.8 {
                         cr.state = CrabState::Crawl;
+                        cr.on = owner;
                         cr.t = 0.0;
                         self.radio(Radio::Crab, true, true);
                     }
                 }
             }
             CrabState::Crawl => {
+                let p = self.crabs[c].on;
+                let alive = self.pilots[p].ship.alive;
                 let host_id = self.crabs[c].host;
-                let idx = host_id.and_then(|id| self.chain.iter().position(|x| *x == id));
+                let idx = host_id.and_then(|id| self.pilots[p].chain.iter().position(|x| *x == id));
                 let Some(idx) = idx.filter(|_| alive) else {
                     let cr = &mut self.crabs[c];
                     cr.state = CrabState::Ride;
                     cr.ride_t = 0.0;
                     return;
                 };
-                let anchor = self.anchor_body(idx);
-                let h = self.item_index(self.chain[idx]).expect("chain item exists");
+                let anchor = self.anchor_body(p, idx);
+                let h = self
+                    .item_index(self.pilots[p].chain[idx])
+                    .expect("chain item exists");
                 let hb = self.items[h].b;
                 let jerk = self.items[h].jerk;
                 let seg_len = js::dist(hb.x, hb.y, anchor.x, anchor.y).max(40.0);
@@ -108,26 +115,29 @@ impl World {
                         self.radio(Radio::CrabHull, true, false);
                     } else {
                         let cr = &mut self.crabs[c];
-                        cr.host = Some(self.chain[idx - 1]);
+                        cr.host = Some(self.pilots[p].chain[idx - 1]);
                         cr.t = 0.0;
                     }
                 }
             }
             CrabState::Latched => {
+                let p = self.crabs[c].on;
+                let alive = self.pilots[p].ship.alive;
                 if !alive {
                     let vx = self.rng.range(-100.0, 100.0);
                     let vy = self.rng.range(-100.0, 100.0);
                     self.fling_crab(c, vx, vy);
                     return;
                 }
-                let s = &mut self.ship;
+                let diff_damage = self.pilots[p].diff_damage;
+                let s = &mut self.pilots[p].ship;
                 let cr = &mut self.crabs[c];
                 cr.x = s.b.x + (s.angle + cr.off_a).cos() * (s.b.r - 2.0);
                 cr.y = s.b.y + (s.angle + cr.off_a).sin() * (s.b.r - 2.0);
                 // Straight off the hull, under the shield, without the
                 // per-hit effects damage_ship would raise every step.
                 if s.invuln <= 0.0 {
-                    s.hp -= CRAB_HULL_DPS * self.diff_damage * dt;
+                    s.hp -= CRAB_HULL_DPS * diff_damage * dt;
                 }
                 // Audible chewing, a few chomps a second.
                 cr.chomp_t -= dt;
@@ -140,9 +150,9 @@ impl World {
                     self.sfx(Sfx::Chomp);
                 }
                 if dead {
-                    self.kill_ship();
+                    self.kill_ship(p);
                 }
-                let s = &self.ship;
+                let s = &self.pilots[p].ship;
                 if s.spin_meter > CRAB_SPIN_TO_SHAKE {
                     let a = s.angle + self.crabs[c].off_a;
                     let (vx, vy) = (s.b.vx + a.cos() * 260.0, s.b.vy + a.sin() * 260.0);
@@ -151,6 +161,9 @@ impl World {
                 }
             }
             CrabState::Free => {
+                // A loose crab goes for the nearest tug.
+                let p = self.nearest_pilot(self.crabs[c].x, self.crabs[c].y);
+                let alive = self.pilots[p].ship.alive;
                 let cr = &mut self.crabs[c];
                 cr.stun_t = (cr.stun_t - dt).max(0.0);
                 cr.x += cr.vx * dt;
@@ -161,14 +174,15 @@ impl World {
                 if cr.stun_t > 0.0 {
                     return;
                 }
-                let s = self.ship.b;
-                let sa = self.ship.angle;
+                let s = self.pilots[p].ship.b;
+                let sa = self.pilots[p].ship.angle;
                 if alive && crab_dist(cr, s.x, s.y) < 450.0 {
                     let a = (s.y - cr.y).atan2(s.x - cr.x);
                     cr.vx += a.cos() * 90.0 * dt;
                     cr.vy += a.sin() * 90.0 * dt;
                     if crab_dist(cr, s.x, s.y) < s.r + cr.r {
                         cr.state = CrabState::Latched;
+                        cr.on = p;
                         cr.off_a = (cr.y - s.y).atan2(cr.x - s.x) - sa;
                         self.radio(Radio::CrabHull, true, false);
                         return;

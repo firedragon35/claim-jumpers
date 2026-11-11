@@ -23,11 +23,14 @@ mod controls;
 mod draw;
 mod foes;
 mod fx;
+mod host;
 mod hud;
 mod lines;
 mod look;
 mod marge;
 mod music;
+mod net;
+mod online;
 mod profile;
 mod radar;
 mod replay;
@@ -38,7 +41,7 @@ mod sounds;
 mod tug;
 mod ui;
 
-use cj_sim::career::{Career, Mode, Outcome, Settlement};
+use cj_sim::career::{Career, Mode, Outcome, Settlement, MODES};
 use cj_sim::consts::{Variant, BAY_X, BAY_Y, MAX_FRAME_DT, MAX_STEPS_PER_FRAME, STEP};
 use cj_sim::events::{Event, Sfx};
 use cj_sim::items::ItemType;
@@ -79,6 +82,12 @@ fn view() -> (f32, f32) {
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Screen {
+    /// The first screen: single player, host a server, or join one.
+    Launch,
+    /// Typing the address of a server to join, and seeing how full it is.
+    Join,
+    /// Online, between shifts or waiting to be let into the next one.
+    Lobby,
     Title,
     Play,
     Paused,
@@ -101,6 +110,11 @@ const PILOT_FILE: &str = "pilot.txt";
 const TOAST_TIME: f64 = 3.5;
 /// How long a save warning stays up (seconds): longer, as it matters more.
 const SAVE_WARNING_TIME: f64 = 8.0;
+/// How long the host's "others join with ..." note stays up (seconds).
+const HOST_TOAST_TIME: f64 = 20.0;
+/// Seconds of hosting alone before the host is told why others may not be
+/// getting in.
+const ALONE_HINT_AFTER: f64 = 120.0;
 
 /// Everything the game keeps between frames.
 struct App {
@@ -153,6 +167,27 @@ struct App {
     bench: sounds::Bench,
     /// The last achievement earned, and the clock time it fades.
     toast: Option<(String, f64)>,
+    /// A connection to a server while playing online (see `net`).
+    online: Option<net::Online>,
+    /// The server this game is hosting, if any (see `host`).
+    hosted: Option<host::Hosted>,
+    /// When hosting began, and whether the "nobody has joined" hint has
+    /// been shown for it.
+    hosted_at: f64,
+    alone_hinted: bool,
+    /// The address typed on the Join screen.
+    join_addr: String,
+    /// This player said they are ready in the current break.
+    ready_sent: bool,
+    /// The public chat seen on this server, and the line being typed.
+    chat: online::Chat,
+    /// How many players a hosted server is for (it also sizes the field).
+    host_limit: usize,
+    /// The difficulty mode of careers on a server this player hosts.
+    host_mode: Mode,
+    /// Online: this player's career on the server, as of the last report
+    /// (never the single-player career, which stays in `career`).
+    online_career: Option<Career>,
     /// A daily challenge in progress: its day and its fixed loadout.
     daily: Option<(String, Career)>,
 }
@@ -182,7 +217,8 @@ impl App {
         if s == Screen::Title {
             self.saved = self.store.load_career();
         }
-        if s == Screen::Shop {
+        // Online the server rolls the offers and conditions.
+        if s == Screen::Shop && self.online.is_none() {
             let mut rng = self.rng();
             if let Some(c) = self.career.as_mut() {
                 c.ensure_offers(&mut rng);
@@ -208,6 +244,215 @@ impl App {
             self.world.spawn_partner();
         }
         self.begin_play(audio);
+    }
+
+    /// Connects to `server` ("host:port"). With `look_first` it only asks
+    /// how full the server is, for the Join screen ([`App::join_online`]
+    /// joins); otherwise the online shift starts at once.
+    fn start_online(
+        &mut self,
+        server: &str,
+        look_first: bool,
+        audio: &mut audio::Audio,
+    ) -> Result<(), String> {
+        let id = net::identity(&self.store);
+        let view = (self.world.view.0 as u16, self.world.view.1 as u16);
+        let on = net::Online::connect(server, id, &self.pilot, view, look_first)?;
+        self.online = Some(on);
+        if !look_first {
+            self.join_online(audio);
+        }
+        Ok(())
+    }
+
+    /// Joins the server connected to and starts flying (or waiting in the
+    /// lobby) once it answers.
+    fn join_online(&mut self, audio: &mut audio::Audio) {
+        if let Some(on) = self.online.as_mut() {
+            on.join();
+        }
+        self.ready_sent = false;
+        self.world = World::empty(Rng::Constant(0.5), self.world.view);
+        self.begin_play(audio);
+    }
+
+    /// The Join screen's line about the server being looked up, and whether
+    /// it can be joined.
+    fn join_status(&self) -> (Option<(String, u32)>, bool, bool) {
+        let Some(on) = self.online.as_ref().filter(|o| o.looking()) else {
+            return (None, false, false);
+        };
+        let mine = env!("CARGO_PKG_VERSION");
+        match &on.session.info {
+            None => (
+                Some(("Asking the server...".to_owned(), look::col::MUTED)),
+                false,
+                true,
+            ),
+            Some(i) if i.version != mine => (
+                Some((
+                    format!(
+                        "That server runs Claim Jumpers {} and you have {mine}.",
+                        i.version
+                    ),
+                    look::col::DANGER,
+                )),
+                false,
+                true,
+            ),
+            Some(i) if i.full => (
+                Some((
+                    format!(
+                        "Full: {} of {} pilots. Try again later.",
+                        i.connected, i.max
+                    ),
+                    look::col::DANGER,
+                )),
+                false,
+                true,
+            ),
+            Some(i) => (
+                Some((
+                    format!(
+                        "{} of {} pilots connected. There's room for you.",
+                        i.connected, i.max
+                    ),
+                    look::col::ORE,
+                )),
+                true,
+                true,
+            ),
+        }
+    }
+
+    /// Hosts a server on this machine (port 47820) and joins it, telling the
+    /// player the address others should type.
+    fn host(&mut self, audio: &mut audio::Audio) {
+        // Hosted careers live in their own folder, never beside career.json.
+        let careers = self
+            .store
+            .folder()
+            .map(|d| d.join("servers").join("hosted"));
+        let hosted = match host::Hosted::start(
+            env!("CARGO_PKG_VERSION"),
+            self.host_limit,
+            self.host_mode,
+            careers,
+        ) {
+            Ok(h) => h,
+            Err(e) => {
+                self.toast = Some((e, get_time() + SAVE_WARNING_TIME));
+                return;
+            }
+        };
+        self.hosted = Some(hosted);
+        self.hosted_at = get_time();
+        self.alone_hinted = false;
+        let own = format!("localhost:{}", cj_net::DEFAULT_PORT);
+        match self.start_online(&own, false, audio) {
+            Ok(()) => {
+                let tell = match host::lan_address() {
+                    Some(ip) => format!(
+                        "Hosting. Others join with {ip}. If Windows asks, allow Claim Jumpers on private networks."
+                    ),
+                    None => "Hosting on port 47820.".to_owned(),
+                };
+                self.toast = Some((tell, get_time() + HOST_TOAST_TIME));
+            }
+            Err(e) => {
+                self.hosted = None;
+                self.toast = Some((e, get_time() + SAVE_WARNING_TIME));
+            }
+        }
+    }
+
+    /// Ends an online session for `why` (shown as a toast), stops a hosted
+    /// server, and goes back to the launch screen over a fresh field (or
+    /// stays on the Join screen if the server was only being looked up).
+    fn leave_online(&mut self, why: String) {
+        let back = if self.screen == Screen::Join {
+            Screen::Join
+        } else {
+            Screen::Launch
+        };
+        if let Some(mut on) = self.online.take() {
+            on.leave();
+        }
+        // Dropping the hosted server stops it and disconnects everyone.
+        self.hosted = None;
+        self.online_career = None;
+        self.chat.clear();
+        self.world = World::new_shift(self.rng(), self.world.view);
+        self.toast = Some((why, get_time() + SAVE_WARNING_TIME));
+        self.open(back);
+    }
+
+    /// A host still alone after a while is told the usual reasons others
+    /// can't get in. A firewall that drops their packets can't be seen from
+    /// this side, so a quiet server is the only sign there is.
+    fn hint_if_alone(&mut self) {
+        let Some(on) = self.online.as_ref().filter(|_| self.hosted.is_some()) else {
+            return;
+        };
+        let others = on
+            .session
+            .lobby
+            .as_ref()
+            .map_or(0, |l| l.players.len().saturating_sub(1));
+        if self.alone_hinted || others > 0 || get_time() - self.hosted_at < ALONE_HINT_AFTER {
+            return;
+        }
+        self.alone_hinted = true;
+        let at = host::lan_address().map_or_else(String::new, |ip| format!(" with {ip}"));
+        self.toast = Some((
+            format!("No one has joined yet. Check they join{at}, and that Windows Firewall allows Claim Jumpers on private networks."),
+            get_time() + HOST_TOAST_TIME,
+        ));
+    }
+
+    /// Online screen changes the server drives: to the lobby when a shift
+    /// ends (or this player is told to wait), to the shift's report once
+    /// the server has settled it, and back into a shift when the next one
+    /// starts.
+    fn follow_server(&mut self, audio: &mut audio::Audio) {
+        // A shop answer updates this player's copy of their career.
+        let reply = self.online.as_mut().and_then(|o| o.session.shop.take());
+        if let Some((ok, msg, career)) = reply {
+            if ok && !msg.is_empty() {
+                audio.sfx(Sfx::Hook);
+            }
+            if !msg.is_empty() {
+                self.shop_msg = msg;
+            }
+            self.online_career = Some(career);
+        }
+        let settled = self.online.as_mut().and_then(|o| o.session.settled.take());
+        if let Some((st, career)) = settled {
+            // Online careers have no local best: the report shows none.
+            let rep = screens::Report::new(st, &self.world, &career, 0.0, false);
+            self.report = Some(rep);
+            self.online_career = Some(career);
+            audio.set_thrust(0.0, 0.0, false);
+            self.open(Screen::Report);
+        }
+        let Some(on) = self.online.as_ref().filter(|o| !o.looking()) else {
+            return;
+        };
+        let between = on.session.waiting || on.session.in_break();
+        let flying = on.session.pilot.is_some() && !between;
+        match self.screen {
+            Screen::Play | Screen::Paused if between => {
+                audio.set_thrust(0.0, 0.0, false);
+                self.ready_sent = false;
+                self.open(Screen::Lobby);
+            }
+            Screen::Lobby | Screen::Report | Screen::Shop if flying => {
+                self.ready_sent = false;
+                self.world = World::empty(Rng::Constant(0.5), self.world.view);
+                self.begin_play(audio);
+            }
+            _ => {}
+        }
     }
 
     /// Everything a shift resets once its world is ready, career or daily.
@@ -252,7 +497,7 @@ impl App {
         let Some((day, c)) = self.daily.take() else {
             return;
         };
-        let earned = cj_sim::js::round(self.world.banked);
+        let earned = cj_sim::js::round(self.world.me().banked);
         let key = format!("daily-{day}");
         let prev = profile::board_for(&self.board, &key)
             .first()
@@ -300,7 +545,7 @@ impl App {
         };
         let mode = c.mode;
         let flown = c.shift;
-        let st: Settlement = c.settle(&self.world);
+        let st: Settlement = c.settle(&self.world, 0);
         let best = self.bests.get(mode).unwrap_or(0.0);
         let is_best = st.earned > best;
         if is_best {
@@ -333,21 +578,21 @@ impl App {
         }
         p.bump("shifts", 1.0);
         p.bump("banked", earned);
-        p.bump("deaths", f64::from(w.stats.deaths));
+        p.bump("deaths", f64::from(w.me().stats.deaths));
         p.best(earned);
-        p.bump("kills", f64::from(w.stats.jumpers));
-        p.bump("bosses", f64::from(w.kills.boss));
-        for (i, n) in profile::kill_counts(&w.kills).into_iter().enumerate() {
+        p.bump("kills", f64::from(w.me().stats.jumpers));
+        p.bump("bosses", f64::from(w.me().kills.boss));
+        for (i, n) in profile::kill_counts(&w.me().kills).into_iter().enumerate() {
             p.kills[i] += n;
         }
         let mut earned_ids = Vec::new();
         if met {
             earned_ids.push("contract");
         }
-        if w.stats.deaths == 0 && earned >= 3000.0 {
+        if w.me().stats.deaths == 0 && earned >= 3000.0 {
             earned_ids.push("clean");
         }
-        if w.belt == cj_sim::field::Belt::Frontier && !w.impounded {
+        if w.belt == cj_sim::field::Belt::Frontier && !w.me().impounded {
             earned_ids.push("frontier");
         }
         match st.outcome {
@@ -446,6 +691,15 @@ impl App {
     }
 
     fn act(&mut self, a: Act, audio: &mut audio::Audio) {
+        // Online the shop belongs to the server: its buttons become requests
+        // (and the belt a vote), answered with the career as it now stands.
+        if let Some(req) = self.online.as_ref().and_then(|_| shop_request(a)) {
+            if let Some(on) = self.online.as_mut() {
+                let msg = on.session.shop_req(req);
+                on.send(msg);
+            }
+            return;
+        }
         match a {
             Act::PickMode(m) => {
                 self.mode = m;
@@ -495,6 +749,56 @@ impl App {
                 self.open(Screen::Board);
             }
             Act::OpenSounds => self.open(Screen::Sounds),
+            Act::SinglePlayer => self.open(Screen::Title),
+            Act::Host => self.host(audio),
+            Act::CycleLimit => {
+                const LIMITS: [usize; 6] = [2, 4, 8, 12, 16, 20];
+                let at = LIMITS
+                    .iter()
+                    .position(|&n| n == self.host_limit)
+                    .unwrap_or(0);
+                self.host_limit = LIMITS[(at + 1) % LIMITS.len()];
+            }
+            Act::CycleHostMode => {
+                let at = MODES.iter().position(|&m| m == self.host_mode).unwrap_or(0);
+                self.host_mode = MODES[(at + 1) % MODES.len()];
+            }
+            Act::OpenJoin => {
+                // Keys typed elsewhere mustn't land in the address.
+                while get_char_pressed().is_some() {}
+                self.open(Screen::Join);
+            }
+            Act::Join => {
+                if self.online.is_some() {
+                    if self.join_status().1 {
+                        self.join_online(audio);
+                    }
+                    return;
+                }
+                let server = format!("{}:{}", self.join_addr.trim(), cj_net::DEFAULT_PORT);
+                if let Err(e) = self.start_online(&server, true, audio) {
+                    self.toast = Some((e, get_time() + SAVE_WARNING_TIME));
+                }
+            }
+            Act::Back if self.screen == Screen::Join => {
+                if let Some(mut on) = self.online.take() {
+                    on.leave();
+                }
+                self.open(Screen::Launch);
+            }
+            Act::Ready => {
+                if let Some(on) = self.online.as_mut() {
+                    let msg = on.session.ready();
+                    on.send(msg);
+                    self.ready_sent = true;
+                }
+            }
+            Act::LeaveServer => self.leave_online("You left the server.".to_owned()),
+            Act::OpenChat => {
+                // Keys typed elsewhere mustn't land in the line.
+                while get_char_pressed().is_some() {}
+                self.chat.typing = Some(String::new());
+            }
             Act::Back => {
                 if self.screen == Screen::Sounds {
                     self.bench.stop(audio, &mut self.voice);
@@ -583,6 +887,11 @@ impl App {
             }
             Act::Daily => self.start_daily(audio),
             Act::Resume => self.open(Screen::Play),
+            // Online, leaving is just leaving: the shared shift goes on, and
+            // there's no local career to settle.
+            Act::EndShiftNow | Act::PauseToMenu if self.online.is_some() => {
+                self.leave_online("You left the server.".to_owned());
+            }
             Act::EndShiftNow => self.end_shift(audio),
             Act::PauseToMenu => {
                 // Quitting mid-shift must not dodge the installment: it ends
@@ -596,6 +905,17 @@ impl App {
                 if continues(self.report.as_ref()) {
                     self.go_to_title();
                 }
+            }
+            // Online the report leads back to the lobby: the server has
+            // already settled the career, and the break goes on there.
+            Act::ReportNext if self.online.is_some() => {
+                self.shop_msg.clear();
+                let next = if self.online_career.is_some() {
+                    Screen::Shop
+                } else {
+                    Screen::Lobby
+                };
+                self.open(next);
             }
             Act::ReportNext => {
                 if self.report.as_ref().is_some_and(|r| r.daily.is_some()) {
@@ -611,6 +931,21 @@ impl App {
                     self.career = Some(c);
                     self.start_shift(audio);
                 }
+            }
+            // Online, leaving the shop or the report goes back to the lobby,
+            // and starting the next shift means being ready for it.
+            Act::ToMenu if self.online.is_some() => self.open(Screen::Lobby),
+            Act::StartShift if self.online.is_some() => {
+                if let Some(on) = self.online.as_mut() {
+                    let msg = on.session.ready();
+                    on.send(msg);
+                }
+                self.ready_sent = true;
+                self.open(Screen::Lobby);
+            }
+            Act::OpenShop => {
+                self.shop_msg.clear();
+                self.open(Screen::Shop);
             }
             Act::ToMenu => self.go_to_title(),
             Act::StartShift => self.start_shift(audio),
@@ -694,6 +1029,28 @@ impl App {
     }
 }
 
+/// The server request a shop button stands for online, if it is one.
+fn shop_request(a: Act) -> Option<cj_net::ShopReq> {
+    use cj_net::ShopReq as R;
+    Some(match a {
+        Act::Pay(limit) => R::Pay {
+            all: limit.is_infinite(),
+        },
+        Act::Buy(p) => R::Buy(p),
+        Act::Mount(p) => R::Mount(p),
+        Act::Unmount(p) => R::Unmount(p),
+        Act::Level(s) => R::Level(s),
+        Act::BuySentry => R::Sentry,
+        Act::Offer(i) => R::Offer(u8::try_from(i).ok()?),
+        Act::Crew(c) => R::Crew(c),
+        Act::Belt(b) => R::Vote(b),
+        Act::Truce => R::Truce,
+        Act::SellCore => R::SellCore,
+        Act::ReprogramCore => R::ReprogramCore,
+        _ => return None,
+    })
+}
+
 #[macroquad::main(window_conf)]
 async fn main() {
     let smoke = std::env::args().any(|a| a == "--smoke");
@@ -741,7 +1098,8 @@ async fn main() {
         career: None,
         world: World::new_shift(seeded(7), (f64::from(vw), f64::from(vh))),
         fx: fx::Fx::new(seeded(7)),
-        screen: Screen::Title,
+        // A check run tours the single-player screens from the title.
+        screen: if smoke { Screen::Title } else { Screen::Launch },
         ui: ui::Ui::new(),
         report: None,
         title_tab: 0,
@@ -773,11 +1131,31 @@ async fn main() {
         sound_groups: sounds::groups(),
         bench: sounds::Bench::default(),
         toast: None,
+        online: None,
+        hosted: None,
+        join_addr: String::new(),
+        ready_sent: false,
+        hosted_at: 0.0,
+        alone_hinted: false,
+        chat: online::Chat::default(),
+        host_limit: 4,
+        host_mode: Mode::Standard,
+        online_career: None,
         daily: None,
     };
     let mut sm = Smoke::default();
     if smoke {
         app.act(Act::StartOrContinue, &mut audio);
+    }
+    // `--join HOST:PORT` joins that server at once, skipping the Join
+    // screen (handy for testing).
+    let join = std::env::args().skip_while(|a| a != "--join").nth(1);
+    if let Some(server) = join.filter(|_| !smoke) {
+        let (vw, vh) = view();
+        app.world.view = (f64::from(vw), f64::from(vh));
+        if let Err(e) = app.start_online(&server, false, &mut audio) {
+            app.toast = Some((e, get_time() + SAVE_WARNING_TIME));
+        }
     }
     let start = get_time();
 
@@ -790,7 +1168,10 @@ async fn main() {
         let presses = controls.presses();
         let keys = controls.menu();
         // Typing a name or waiting for a new key takes the keyboard.
-        let typing = app.name_edit.is_some() || app.rebinding.is_some();
+        let typing = app.name_edit.is_some()
+            || app.rebinding.is_some()
+            || app.screen == Screen::Join
+            || app.chat.typing.is_some();
         if let Some(b) = app.rebinding {
             if let Some(k) = get_last_key_pressed() {
                 app.settings_msg = match settings::code_of(k) {
@@ -800,6 +1181,61 @@ async fn main() {
                 app.rebinding = None;
                 app.save_settings();
             }
+        }
+        // The Join screen's address: an IP address or host name.
+        if app.screen == Screen::Join {
+            let before = app.join_addr.clone();
+            while let Some(ch) = get_char_pressed() {
+                if (ch.is_ascii_alphanumeric() || ch == '.' || ch == '-')
+                    && app.join_addr.len() < 64
+                {
+                    app.join_addr.push(ch);
+                }
+            }
+            if is_key_pressed(KeyCode::Backspace) {
+                app.join_addr.pop();
+            }
+            // A changed address means a different server: stop looking at
+            // the old one.
+            if app.join_addr != before {
+                if let Some(mut on) = app.online.take() {
+                    on.leave();
+                }
+            }
+            if !app.join_addr.is_empty()
+                && (is_key_pressed(KeyCode::Enter) || is_key_pressed(KeyCode::KpEnter))
+            {
+                app.act(Act::Join, &mut audio);
+            }
+        }
+        // Online chat: Enter opens it in a shift (the lobby has a button),
+        // Enter sends the line and Escape drops it.
+        if let Some(t) = app.chat.typing.as_mut() {
+            while let Some(ch) = get_char_pressed() {
+                if !ch.is_control() && t.chars().count() < cj_net::CHAT_MAX {
+                    t.push(ch);
+                }
+            }
+            if is_key_pressed(KeyCode::Backspace) {
+                t.pop();
+            }
+            if is_key_pressed(KeyCode::Escape) {
+                app.chat.typing = None;
+            } else if is_key_pressed(KeyCode::Enter) || is_key_pressed(KeyCode::KpEnter) {
+                let line = app.chat.typing.take().unwrap_or_default();
+                if let Some(on) = app.online.as_mut() {
+                    if let Some(msg) = on.session.say(&line) {
+                        on.send(msg);
+                    }
+                }
+            }
+        } else if !typing
+            && app.online.is_some()
+            && app.screen == Screen::Play
+            && (is_key_pressed(KeyCode::Enter) || is_key_pressed(KeyCode::KpEnter))
+        {
+            while get_char_pressed().is_some() {}
+            app.chat.typing = Some(String::new());
         }
         if let Some(t) = app.name_edit.as_mut() {
             while let Some(ch) = get_char_pressed() {
@@ -830,7 +1266,7 @@ async fn main() {
                 app.act(Act::SetMusic, &mut audio);
             }
         }
-        if presses.skip_training && app.screen == Screen::Play {
+        if presses.skip_training && app.screen == Screen::Play && !typing {
             app.skip_training();
         }
         if app.settings_dirty {
@@ -865,7 +1301,56 @@ async fn main() {
         let dt = f64::from(get_frame_time()).min(MAX_FRAME_DT);
         // The press that opens the pause card must not also close it below.
         let mut just_paused = false;
+        // Online, the connection is pumped every frame, whatever is on screen.
+        if let Some(on) = app.online.as_mut() {
+            on.pump(dt);
+            let now = get_time();
+            for line in on.session.chat.drain(..) {
+                app.chat.push(line, now);
+            }
+            if let Some(why) = on.ended.take() {
+                app.leave_online(why);
+            }
+        }
+        // A hosted server that failed has already told everyone; say why.
+        if let Some(why) = app.hosted.as_ref().and_then(host::Hosted::failed) {
+            app.leave_online(format!("Your server stopped after an error: {why}"));
+        }
+        app.follow_server(&mut audio);
+        app.hint_if_alone();
         match app.screen {
+            Screen::Play if app.online.is_some() => {
+                // While chatting the keys are typing, not flying or pausing.
+                if presses.pause && !smoke && !typing {
+                    audio.set_thrust(0.0, 0.0, false);
+                    app.open(Screen::Paused);
+                    just_paused = true;
+                } else {
+                    let flying = app.chat.typing.is_none();
+                    online_steps(
+                        &mut app,
+                        &presses,
+                        &mut controls,
+                        &mut audio,
+                        &mut fx_rng,
+                        &mut sm,
+                        flying,
+                    );
+                }
+            }
+            // The shared shift goes on behind the pause card and its
+            // settings: the tug is sent nothing held.
+            Screen::Paused | Screen::Settings if app.online.is_some() => {
+                online_steps(
+                    &mut app,
+                    &presses,
+                    &mut controls,
+                    &mut audio,
+                    &mut fx_rng,
+                    &mut sm,
+                    false,
+                );
+            }
             Screen::Play => {
                 if presses.pause && !smoke {
                     audio.set_thrust(0.0, 0.0, false);
@@ -909,14 +1394,18 @@ async fn main() {
             device: controls.last_device,
             view: (vw, vh),
             dpi,
-            show_tug: app.screen != Screen::Title,
+            show_tug: !matches!(
+                app.screen,
+                Screen::Title | Screen::Launch | Screen::Join | Screen::Lobby
+            ),
             playing: app.screen == Screen::Play,
             settings: &app.settings,
             paint: app.profile.paint_colours(),
         });
         if matches!(app.screen, Screen::Play | Screen::Paused) {
             radar::indicators(&look, &app.world, (vw, vh), dpi);
-            radar::radar(&app.world, (vw, vh));
+            let blips = app.online.as_ref().map_or(&[][..], |o| o.session.blips());
+            radar::radar(&app.world, (vw, vh), blips);
             hud::draw(
                 &look,
                 &app.world,
@@ -925,6 +1414,13 @@ async fn main() {
                 controls.last_device,
             );
             app.radio.draw(&look, app.world.t, (vw, vh));
+            // Online, holding Tab shows who is flying and how they're doing.
+            if let Some(on) = app.online.as_ref().filter(|_| is_key_down(KeyCode::Tab)) {
+                online::player_list(&look, on.session.lobby.as_ref(), on.session.pilot, (vw, vh));
+            }
+            if app.online.is_some() {
+                app.chat.draw(&look, get_time(), (vw, vh));
+            }
             if marge::draw_tutorial(&look, &app.world, (vw, vh)) && app.screen == Screen::Play {
                 app.skip_training();
             }
@@ -939,7 +1435,12 @@ async fn main() {
         let picked = match app.screen {
             Screen::Play => None,
             Screen::Paused => {
-                ui::backdrop((vw, vh));
+                // Online the shift goes on underneath, so it's hidden.
+                if app.online.is_some() {
+                    ui::splash(&look, (vw, vh), dpi);
+                } else {
+                    ui::backdrop((vw, vh));
+                }
                 let mut menu = menu_in;
                 menu.back = presses.pause && !just_paused; // P or Esc resumes
                 screens::pause(
@@ -951,6 +1452,46 @@ async fn main() {
                     app.armed_menu,
                     app.voice.enabled,
                 )
+            }
+            Screen::Launch => {
+                ui::backdrop((vw, vh));
+                screens::launch(
+                    &look,
+                    &mut app.ui,
+                    &menu_in,
+                    (vw, vh),
+                    dpi,
+                    app.host_limit,
+                    app.host_mode,
+                )
+            }
+            Screen::Join => {
+                ui::backdrop((vw, vh));
+                // Enter joins (handled with the typing above), not the
+                // focused button.
+                let mut menu = menu_in;
+                menu.activate = false;
+                let (status, can_join, looking) = app.join_status();
+                let v = screens::JoinView {
+                    address: &app.join_addr,
+                    status,
+                    can_join,
+                    looking,
+                };
+                screens::join(&look, &mut app.ui, &menu, (vw, vh), dpi, v)
+            }
+            Screen::Lobby => {
+                ui::splash(&look, (vw, vh), dpi);
+                let session = app.online.as_ref().map(|o| &o.session);
+                let v = screens::LobbyView {
+                    lobby: session.and_then(|s| s.lobby.as_ref()),
+                    waiting: session.is_some_and(|s| s.waiting),
+                    ready: app.ready_sent,
+                    can_shop: app.online_career.is_some(),
+                };
+                let act = screens::lobby(&look, &mut app.ui, &menu_in, (vw, vh), dpi, v);
+                app.chat.draw(&look, get_time(), (vw, vh));
+                act
             }
             Screen::Title => {
                 ui::backdrop((vw, vh));
@@ -967,23 +1508,44 @@ async fn main() {
                 screens::title(&look, &mut app.ui, &menu_in, (vw, vh), dpi, v)
             }
             Screen::Report => {
-                ui::backdrop((vw, vh));
+                if app.online.is_some() {
+                    ui::splash(&look, (vw, vh), dpi);
+                } else {
+                    ui::backdrop((vw, vh));
+                }
                 let rep = app.report.as_ref().expect("a report");
                 screens::report(&look, &mut app.ui, &menu_in, (vw, vh), dpi, rep)
             }
             Screen::Shop => {
-                ui::backdrop((vw, vh));
-                let v = screens::ShopView {
-                    career: app.career.as_ref().expect("a career"),
-                    profile: &app.profile,
-                    tab: &mut app.shop_tab,
-                    msg: &app.shop_msg,
-                    t: get_time() as f32,
+                // Online the shop shows the server's copy of this player's
+                // career, never the single-player one.
+                let career = if app.online.is_some() {
+                    ui::splash(&look, (vw, vh), dpi);
+                    app.online_career.as_ref()
+                } else {
+                    ui::backdrop((vw, vh));
+                    app.career.as_ref()
                 };
-                screens::shop(&look, &mut app.ui, &menu_in, (vw, vh), dpi, v, &mut fx_rng)
+                match career {
+                    Some(career) => {
+                        let v = screens::ShopView {
+                            career,
+                            profile: &app.profile,
+                            tab: &mut app.shop_tab,
+                            msg: &app.shop_msg,
+                            t: get_time() as f32,
+                        };
+                        screens::shop(&look, &mut app.ui, &menu_in, (vw, vh), dpi, v, &mut fx_rng)
+                    }
+                    None => Some(Act::ToMenu),
+                }
             }
             Screen::Settings => {
-                ui::backdrop((vw, vh));
+                if app.online.is_some() {
+                    ui::splash(&look, (vw, vh), dpi);
+                } else {
+                    ui::backdrop((vw, vh));
+                }
                 let v = screens::SettingsView {
                     settings: &app.settings,
                     rebinding: app.rebinding,
@@ -1106,54 +1668,8 @@ fn play_steps(
             app.store.save_training_done();
             app.unlock("trained", audio);
         }
-        app.fx.absorb(&app.world.events);
         audio.tick(STEP);
-        for e in &app.world.events {
-            match e {
-                Event::Sfx(s) => {
-                    audio.sfx(*s);
-                    sm.sfx += 1;
-                }
-                Event::Thrust {
-                    level,
-                    load,
-                    sputtering,
-                } => audio.set_thrust(*level, *load, *sputtering),
-                Event::Radio {
-                    key,
-                    force,
-                    once,
-                    text,
-                } => app.radio.line(
-                    *key,
-                    *force,
-                    *once,
-                    text.as_deref(),
-                    app.world.t,
-                    rng,
-                    audio,
-                    &mut app.voice,
-                ),
-                Event::HitStop(s) => app.hitstop_t = app.hitstop_t.max(*s),
-                Event::SlowMo(s) => app.slow_t = app.slow_t.max(*s),
-                Event::Highlight { score, text } => app.recorder.note(*score, text, app.world.t),
-                Event::Rumble { strength, ms } => controls.rumble(*strength, *ms),
-                _ => {}
-            }
-        }
-        let unlocks: Vec<&'static str> = app
-            .world
-            .events
-            .iter()
-            .filter_map(|e| match e {
-                Event::Unlock(id) => Some(*id),
-                _ => None,
-            })
-            .collect();
-        for id in unlocks {
-            app.unlock(id, audio);
-        }
-        app.world.events.clear();
+        handle_events(app, audio, controls, rng, sm, false);
         app.recorder
             .record(&app.world, STEP, app.fx.particles.len());
         app.fx.update_trails(&app.world);
@@ -1166,6 +1682,131 @@ fn play_steps(
     if n == MAX_STEPS_PER_FRAME {
         app.accumulator = 0.0;
     }
+}
+
+/// Plays this step's (or, online, this frame's) events: particles, sound,
+/// radio lines, rumble, highlights and achievements; then clears them.
+fn handle_events(
+    app: &mut App,
+    audio: &mut audio::Audio,
+    controls: &mut controls::Controls,
+    rng: &mut Rng,
+    sm: &mut Smoke,
+    online: bool,
+) {
+    app.fx.absorb(app.world.events.iter().map(|n| &n.event));
+    // Another player's sound comes from their tug: quieter with distance.
+    let me = app.world.me().ship.b;
+    let gain = |to: Option<usize>| match to {
+        Some(q) if q != app.world.view_pilot => app.world.pilots.get(q).map_or(0.0, |pl| {
+            let d = cj_sim::js::dist(me.x, me.y, pl.ship.b.x, pl.ship.b.y);
+            (1.0 - d / cj_net::HEARING).max(0.0) as f32
+        }),
+        _ => 1.0,
+    };
+    let heard: Vec<(f32, Event)> = app
+        .world
+        .events
+        .iter()
+        .map(|n| (gain(n.to), n.event.clone()))
+        .collect();
+    for (g, e) in &heard {
+        match e {
+            Event::Sfx(s) => {
+                audio.sfx_at(*s, *g);
+                sm.sfx += 1;
+            }
+            Event::Thrust {
+                level,
+                load,
+                sputtering,
+            } => audio.set_thrust(*level, *load, *sputtering),
+            Event::Radio {
+                key,
+                force,
+                once,
+                text,
+            } => app.radio.line(
+                *key,
+                *force,
+                *once,
+                text.as_deref(),
+                app.world.t,
+                rng,
+                audio,
+                &mut app.voice,
+            ),
+            // Online, nobody else's world freezes, so neither does yours.
+            Event::HitStop(s) if !online => app.hitstop_t = app.hitstop_t.max(*s),
+            Event::SlowMo(s) if !online => app.slow_t = app.slow_t.max(*s),
+            Event::Highlight { score, text } => app.recorder.note(*score, text, app.world.t),
+            Event::Rumble { strength, ms } => controls.rumble(*strength, *ms),
+            _ => {}
+        }
+    }
+    let unlocks: Vec<&'static str> = app
+        .world
+        .events
+        .iter()
+        .map(|n| &n.event)
+        .filter_map(|e| match e {
+            Event::Unlock(a) => Some(a.id()),
+            _ => None,
+        })
+        .collect();
+    for id in unlocks {
+        app.unlock(id, audio);
+    }
+    app.world.events.clear();
+}
+
+/// A frame of an online shift. Cable commands and each fixed step's held
+/// controls go to the server (nothing held when `flying` is false, behind
+/// a menu), the client's own tug is guessed forward, and the world is
+/// redrawn from the server's snapshots.
+fn online_steps(
+    app: &mut App,
+    presses: &controls::Presses,
+    controls: &mut controls::Controls,
+    audio: &mut audio::Audio,
+    rng: &mut Rng,
+    sm: &mut Smoke,
+    flying: bool,
+) {
+    let real = f64::from(get_frame_time()).min(MAX_FRAME_DT);
+    let Some(on) = app.online.as_mut() else {
+        return;
+    };
+    if flying {
+        for a in &presses.actions {
+            let msg = on.session.action(*a);
+            on.send(msg);
+        }
+    }
+    let input = if flying {
+        controls.sample()
+    } else {
+        Input::default()
+    };
+    app.accumulator += real;
+    let mut n = 0;
+    while app.accumulator >= STEP && n < MAX_STEPS_PER_FRAME {
+        if let Some(msg) = on.session.step(input) {
+            on.send(msg);
+        }
+        audio.tick(STEP);
+        app.fx.update(STEP);
+        app.accumulator -= STEP;
+        n += 1;
+    }
+    if n == MAX_STEPS_PER_FRAME {
+        app.accumulator = 0.0;
+    }
+    on.flush();
+    on.session.present(&mut app.world, real);
+    handle_events(app, audio, controls, rng, sm, true);
+    app.fx.update_trails(&app.world);
+    app.fx.emit_ambient(&app.world);
 }
 
 /* ------------------------------ Smoke run ------------------------------ */
@@ -1301,15 +1942,15 @@ impl Smoke {
         img.export_png(&path.to_string_lossy());
         if name == "play" {
             let w = &app.world;
-            let s = &w.ship;
+            let s = &w.me().ship;
             self.lines.push(format!(
                 "  play: {} frames, {} steps in {:.2} s; tug ({:.1}, {:.1}) hull {:.1} shield {:.1}; chain {} ({:.1} t); {} shots, {} jumpers, {} crabs, {} rocks",
                 self.frame, self.steps, get_time() - start, s.b.x, s.b.y, s.hp, s.shield,
-                w.chain.len(), w.tow_mass(), w.shots_fired, w.jumpers.len(), w.crabs.len(), w.rocks.len()
+                w.me().chain.len(), w.tow_mass(0), w.me().shots_fired, w.jumpers.len(), w.crabs.len(), w.rocks.len()
             ));
             self.lines.push(format!(
                 "  opposition: wanted {}, {} law units, {} collectors, {} nets, {} miners, refinery {:?} with {} drones, {} missiles in flight ({} in the rack), {} sentries",
-                w.wanted, w.sheriffs.len(), w.collectors.len(), w.nets.len(), w.miners.len(),
+                w.me().wanted, w.sheriffs.len(), w.collectors.len(), w.nets.len(), w.miners.len(),
                 w.refinery.as_ref().map(|r| r.state), w.drones.len(), w.missiles.len(), s.missiles, w.sentries.len()
             ));
             self.lines.push(format!(
@@ -1319,8 +1960,8 @@ impl Smoke {
                 w.hauler.as_ref().map(|h| h.hp),
                 w.wrecks.iter().filter(|x| x.locked).count(),
                 w.items.iter().filter(|i| i.kind == ItemType::Keycard).count(),
-                w.contract.as_ref().map(|k| k.text()),
-                w.contract.as_ref().map_or(0.0, |k| w.contract_progress(k))
+                w.me().contract.as_ref().map(|k| k.text()),
+                w.me().contract.as_ref().map_or(0.0, |k| w.contract_progress(0, k))
             ));
         }
         if name == "report" {
@@ -1418,11 +2059,11 @@ impl Smoke {
 fn smoke_script(w: &mut World, frame: u32) {
     if frame == 1 {
         // Start well clear of the bay, or the bay banks the ore at once.
-        w.ship.b.x = BAY_X - 500.0;
+        w.me_mut().ship.b.x = BAY_X - 500.0;
         let it = w.new_item(ItemType::Ore, BAY_X - 500.0, BAY_Y + 110.0, 0.0, 0.0);
         let host = it.id;
         w.items.push(it);
-        w.ship.invuln = 0.0;
+        w.me_mut().ship.invuln = 0.0;
         let crab = cj_sim::entities::make_crab(
             &mut w.rng,
             cj_sim::entities::CrabState::Ride,
@@ -1434,7 +2075,7 @@ fn smoke_script(w: &mut World, frame: u32) {
         let j = w.new_jumper(BAY_X - 1100.0, BAY_Y - 200.0, Some(Variant::Cutter));
         w.jumpers.push(j);
         // Some salvage already banked, so the report has numbers in it.
-        w.banked = 1840.0;
+        w.me_mut().banked = 1840.0;
         // The opposition on screen: a missile rack and drone bay with three
         // sentries, the refinery close by (its drones wake), a debt
         // collector, a mining crew, and two wanted stars bringing the law.
@@ -1442,9 +2083,10 @@ fn smoke_script(w: &mut World, frame: u32) {
         mounted[0] = Some(cj_sim::parts::Part::Cannon);
         mounted[1] = Some(cj_sim::parts::Part::Missiles);
         mounted[3] = Some(cj_sim::parts::Part::DroneBay);
-        w.mods = cj_sim::mods::compute_mods(&mounted, &cj_sim::parts::Levels::default(), 0);
+        w.me_mut().mods =
+            cj_sim::mods::compute_mods(&mounted, &cj_sim::parts::Levels::default(), 0);
         for i in 0..3 {
-            let s = w.make_sentry(i, 3);
+            let s = w.make_sentry(0, i, 3);
             w.sentries.push(s);
         }
         w.spawn_refinery();
@@ -1452,7 +2094,7 @@ fn smoke_script(w: &mut World, frame: u32) {
             r.b.x = BAY_X - 450.0;
             r.b.y = BAY_Y - 650.0;
         }
-        w.spawn_collector();
+        w.spawn_collector(0);
         if let Some(c) = w.collectors.last_mut() {
             c.b.x = BAY_X - 150.0;
             c.b.y = BAY_Y + 450.0;
@@ -1462,15 +2104,15 @@ fn smoke_script(w: &mut World, frame: u32) {
             m.b.x = BAY_X - 1000.0 + i as f64 * 60.0;
             m.b.y = BAY_Y + 250.0;
         }
-        let (x, y) = (w.ship.b.x, w.ship.b.y);
-        w.add_wanted(2, x, y);
+        let (x, y) = (w.me().ship.b.x, w.me().ship.b.y);
+        w.add_wanted(0, 2, x, y);
         w.reinforce_t = Some(0.0);
         // The field systems: a named belt and condition, a contract on the
         // HUD, an ion storm, a boss crew and an escorted hauler close by,
         // and a sealed hold with its keycard.
         w.belt = cj_sim::field::Belt::Kessler;
         w.cond = cj_sim::field::Condition::IonFront;
-        w.contract = Some(cj_sim::field::make_contract(
+        w.me_mut().contract = Some(cj_sim::field::make_contract(
             &mut w.rng,
             cj_sim::field::ContractKind::Bank,
             2,
@@ -1520,24 +2162,25 @@ fn draw_toast(look: &look::Look, toast: &Option<(String, f64)>, view: (f32, f32)
     if get_time() > *until {
         return;
     }
-    let w = look::text_width(text, 14.0, &look.fonts.body) + 28.0;
+    // A long message wraps rather than running off a narrow window.
+    let font = &look.fonts.body;
+    let width = |t: &str| look::text_width(t, 14.0, font);
+    let lines = online::wrap(text, (view.0 - 92.0).clamp(200.0, 720.0), width);
+    let w = lines.iter().map(|l| width(l)).fold(0.0, f32::max) + 28.0;
+    let h = 34.0 + 20.0 * (lines.len().max(1) - 1) as f32;
     let x = (view.0 - w) / 2.0;
     draw_rectangle(
         x,
         110.0,
         w,
-        34.0,
+        h,
         Color::new(10.0 / 255.0, 14.0 / 255.0, 24.0 / 255.0, 0.92),
     );
-    draw_rectangle_lines(x, 110.0, w, 34.0, 1.0, look::hex(look::col::HAZARD));
-    look::text_left(
-        text,
-        x + 14.0,
-        118.0,
-        14.0,
-        &look.fonts.body,
-        look::hex(look::col::TEXT),
-    );
+    draw_rectangle_lines(x, 110.0, w, h, 1.0, look::hex(look::col::HAZARD));
+    for (i, l) in lines.iter().enumerate() {
+        let y = 118.0 + 20.0 * i as f32;
+        look::text_left(l, x + 14.0, y, 14.0, font, look::hex(look::col::TEXT));
+    }
 }
 
 /// Milliseconds since the epoch (Date.now()), for achievement and score times.

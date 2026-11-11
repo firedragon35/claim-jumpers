@@ -3,7 +3,7 @@
 //! in screen space under the HUD while a shift is on.
 
 use crate::look::{col, rgba, text_centered, Look};
-use cj_sim::consts::{BAY_X, BAY_Y, CARRIER_X, CARRIER_Y, WORLD_W};
+use cj_sim::consts::{BAY_X, BAY_Y, CARRIER_X, CARRIER_Y};
 use cj_sim::field::NIGHT_RADAR;
 use cj_sim::items::ItemType;
 use cj_sim::js;
@@ -26,17 +26,20 @@ fn pursuit_blink() -> bool {
 /// radarSees: on a night shift the radar only reaches NIGHT_RADAR from a
 /// live tug.
 fn sees(w: &World, x: f64, y: f64) -> bool {
-    let s = &w.ship;
+    let s = &w.me().ship;
     !w.cond.def().night || !s.alive || js::hypot(x - s.b.x, y - s.b.y) < NIGHT_RADAR
 }
 
 /// drawRadar: the whole field, square, in the top-right corner under the HUD.
-pub fn radar(w: &World, view: (f32, f32)) {
+/// Online, `blips` are what the server reports beyond the view.
+pub fn radar(w: &World, view: (f32, f32), blips: &[cj_net::Blip]) {
     let (vw, vh) = view;
     let size = (vw.min(vh) * 0.44).clamp(192.0, 300.0).round();
     let (x0, y0) = (vw - size - 16.0, HUD_BOTTOM);
-    let k = size / WORLD_W as f32;
-    let at = |x: f64, y: f64| (x0 + x as f32 * k, y0 + y as f32 * k);
+    // The field's real span: wider than WORLD_W on a server sized for more pilots.
+    let lo = w.edge_lo;
+    let k = size / (w.edge_hi - lo) as f32;
+    let at = |x: f64, y: f64| (x0 + (x - lo) as f32 * k, y0 + (y - lo) as f32 * k);
     draw_rectangle(
         x0,
         y0,
@@ -61,14 +64,7 @@ pub fn radar(w: &World, view: (f32, f32)) {
     // Only the pieces worth a detour show: rares, sealed pods, black boxes,
     // keycards, cores and anything worth 800 or more.
     for it in &w.items {
-        let notable = it.rare
-            || it.hidden
-            || matches!(
-                it.kind,
-                ItemType::Blackbox | ItemType::Keycard | ItemType::Core
-            )
-            || it.value >= 800.0;
-        if !notable || !sees(w, it.b.x, it.b.y) {
+        if !it.worth_a_detour() || !sees(w, it.b.x, it.b.y) {
             continue;
         }
         let rgb = match it.kind {
@@ -126,7 +122,23 @@ pub fn radar(w: &World, view: (f32, f32)) {
         let (x, y) = at(m.b.x, m.b.y);
         draw_rectangle(x - 1.5, y - 1.5, 3.0, 3.0, c(col::MINER));
     }
-    let s = &w.ship;
+    // Online: what the server reports beyond the view, by kind, in the
+    // same colours and sizes as the dots above.
+    for d in blips {
+        use cj_net::BlipKind::*;
+        let (rgb, size) = match d.kind {
+            Item => (col::ENGINE, 2.5),
+            Wreck => (col::WRECK, 4.0),
+            Jumper => (col::JUMPER, 3.0),
+            Drone => (col::DANGER, 2.0),
+            Collector => (col::COLLECTOR, 4.0),
+            Sheriff => (col::LAW, 5.0),
+            Miner => (col::MINER, 3.0),
+        };
+        let (x, y) = at(f64::from(d.x), f64::from(d.y));
+        draw_rectangle(x - size / 2.0, y - size / 2.0, size, size, c(rgb));
+    }
+    let s = &w.me().ship;
     if s.alive {
         let (x, y) = at(s.b.x, s.b.y);
         draw_circle(x, y, 2.5, c(col::TEXT));
@@ -175,7 +187,7 @@ pub fn indicators(look: &Look, w: &World, view: (f32, f32), dpi: f32) {
             text_centered(label, lx, ly, 11.0, &look.fonts.mono, c(rgb), dpi);
         }
     };
-    let s = &w.ship;
+    let s = &w.me().ship;
     if s.alive {
         let d = js::hypot(s.b.x - BAY_X, s.b.y - BAY_Y) / 1e3;
         arrow(BAY_X, BAY_Y, col::HAZARD, &format!("BAY {d:.1}k"), 0.0);
@@ -227,7 +239,7 @@ mod tests {
     #[test]
     fn night_shortens_radar_range() {
         let mut w = World::new_shift(Rng::seeded(1), (1280.0, 720.0));
-        let (x, y) = (w.ship.b.x, w.ship.b.y);
+        let (x, y) = (w.me().ship.b.x, w.me().ship.b.y);
         assert!(sees(&w, x + 3000.0, y));
         w.cond = cj_sim::field::Condition::Night;
         assert!(!sees(&w, x + 3000.0, y));

@@ -12,7 +12,8 @@ use std::f64::consts::TAU;
 /// Which entity a collision body belongs to.
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Handle {
-    Ship,
+    /// A pilot's tug, by index into `World::pilots`.
+    Ship(usize),
     Rock(usize),
     Item(usize),
     Wreck(usize),
@@ -42,7 +43,7 @@ fn hull_body(k: usize) -> Body {
 
 /// Move a body, damp it, and (if bounded) push it back from the field edge
 /// with a soft spring rather than a hard bounce.
-fn integrate(b: &mut Body, dt: f64, damp: f64, bounded: bool) {
+fn integrate(b: &mut Body, dt: f64, damp: f64, bounded: bool, (lo, hi): (f64, f64)) {
     b.x += b.vx * dt;
     b.y += b.vy * dt;
     if damp != 0.0 {
@@ -54,17 +55,17 @@ fn integrate(b: &mut Body, dt: f64, damp: f64, bounded: bool) {
         return;
     }
     let (m, push) = (WALL_MARGIN, WALL_PUSH);
-    if b.x < m {
-        b.vx += (m - b.x) * push * dt;
+    if b.x < lo + m {
+        b.vx += (lo + m - b.x) * push * dt;
     }
-    if b.x > WORLD_W - m {
-        b.vx -= (b.x - (WORLD_W - m)) * push * dt;
+    if b.x > hi - m {
+        b.vx -= (b.x - (hi - m)) * push * dt;
     }
-    if b.y < m {
-        b.vy += (m - b.y) * push * dt;
+    if b.y < lo + m {
+        b.vy += (lo + m - b.y) * push * dt;
     }
-    if b.y > WORLD_H - m {
-        b.vy -= (b.y - (WORLD_H - m)) * push * dt;
+    if b.y > hi - m {
+        b.vy -= (b.y - (hi - m)) * push * dt;
     }
 }
 
@@ -113,10 +114,13 @@ fn collide(a: &mut Body, b: &mut Body) -> Option<f64> {
 impl World {
     /// Moves the tug, rocks and other bodies one step with their damping.
     pub(crate) fn integrate_all(&mut self, dt: f64) {
-        if self.ship.alive {
-            // A netted tug has no wall: the collector can drag it out.
-            let bounded = self.ship.net.is_none();
-            integrate(&mut self.ship.b, dt, SHIP_DAMP, bounded);
+        let edges = (self.edge_lo, self.edge_hi);
+        for pl in &mut self.pilots {
+            if pl.ship.alive {
+                // A netted tug has no wall: the collector can drag it out.
+                let bounded = pl.ship.net.is_none();
+                integrate(&mut pl.ship.b, dt, SHIP_DAMP, bounded, edges);
+            }
         }
         for r in &mut self.rocks {
             // Storm debris settles over a few seconds; normal drift is undamped.
@@ -125,39 +129,39 @@ impl World {
             } else {
                 0.0
             };
-            integrate(&mut r.b, dt, damp, true);
+            integrate(&mut r.b, dt, damp, true, edges);
         }
         // A rival-hauled item may be dragged out of the field.
         for it in &mut self.items {
             let bounded = it.hooked_by.is_none();
-            integrate(&mut it.b, dt, ITEM_DAMP, bounded);
+            integrate(&mut it.b, dt, ITEM_DAMP, bounded, edges);
         }
         for w in &mut self.wrecks {
-            integrate(&mut w.b, dt, WRECK_DAMP, true);
+            integrate(&mut w.b, dt, WRECK_DAMP, true, edges);
         }
         for j in &mut self.jumpers {
             let bounded = j.state != JumperState::Haul;
-            integrate(&mut j.b, dt, JUMPER_DAMP, bounded);
+            integrate(&mut j.b, dt, JUMPER_DAMP, bounded, edges);
         }
         for d in &mut self.drones {
-            integrate(&mut d.b, dt, 0.5, true);
+            integrate(&mut d.b, dt, 0.5, true, edges);
         }
         for c in &mut self.collectors {
             let bounded = !matches!(c.state, CollectorState::Tow | CollectorState::Leave);
-            integrate(&mut c.b, dt, 0.4, bounded);
+            integrate(&mut c.b, dt, 0.4, bounded, edges);
         }
         for m in &mut self.miners {
-            integrate(&mut m.b, dt, 0.5, true);
+            integrate(&mut m.b, dt, 0.5, true, edges);
         }
         for s in &mut self.sheriffs {
             let bounded = s.state != SheriffState::Leave;
-            integrate(&mut s.b, dt, 0.4, bounded);
+            integrate(&mut s.b, dt, 0.4, bounded, edges);
         }
     }
 
     fn body(&self, h: Handle) -> Body {
         match h {
-            Handle::Ship => self.ship.b,
+            Handle::Ship(p) => self.pilots[p].ship.b,
             Handle::Rock(i) => self.rocks[i].b,
             Handle::Item(i) => self.items[i].b,
             Handle::Wreck(i) => self.wrecks[i].b,
@@ -173,7 +177,7 @@ impl World {
 
     fn set_body(&mut self, h: Handle, b: Body) {
         match h {
-            Handle::Ship => self.ship.b = b,
+            Handle::Ship(p) => self.pilots[p].ship.b = b,
             Handle::Rock(i) => self.rocks[i].b = b,
             Handle::Item(i) => self.items[i].b = b,
             Handle::Wreck(i) => self.wrecks[i].b = b,
@@ -196,7 +200,7 @@ impl World {
             Handle::Collector(i) => self.collectors[i].dead,
             Handle::Miner(i) => self.miners[i].dead,
             Handle::Sheriff(i) => self.sheriffs[i].dead,
-            Handle::Ship | Handle::Hull(_) | Handle::Refinery => false,
+            Handle::Ship(_) | Handle::Hull(_) | Handle::Refinery => false,
         }
     }
 
@@ -219,9 +223,47 @@ impl World {
     /// its pieces where it now is). Bodies only spawn, never vanish,
     /// during the pass, so the copies' indices stay valid.
     pub(crate) fn resolve_collisions(&mut self) {
+        self.resolve_collisions_for(None);
+    }
+
+    /// Advances only pilot `p`'s tug and the cargo on its cable one step,
+    /// for a client predicting its own tug between snapshots (CJN-16): the
+    /// tug's own flight, its cargo's motion, its cable and its contacts.
+    /// Contacts push but deal no damage, and nothing else in the field is
+    /// simulated; the server stays the authority and the next snapshot
+    /// corrects whatever the guess got wrong.
+    pub fn predict_step(&mut self, p: usize, input: &crate::input::Input, dt: f64) {
+        self.with_hearer(Some(p), |w| w.update_ship(p, input, dt));
+        let edges = (self.edge_lo, self.edge_hi);
+        let chain = self.chain_indices(p);
+        let s = &mut self.pilots[p].ship;
+        if s.alive {
+            let bounded = s.net.is_none();
+            integrate(&mut s.b, dt, SHIP_DAMP, bounded, edges);
+        }
+        for i in chain {
+            let it = &mut self.items[i];
+            let bounded = it.hooked_by.is_none();
+            integrate(&mut it.b, dt, ITEM_DAMP, bounded, edges);
+        }
+        self.solve_cables_for(Some(p), dt);
+        self.resolve_collisions_for(Some(p));
+    }
+
+    /// The collision pass; with `only` set, just the pairs involving that
+    /// pilot's tug or cargo, pushed apart without damage (prediction).
+    fn resolve_collisions_for(&mut self, only: Option<usize>) {
+        let chain: Vec<usize> = only.map_or_else(Vec::new, |p| self.chain_indices(p));
+        let predicted = |h: Handle| match (only, h) {
+            (Some(p), Handle::Ship(q)) => p == q,
+            (Some(_), Handle::Item(i)) => chain.contains(&i),
+            _ => false,
+        };
         let mut bodies: Vec<(Handle, Body)> = Vec::new();
-        if self.ship.alive {
-            bodies.push((Handle::Ship, self.ship.b));
+        for (p, pl) in self.pilots.iter().enumerate() {
+            if pl.ship.alive {
+                bodies.push((Handle::Ship(p), pl.ship.b));
+            }
         }
         bodies.extend(
             self.rocks
@@ -290,18 +332,54 @@ impl World {
                 if self.passes_carrier(ha, hb) || self.passes_carrier(hb, ha) {
                     continue;
                 }
+                if only.is_some() && !predicted(ha) && !predicted(hb) {
+                    continue;
+                }
                 let (lo, hi) = bodies.split_at_mut(k);
                 if let Some(rel) = collide(&mut lo[i].1, &mut hi[0].1) {
                     self.set_body(ha, bodies[i].1);
                     self.set_body(hb, bodies[k].1);
-                    self.on_impact(ha, hb, rel);
-                    self.on_impact(hb, ha, rel);
+                    // A tug, or cargo it tows or threw, answers for the impact.
+                    if only.is_some() {
+                        continue;
+                    }
+                    let blame = self
+                        .impact_blame(ha)
+                        .or(self.impact_blame(hb))
+                        .unwrap_or_default();
+                    self.with_blame(blame, |w| {
+                        w.on_impact(ha, hb, rel);
+                        w.on_impact(hb, ha, rel);
+                    });
                 }
             }
         }
         for (h, b) in bodies {
             self.set_body(h, b);
         }
+    }
+
+    /// Who answers for an impact by this body: the tug's own pilot, or the
+    /// pilot whose cargo it is (towed, or thrown and still flying).
+    fn impact_blame(&self, h: Handle) -> Option<crate::world::Blame> {
+        match h {
+            Handle::Ship(p) => Some(crate::world::Blame::Pilot(p)),
+            Handle::Item(i) => self.cargo_blame(i),
+            _ => None,
+        }
+    }
+
+    /// The pilot answering for item `i` while it is on a cable or still
+    /// flying from a throw; None for loose cargo.
+    pub(crate) fn cargo_blame(&self, i: usize) -> Option<crate::world::Blame> {
+        let it = &self.items[i];
+        if !(it.towed || it.thrown_t > 0.0) {
+            return None;
+        }
+        Some(
+            it.owner
+                .map_or(crate::world::Blame::Unset, crate::world::Blame::Pilot),
+        )
     }
 
     /// Damage rules for an impact seen from `me`. This is where "cargo is
@@ -311,9 +389,22 @@ impl World {
             return;
         }
         match me {
-            Handle::Ship => {
+            Handle::Ship(p) => {
                 if matches!(other, Handle::Hull(_)) || rel < SHIP_IMPACT_SAFE {
                     return;
+                }
+                // Tugs push each other but do no damage: by the owner's rule
+                // (2026-11-10) tug collisions hurt only between two PvP
+                // Enabled players, and PvP does not exist yet (CJN-21).
+                if matches!(other, Handle::Ship(_)) {
+                    return;
+                }
+                // Another pilot's towed or thrown cargo can't hurt this tug.
+                if let Handle::Item(i) = other {
+                    let by = self.cargo_blame(i).and_then(|b| self.resolve_blame(b));
+                    if !self.can_hurt_pilot(by, p) {
+                        return;
+                    }
                 }
                 let ob = self.body(other);
                 let other_mass = if ob.fixed {
@@ -321,12 +412,14 @@ impl World {
                 } else {
                     ob.mass
                 };
-                // Your own towed cargo hurts half as much.
+                // Your own towed cargo hurts half as much; another pilot's
+                // counts as any other cargo.
                 let own_cargo = match other {
-                    Handle::Item(i) if self.items[i].towed => 0.5,
+                    Handle::Item(i) if self.pilots[p].chain.contains(&self.items[i].id) => 0.5,
                     _ => 1.0,
                 };
                 self.damage_ship(
+                    p,
                     (rel - SHIP_IMPACT_SAFE)
                         * SHIP_IMPACT_DAMAGE
                         * (0.4 + other_mass / 10.0).min(1.6)
@@ -336,10 +429,9 @@ impl World {
             Handle::Item(i) => {
                 // Volatile salvage primes on a hard hit instead of dealing damage.
                 if self.items[i].def().volatile && rel > VOLATILE_IMPACT {
-                    // A hard knock is the player's doing only if they towed or threw it.
-                    let it = &self.items[i];
-                    let not_yours = !(it.towed || it.thrown_t > 0.0);
-                    self.prime_reactor_as(i, not_yours);
+                    // A hard knock is a pilot's doing only if they towed or threw it.
+                    let by = self.cargo_blame(i).unwrap_or(crate::world::Blame::Nobody);
+                    self.prime_reactor_by(i, by);
                     return;
                 }
                 let me_b = self.items[i].b;

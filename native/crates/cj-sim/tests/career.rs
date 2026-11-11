@@ -288,20 +288,20 @@ fn shift_settlements_match_end_shift() {
             .and_then(Chain::from_key)
             .map(|ch| (ch, k["chain"]["step"].as_u64().unwrap() as usize));
         let mut w = World::for_career(Rng::Constant(0.5), (1280.0, 720.0), &c);
-        w.contract = contract_input(input);
+        w.pilots[0].contract = contract_input(input);
         if let Some(d) = input["delivered"].as_object() {
             for (t, n) in d {
                 let t = ItemType::from_key(t).expect("item type");
-                w.delivered.push((t, n.as_u64().unwrap() as u32));
+                w.pilots[0].delivered.push((t, n.as_u64().unwrap() as u32));
             }
         }
-        w.stats.deaths = input["deaths"].as_u64().unwrap_or(0) as u32;
-        w.cores_banked = input["coresBanked"].as_u64().unwrap_or(0) as u32;
-        w.banked = input["banked"].as_f64().unwrap();
+        w.pilots[0].stats.deaths = input["deaths"].as_u64().unwrap_or(0) as u32;
+        w.pilots[0].cores_banked = input["coresBanked"].as_u64().unwrap_or(0) as u32;
+        w.pilots[0].banked = input["banked"].as_f64().unwrap();
         w.grudge = input["grudge"].as_f64().unwrap();
-        w.stats.jumpers = input["jumpers"].as_u64().unwrap() as u32;
-        w.rep_delta.rivals = input["rivalsDelta"].as_f64().unwrap();
-        let st = c.settle(&w);
+        w.pilots[0].stats.jumpers = input["jumpers"].as_u64().unwrap() as u32;
+        w.pilots[0].rep_delta.rivals = input["rivalsDelta"].as_f64().unwrap();
+        let st = c.settle(&w, 0);
         let title = s["title"].as_str().unwrap();
         let ctx = format!("{input} -> {title}");
         let want = &s["career"];
@@ -504,9 +504,9 @@ fn the_crews_adapt_to_a_dominant_habit_and_it_saves() {
 /// Settle an empty shift, after `tweak` has set up what happened in it.
 fn settled(c: &mut Career, tweak: impl FnOnce(&mut World)) {
     let mut w = World::for_career(Rng::Constant(0.5), (1280.0, 720.0), c);
-    w.banked = 100_000.0; // never repossessed mid-test
+    w.pilots[0].banked = 100_000.0; // never repossessed mid-test
     tweak(&mut w);
-    c.settle(&w);
+    c.settle(&w, 0);
 }
 
 #[test]
@@ -515,8 +515,8 @@ fn rival_standing_fades_unless_the_shift_pushed_it_further_out() {
         let mut c = Career::new(Mode::Standard);
         c.rep.rivals = start;
         settled(&mut c, |w| {
-            w.stats.jumpers = kills;
-            w.rep_delta.rivals = -3.0 * f64::from(kills);
+            w.pilots[0].stats.jumpers = kills;
+            w.pilots[0].rep_delta.rivals = -3.0 * f64::from(kills);
         });
         c.rep.rivals
     };
@@ -540,7 +540,7 @@ fn rival_standing_recovers_in_about_seven_clean_shifts_and_can_reach_zero() {
     }
     assert!(c.rep.rivals > -40.0, "{}", c.rep.rivals);
     c.rep.rivals = -1.0;
-    settled(&mut c, |w| w.stats.jumpers = 1);
+    settled(&mut c, |w| w.pilots[0].stats.jumpers = 1);
     assert_eq!(c.rep.rivals, 0.0);
 }
 
@@ -572,7 +572,57 @@ fn stolen_cargo_buys_the_crews_upgrades() {
 fn the_report_says_when_the_crews_upgrade() {
     let mut c = Career::new(Mode::Standard);
     let mut w = World::for_career(Rng::Constant(0.5), (1280.0, 720.0), &c);
-    w.banked = 100_000.0;
+    w.pilots[0].banked = 100_000.0;
     w.rival_loot = 3000.0;
-    assert!(c.settle(&w).chain_note.contains("tougher hulls"));
+    assert!(c.settle(&w, 0).chain_note.contains("tougher hulls"));
+}
+
+/// A shared server field takes its belt, conditions, difficulty and shift
+/// number from the server, and each pilot's tug, difficulty and crew from
+/// that player's own career; a shift there settles into each career apart.
+#[test]
+fn a_shared_field_flies_each_career_and_settles_each_apart() {
+    use cj_sim::world::SharedShift;
+    let mut rich = Career::new(Mode::Hard);
+    rich.wallet = 50_000.0;
+    rich.buy_level(System::Thrust).expect("affordable");
+    rich.crew = Some(Crew::Rigger);
+    let fresh = Career::new(Mode::Hard);
+    let shared = SharedShift {
+        belt: Belt::Hollis,
+        cond: Condition::Night,
+        mode: Mode::Hard,
+        shift_no: 3,
+        grudge: 0.0,
+    };
+    let careers = [rich.clone(), fresh.clone()];
+    let mut w = World::for_careers(Rng::seeded(5), (1280.0, 720.0), 4, &shared, &careers);
+    assert_eq!(w.pilots.len(), 2);
+    assert_eq!(
+        (w.belt, w.cond, w.shift_no),
+        (Belt::Hollis, Condition::Night, 3)
+    );
+    assert!(
+        w.pilots[0].mods.thrust_mul > w.pilots[1].mods.thrust_mul,
+        "each tug is its own"
+    );
+    assert!(
+        w.pilots[0].mods.hook_range > w.pilots[1].mods.hook_range,
+        "the rigger"
+    );
+    assert_eq!(w.pilots[1].diff_damage, Mode::Hard.def().damage);
+    let (a, b) = (w.pilots[0].ship.b, w.pilots[1].ship.b);
+    assert!((a.x, a.y) != (b.x, b.y), "parked apart");
+
+    let late = w.add_career_pilot(&fresh);
+    assert_eq!(late, 2);
+    assert!(w.pilots[2].career.is_some());
+
+    w.pilots[1].banked = 1200.0;
+    let mut one = rich.clone();
+    let mut two = fresh.clone();
+    let (s1, s2) = (one.settle(&w, 0), two.settle(&w, 1));
+    assert_eq!(s1.earned, 0.0);
+    assert!(s2.earned > 0.0, "the second pilot's haul is theirs");
+    assert_eq!((one.shift, two.shift), (rich.shift + 1, fresh.shift + 1));
 }

@@ -37,7 +37,7 @@ fn debt_collectors_only_net_when_the_payment_is_at_risk() {
     c.shift = 3;
     let mut w = quiet(&c, Rng::seeded(11));
     let park = |w: &mut World| {
-        let s = &mut w.ship;
+        let s = &mut w.pilots[0].ship;
         s.b.x = BAY_X + 1200.0;
         s.b.y = BAY_Y;
         s.b.vx = 0.0;
@@ -45,9 +45,9 @@ fn debt_collectors_only_net_when_the_payment_is_at_risk() {
         s.hp = 999.0;
         w.time_left = 40.0;
     };
-    w.career.as_mut().unwrap().wallet = 1e6;
+    w.pilots[0].career.as_mut().unwrap().wallet = 1e6;
     park(&mut w);
-    w.spawn_collector();
+    w.spawn_collector(0);
     let mut calm = None;
     for _ in 0..40 * 60 {
         step(&mut w, &Input::default());
@@ -66,9 +66,9 @@ fn debt_collectors_only_net_when_the_payment_is_at_risk() {
 
     w.collectors.clear();
     w.nets.clear();
-    w.career.as_mut().unwrap().wallet = 0.0;
-    w.banked = 0.0;
-    w.spawn_collector();
+    w.pilots[0].career.as_mut().unwrap().wallet = 0.0;
+    w.pilots[0].banked = 0.0;
+    w.spawn_collector(0);
     let netted = (0..30 * 60).any(|_| {
         step(&mut w, &Input::default());
         park(&mut w);
@@ -81,15 +81,21 @@ fn debt_collectors_only_net_when_the_payment_is_at_risk() {
 fn regression_a_shakedown_roll_starts_a_chase_in_the_same_frame() {
     // Math.random pinned at 0.001: the shakedown roll always succeeds.
     let mut w = quiet(&Career::new(Mode::Standard), Rng::Constant(0.001));
-    w.ship.b.x = BAY_X + 1500.0;
-    w.ship.b.y = BAY_Y;
-    w.ship.angle = 0.0;
-    let it = w.new_item(ItemType::Scrap, w.ship.b.x + 50.0, w.ship.b.y, 0.0, 0.0);
+    w.pilots[0].ship.b.x = BAY_X + 1500.0;
+    w.pilots[0].ship.b.y = BAY_Y;
+    w.pilots[0].ship.angle = 0.0;
+    let it = w.new_item(
+        ItemType::Scrap,
+        w.pilots[0].ship.b.x + 50.0,
+        w.pilots[0].ship.b.y,
+        0.0,
+        0.0,
+    );
     w.items.push(it);
     w.action(Action::Hook);
-    w.spawn_sheriff(false);
-    w.sheriffs[0].b.x = w.ship.b.x + 350.0;
-    w.sheriffs[0].b.y = w.ship.b.y;
+    w.spawn_sheriff(0, false);
+    w.sheriffs[0].b.x = w.pilots[0].ship.b.x + 350.0;
+    w.sheriffs[0].b.y = w.pilots[0].ship.b.y;
     for _ in 0..120 {
         if w.sheriffs[0].state == SheriffState::Pursuit {
             break;
@@ -99,26 +105,26 @@ fn regression_a_shakedown_roll_starts_a_chase_in_the_same_frame() {
     let sh = &w.sheriffs[0];
     assert_eq!(sh.state, SheriffState::Pursuit);
     assert!(sh.shakedown);
-    assert_eq!(w.wanted, 0);
+    assert_eq!(w.pilots[0].wanted, 0);
 }
 
 #[test]
 fn a_wrecked_tug_orphans_its_sentries_and_rogue_kills_are_not_blamed_on_you() {
     let mut w = quiet(&Career::new(Mode::Standard), Rng::seeded(5));
-    w.ship.b.x = BAY_X + 1400.0;
-    w.ship.b.y = BAY_Y;
+    w.pilots[0].ship.b.x = BAY_X + 1400.0;
+    w.pilots[0].ship.b.y = BAY_Y;
     w.sentries.clear();
     for i in 0..3 {
-        let s = w.make_sentry(i, 3);
+        let s = w.make_sentry(0, i, 3);
         w.sentries.push(s);
     }
-    let (x, y) = (w.ship.b.x + 300.0, w.ship.b.y + 100.0);
+    let (x, y) = (w.pilots[0].ship.b.x + 300.0, w.pilots[0].ship.b.y + 100.0);
     let mut j = w.new_jumper(x, y, Some(Variant::Brute));
     j.hunter = false;
     let id = j.id;
     w.jumpers.push(j);
     let grudge = w.grudge;
-    w.kill_ship();
+    w.kill_ship(0);
     assert!(w.sentries.iter().all(|d| d.rogue));
     for _ in 0..10 * 60 {
         step(&mut w, &Input::default());
@@ -142,10 +148,10 @@ fn a_wrecked_tug_orphans_its_sentries_and_rogue_kills_are_not_blamed_on_you() {
 #[test]
 fn auto_defense_missiles_ignore_collectors_and_the_law_until_you_hit_them() {
     let mut w = quiet(&Career::new(Mode::Standard), Rng::seeded(9));
-    w.ship.b.x = BAY_X + 1500.0;
-    w.ship.b.y = BAY_Y;
-    w.spawn_collector();
-    w.spawn_sheriff(false);
+    w.pilots[0].ship.b.x = BAY_X + 1500.0;
+    w.pilots[0].ship.b.y = BAY_Y;
+    w.spawn_collector(0);
+    w.spawn_sheriff(0, false);
     let kinds = |w: &World| {
         let t = w.missile_targets();
         (
@@ -186,17 +192,17 @@ fn auto_defense_missiles_ignore_collectors_and_the_law_until_you_hit_them() {
 #[test]
 fn a_wrecked_tug_clears_the_wanted_level_and_calls_off_the_law() {
     let mut w = quiet(&Career::new(Mode::Standard), Rng::seeded(13));
-    w.ship.b.x = BAY_X + 1500.0;
-    w.ship.b.y = BAY_Y;
-    let (x, y) = (w.ship.b.x, w.ship.b.y);
-    w.add_wanted(4, x, y);
+    w.pilots[0].ship.b.x = BAY_X + 1500.0;
+    w.pilots[0].ship.b.y = BAY_Y;
+    let (x, y) = (w.pilots[0].ship.b.x, w.pilots[0].ship.b.y);
+    w.add_wanted(0, 4, x, y);
     w.reinforce_t = Some(0.0);
     for _ in 0..300 {
         step(&mut w, &Input::default());
-        w.ship.hp = 999.0;
+        w.pilots[0].ship.hp = 999.0;
     }
     let units = w.sheriffs.iter().filter(|s| !s.dead).count();
-    w.kill_ship();
+    w.kill_ship(0);
     let leaving = w
         .sheriffs
         .iter()
@@ -206,7 +212,7 @@ fn a_wrecked_tug_clears_the_wanted_level_and_calls_off_the_law() {
         step(&mut w, &Input::default()); // respawn
     }
     assert!(units > 0);
-    assert_eq!(w.wanted, 0);
+    assert_eq!(w.pilots[0].wanted, 0);
     assert!(leaving);
     assert!(!w.sheriffs.iter().any(|s| s.state == SheriffState::Pursuit));
 }
@@ -220,24 +226,24 @@ fn reaching_the_carrier_bay_clears_the_wanted_level() {
     w.collectors.clear();
     w.jumper_timer = 1e9;
     w.collector_queue.clear();
-    w.ship.b.x = BAY_X + 1500.0;
-    w.ship.b.y = BAY_Y;
-    let (x, y) = (w.ship.b.x, w.ship.b.y);
-    w.add_wanted(3, x, y);
+    w.pilots[0].ship.b.x = BAY_X + 1500.0;
+    w.pilots[0].ship.b.y = BAY_Y;
+    let (x, y) = (w.pilots[0].ship.b.x, w.pilots[0].ship.b.y);
+    w.add_wanted(0, 3, x, y);
     w.reinforce_t = Some(0.0);
     for _ in 0..240 {
         step(&mut w, &Input::default());
-        w.ship.hp = 999.0;
+        w.pilots[0].ship.hp = 999.0;
     }
     let chasing = w.sheriffs.iter().any(|s| s.state == SheriffState::Pursuit);
-    let s = &mut w.ship;
+    let s = &mut w.pilots[0].ship;
     s.b.x = BAY_X;
     s.b.y = BAY_Y;
     s.b.vx = 0.0;
     s.b.vy = 0.0;
     step(&mut w, &Input::default());
     assert!(chasing);
-    assert_eq!(w.wanted, 0);
+    assert_eq!(w.pilots[0].wanted, 0);
     assert!(w
         .sheriffs
         .iter()
@@ -254,12 +260,12 @@ fn cannon_levels_add_spread_shots_and_level_5_missiles_fire_torpedo_salvos() {
     c.levels.set(System::Cannon, 4);
     c.levels.set(System::Missiles, 5);
     let mut w = quiet(&c, Rng::seeded(21));
-    w.ship.b.x = BAY_X + 1500.0;
-    w.ship.b.y = BAY_Y + 800.0;
-    w.ship.angle = 0.0;
+    w.pilots[0].ship.b.x = BAY_X + 1500.0;
+    w.pilots[0].ship.b.y = BAY_Y + 800.0;
+    w.pilots[0].ship.angle = 0.0;
     w.bullets.clear();
-    w.ship.fire_t = 0.0;
-    w.ship.heat = 0.0;
+    w.pilots[0].ship.fire_t = 0.0;
+    w.pilots[0].ship.heat = 0.0;
     let fire = Input {
         fire: true,
         ..Input::default()
@@ -268,20 +274,20 @@ fn cannon_levels_add_spread_shots_and_level_5_missiles_fire_torpedo_salvos() {
     let shots = w.bullets.len();
     for i in 0..3 {
         let (x, y) = (
-            w.ship.b.x + 300.0 + f64::from(i) * 60.0,
-            w.ship.b.y + 80.0 * f64::from(i),
+            w.pilots[0].ship.b.x + 300.0 + f64::from(i) * 60.0,
+            w.pilots[0].ship.b.y + 80.0 * f64::from(i),
         );
         let mut j = w.new_jumper(x, y, Some(Variant::Cutter));
         j.hunter = false;
         w.jumpers.push(j);
     }
-    w.ship.missile_gap_t = 0.0;
+    w.pilots[0].ship.missile_gap_t = 0.0;
     w.missiles.clear();
     w.update_missiles(STEP);
     assert_eq!(shots, 5);
     assert_eq!(w.missiles.len(), 2, "a salvo of two");
     assert!(w.missiles.iter().all(|m| m.torpedo));
-    assert_eq!(w.mods.missile_rack, 6);
+    assert_eq!(w.pilots[0].mods.missile_rack, 6);
 }
 
 #[test]
@@ -290,7 +296,7 @@ fn the_afterburner_boosts_speed_and_chained_bursts_overheat_the_engine() {
     c.shift = 3;
     let mut w = quiet(&c, Rng::seeded(23));
     let park = |w: &mut World| {
-        let s = &mut w.ship;
+        let s = &mut w.pilots[0].ship;
         s.b.x = BAY_X + 1500.0;
         s.b.y = BAY_Y + 800.0;
         s.b.vx = 0.0;
@@ -300,7 +306,7 @@ fn the_afterburner_boosts_speed_and_chained_bursts_overheat_the_engine() {
     };
     let speed = |w: &mut World, burn: bool| {
         park(w);
-        let s = &mut w.ship;
+        let s = &mut w.pilots[0].ship;
         s.angle = 0.0;
         s.burn_t = 0.0;
         s.engine_heat = 0.0;
@@ -313,16 +319,16 @@ fn the_afterburner_boosts_speed_and_chained_bursts_overheat_the_engine() {
         };
         for _ in 0..60 {
             step(w, &input);
-            w.ship.invuln = 99.0;
+            w.pilots[0].ship.invuln = 99.0;
         }
-        w.ship.b.speed()
+        w.pilots[0].ship.b.speed()
     };
     let normal = speed(&mut w, false);
     let burned = speed(&mut w, true);
     assert!(burned > normal * 1.4, "{burned} vs {normal}");
 
     park(&mut w);
-    let s = &mut w.ship;
+    let s = &mut w.pilots[0].ship;
     s.burn_t = 0.0;
     s.engine_heat = 0.0;
     s.engine_over_t = 0.0;
@@ -336,7 +342,7 @@ fn the_afterburner_boosts_speed_and_chained_bursts_overheat_the_engine() {
                 ..Input::default()
             },
         );
-        if w.ship.engine_over_t > 0.0 {
+        if w.pilots[0].ship.engine_over_t > 0.0 {
             overheated_on = Some(b);
             break;
         }
@@ -353,8 +359,8 @@ fn the_refinery_jaws_pull_from_half_as_far_and_can_be_wrecked() {
     let mut c = Career::new(Mode::Standard);
     c.shift = 3;
     let mut w = quiet(&c, Rng::seeded(29));
-    w.ship.b.x = BAY_X + 1500.0;
-    w.ship.b.y = BAY_Y + 800.0;
+    w.pilots[0].ship.b.x = BAY_X + 1500.0;
+    w.pilots[0].ship.b.y = BAY_Y + 800.0;
     w.spawn_refinery();
     {
         let r = w.refinery.as_mut().unwrap();

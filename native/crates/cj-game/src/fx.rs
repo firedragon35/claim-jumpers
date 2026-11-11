@@ -232,7 +232,7 @@ impl Fx {
 
     /// Turn this step's simulation events into particles and popups.
     /// Sound and radio events are left for the audio and radio layers.
-    pub fn absorb(&mut self, events: &[Event]) {
+    pub fn absorb<'a>(&mut self, events: impl IntoIterator<Item = &'a Event>) {
         for e in events {
             match e {
                 Event::Burst {
@@ -301,7 +301,7 @@ impl Fx {
     }
 
     pub fn emit_ambient(&mut self, w: &World) {
-        let s = &w.ship;
+        let s = &w.me().ship;
         // Exhaust: visibly choked while sputtering. Only forward thrust smokes.
         if s.alive && s.throttle > 0.0 && self.rng.chance(if s.sputtering { 0.25 } else { 0.9 }) {
             let bx = s.b.x - s.angle.cos() * 20.0;

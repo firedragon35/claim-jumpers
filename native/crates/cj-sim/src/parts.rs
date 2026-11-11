@@ -6,7 +6,7 @@ use crate::consts::SHIP_MAX_HP;
 
 /// A part bought in the shop (UPGRADES). Declaration order is the
 /// catalogue's display order.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum Part {
     Cannon,
     Twin,
@@ -22,7 +22,7 @@ pub enum Part {
 }
 
 /// The kind of hardpoint a part mounts in.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum SlotType {
     Weapon,
     /// The mount on the cutting cannon itself (the twin cutter).
@@ -230,7 +230,7 @@ pub const SLOTS: [Slot; 5] = [
 pub type Mounted = [Option<Part>; 5];
 
 /// Levelled systems (SYSTEMS). Levels run 1..=max.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum System {
     Shield,
     Thrust,
@@ -403,7 +403,7 @@ impl System {
 }
 
 /// System levels, each 1..=its max.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Levels {
     pub shield: u8,
     pub thrust: u8,

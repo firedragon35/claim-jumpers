@@ -5,7 +5,7 @@
 
 /// Kinds of salvage. Charges, ingots, keycards and cores belong to later
 /// encounters but are listed so the catalogue matches the browser.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum ItemType {
     Scrap,
     Ore,
@@ -21,7 +21,7 @@ pub enum ItemType {
 }
 
 /// A grade's sale value: fixed, or a range rolled skewed toward the low end.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 pub enum Value {
     Fixed(f64),
     Range(f64, f64),

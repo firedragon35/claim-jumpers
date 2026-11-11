@@ -223,24 +223,10 @@ impl Profile {
     }
 }
 
-pub const NAME_MAX: usize = 16;
 pub const BOARD_SIZE: usize = 20;
 
-/// cleanName: letters, numbers, space, _ - . and '; spaces collapsed;
-/// at most 16 characters.
-pub fn clean_name(raw: &str) -> String {
-    let kept: String = raw
-        .chars()
-        .filter(|c| c.is_alphanumeric() || matches!(c, ' ' | '_' | '-' | '.' | '\''))
-        .collect();
-    let collapsed = kept.split_whitespace().collect::<Vec<_>>().join(" ");
-    collapsed
-        .chars()
-        .take(NAME_MAX)
-        .collect::<String>()
-        .trim()
-        .to_owned()
-}
+// The name rule is shared with the server, which cleans names sent to it.
+pub use cj_net::{clean_name, NAME_MAX};
 
 /// One local leaderboard row.
 #[derive(Clone, Debug, PartialEq)]

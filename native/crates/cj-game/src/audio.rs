@@ -414,6 +414,9 @@ pub struct Audio {
     /// Clock time of the next attempt to reopen the device.
     reopen_at: f64,
     muted: bool,
+    /// Scale on the next effect's volume (1 normally; less for another
+    /// player's sound heard from a distance, see `sfx_at`).
+    sfx_scale: f32,
     /// Seconds of game time, for rate-limiting the cargo rattle.
     clock: f64,
     last_rattle: f64,
@@ -440,6 +443,7 @@ impl Audio {
             failed,
             reopen_at: 0.0,
             muted: false,
+            sfx_scale: 1.0,
             clock: 0.0,
             last_rattle: -1.0,
             rng: Noise(0x9e37_79b9),
@@ -518,10 +522,11 @@ impl Audio {
         a + (self.rng.next() * 0.5 + 0.5) * (b - a)
     }
 
-    fn tone(&self, freq: f32, dur: f32, o: ToneOpts) {
+    fn tone(&self, freq: f32, dur: f32, mut o: ToneOpts) {
         if self.muted {
             return;
         }
+        o.vol *= self.sfx_scale;
         self.send(Cmd::Play(Voice::Tone {
             freq,
             dur,
@@ -603,10 +608,11 @@ impl Audio {
         self.send(Cmd::MusicGain(g));
     }
 
-    fn noise(&self, dur: f32, o: NoiseOpts) {
+    fn noise(&self, dur: f32, mut o: NoiseOpts) {
         if self.muted {
             return;
         }
+        o.vol *= self.sfx_scale;
         self.send(Cmd::Play(Voice::Noise {
             dur,
             o,
@@ -625,6 +631,14 @@ impl Audio {
             level * if sputtering { 0.08 } else { 0.32 }
         };
         self.send(Cmd::Thrust(g, 300.0 + level * 520.0 - load as f32 * 220.0));
+    }
+
+    /// Play one effect at `gain` times its usual volume (0 to 1): another
+    /// player's sound, quieter the further away it is.
+    pub fn sfx_at(&mut self, s: Sfx, gain: f32) {
+        self.sfx_scale = gain.clamp(0.0, 1.0);
+        self.sfx(s);
+        self.sfx_scale = 1.0;
     }
 
     /// Play one effect (Sound.sfx.*).
@@ -1287,6 +1301,7 @@ mod tests {
             failed: Arc::new(AtomicBool::new(false)),
             reopen_at: 0.0,
             muted: false,
+            sfx_scale: 1.0,
             clock: 0.0,
             last_rattle: -1.0,
             rng: Noise(1),

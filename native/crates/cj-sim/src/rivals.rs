@@ -67,7 +67,9 @@ impl World {
     /// (rivalAim), leading the shot toward where it's heading.
     fn jumper_fire_at_ship(&mut self, j: usize) {
         let jb = self.jumpers[j].b;
-        let ship = self.ship.alive.then_some(self.ship.b);
+        // The nearest live tug is the one in the sights.
+        let p = self.nearest_pilot(jb.x, jb.y);
+        let ship = self.pilots[p].ship.alive.then_some(self.pilots[p].ship.b);
         let hauler = self.hauler.as_ref().filter(|h| !h.dead).map(|h| h.b);
         let (tgt, at_ship) = match (ship, hauler) {
             (None, None) => return,
@@ -115,7 +117,7 @@ impl World {
         }
         self.sfx(Sfx::EnemyShot(d.min(f64::from(u16::MAX)) as u16));
         if at_ship {
-            self.under_attack();
+            self.under_attack(p);
         }
     }
 
@@ -182,8 +184,11 @@ impl World {
         }
         let stage = self.rival_stage();
         let sp = self.jumpers[j].speed_mul;
-        let s = self.ship.b;
-        let alive = self.ship.alive;
+        // Each rival hunts the nearest tug.
+        let jb = self.jumpers[j].b;
+        let p = self.nearest_pilot(jb.x, jb.y);
+        let s = self.pilots[p].ship.b;
+        let alive = self.pilots[p].ship.alive;
 
         // Scattering after a wingmate got smashed: run from the tug, hold fire.
         if self.jumpers[j].flee_t > 0.0 {
@@ -304,8 +309,15 @@ impl World {
             jm.latch_t += dt;
             if jm.latch_t > JUMPER_SEVER_TIME * jm.variant.def().sever {
                 jm.latch_t = 0.0;
-                if let Some(idx) = self.chain.iter().position(|c| *c == item_id) {
-                    self.sever_at(idx);
+                // Whoever's line it is gets cut at that piece.
+                let on_line = self.pilots.iter().enumerate().find_map(|(q, pl)| {
+                    pl.chain
+                        .iter()
+                        .position(|c| *c == item_id)
+                        .map(|idx| (q, idx))
+                });
+                if let Some((q, idx)) = on_line {
+                    self.sever_at(q, idx);
                 }
                 self.radio(Radio::Severed, true, false);
             }
@@ -316,8 +328,15 @@ impl World {
         // Out of the field with your salvage: it is gone.
         let b = self.jumpers[j].b;
         let m = JUMPER_ESCAPE_MARGIN;
-        if b.x < -m || b.y < -m || b.x > WORLD_W + m || b.y > WORLD_H + m {
-            self.stats.lost += self.items[ii].value;
+        if b.x < self.edge_lo - m
+            || b.y < self.edge_lo - m
+            || b.x > self.edge_hi + m
+            || b.y > self.edge_hi + m
+        {
+            // The loss is the cargo owner's; loot never towed counts against
+            // the tug the rival was hunting.
+            let loser = self.items[ii].owner.unwrap_or(p);
+            self.pilots[loser].stats.lost += self.items[ii].value;
             self.rival_loot += self.items[ii].value;
             self.remove_item(ii);
             self.jumpers[j].dead = true;
@@ -369,14 +388,18 @@ impl World {
     pub(crate) fn update_spawns(&mut self, dt: f64) {
         // Rivals stay away while training runs.
         if self.tut.is_none() {
-            self.jumper_timer -= dt * (1.0 + self.line_value() / 3000.0).min(2.0);
+            // Cargo on every line draws the crews in.
+            let cargo: f64 = (0..self.pilots.len()).map(|q| self.line_value(q)).sum();
+            self.jumper_timer -= dt * (1.0 + cargo / 3000.0).min(2.0);
         }
         if self.jumper_timer <= 0.0 {
             // The grudge stage raises how many can be out at once and how
             // often they come; at Vendetta they arrive in pairs.
             let st = &RIVAL_STAGES[self.rival_stage()];
-            let cap =
-                (jumper_cap_for(self.shift_no) + self.diff_jumper_cap + st.cap).clamp(1.0, 7.0);
+            // Each extra pilot lets one more rival out at once.
+            let extra = self.pilots.len() as f64 - 1.0;
+            let cap = (jumper_cap_for(self.shift_no) + self.diff_jumper_cap + st.cap + extra)
+                .clamp(1.0, 7.0 + extra);
             let count = if st.pack { 2 } else { 1 };
             let rate = st.rate;
             let (px, py) = self.edge_point(1200.0);
@@ -400,14 +423,15 @@ impl World {
                 );
             }
             self.jumper_timer = jumper_interval_for(self.shift_no, self.t)
-                / (self.diff_jumper_rate * rate * self.belt_rivals)
+                / (self.diff_jumper_rate * rate * self.belt_rivals * self.crowd())
                 * self.rng.range(0.8, 1.2);
         }
 
         self.rock_timer -= dt;
         if self.rock_timer <= 0.0 {
-            self.rock_timer = ROCK_REFILL_TIME;
-            if self.rocks.len() < ROCK_REFILL_CAP {
+            // More tugs break more rocks: refill faster, to the same density.
+            self.rock_timer = ROCK_REFILL_TIME / self.crowd();
+            if self.rocks.len() < self.area_count(ROCK_REFILL_CAP) {
                 let (px, py) = self.edge_point(900.0);
                 let a = (CARRIER_Y - py).atan2(CARRIER_X - px) + self.rng.range(-0.6, 0.6);
                 let sp = self.rng.range(20.0, 50.0);
@@ -415,8 +439,8 @@ impl World {
                 let r = make_rock(
                     &mut self.rng,
                     3,
-                    px.clamp(70.0, WORLD_W - 70.0),
-                    py.clamp(70.0, WORLD_H - 70.0),
+                    px.clamp(self.edge_lo + 70.0, self.edge_hi - 70.0),
+                    py.clamp(self.edge_lo + 70.0, self.edge_hi - 70.0),
                     a.cos() * sp,
                     a.sin() * sp,
                     veined,
@@ -427,13 +451,13 @@ impl World {
 
         self.wreck_timer -= dt;
         if self.wreck_timer <= 0.0 {
-            self.wreck_timer = WRECK_REFILL_TIME;
-            if self.wrecks.len() < WRECK_REFILL_CAP {
+            self.wreck_timer = WRECK_REFILL_TIME / self.crowd();
+            if self.wrecks.len() < self.area_count(WRECK_REFILL_CAP) {
                 let (px, py) = self.edge_point(1200.0);
                 let mut w = make_wreck(
                     &mut self.rng,
-                    px.clamp(200.0, WORLD_W - 200.0),
-                    py.clamp(200.0, WORLD_H - 200.0),
+                    px.clamp(self.edge_lo + 200.0, self.edge_hi - 200.0),
+                    py.clamp(self.edge_lo + 200.0, self.edge_hi - 200.0),
                     self.shift_no,
                 );
                 let a = (CARRIER_Y - w.b.y).atan2(CARRIER_X - w.b.x);

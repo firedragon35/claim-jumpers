@@ -50,15 +50,18 @@ impl Music {
 
     /// Danger as the music hears it (0..1, before easing).
     fn target(w: &World) -> f32 {
-        let s = &w.ship;
+        let s = &w.me().ship;
         let boss = w.jumpers.iter().any(|j| j.boss.is_some() && !j.dead);
-        let t = 0.15
-            + if w.under_attack_t > 0.0 { 0.4 } else { 0.0 }
-            + f64::from(w.wanted) * 0.08
-            + rival_stage_index(w.grudge) as f64 * 0.08
-            + if boss { 0.3 } else { 0.0 }
-            + if s.net.is_some() { 0.35 } else { 0.0 }
-            + if w.ion_t > 0.0 { 0.15 } else { 0.0 };
+        let t =
+            0.15 + if w.me().under_attack_t > 0.0 {
+                0.4
+            } else {
+                0.0
+            } + f64::from(w.me().wanted) * 0.08
+                + rival_stage_index(w.grudge) as f64 * 0.08
+                + if boss { 0.3 } else { 0.0 }
+                + if s.net.is_some() { 0.35 } else { 0.0 }
+                + if w.ion_t > 0.0 { 0.15 } else { 0.0 };
         t as f32
     }
 

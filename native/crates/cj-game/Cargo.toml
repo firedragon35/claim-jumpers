@@ -1,6 +1,6 @@
 [package]
 name = "cj-game"
-version = "1.2.0"
+version = "1.3.0"
 description = "Claim Jumpers native Windows game: window, rendering and input around cj-sim."
 edition.workspace = true
 rust-version.workspace = true
@@ -12,6 +12,13 @@ path = "src/main.rs"
 
 [dependencies]
 cj-sim = { path = "../cj-sim" }
+# The network protocol (and the pilot-name rule it shares with the server).
+cj-net = { path = "../cj-net" }
+# Joining a server: renet's connection layer and its UDP netcode transport.
+renet = "2.0.1"
+renet_netcode = "2.0.1"
+# Hosting a server inside the game, with the same loop as cj-server.
+cj-server = { path = "../cj-server" }
 # Default features off: macroquad would open its own audio device, and
 # the game synthesizes its sound through cpal instead.
 macroquad = { version = "0.4.16", default-features = false }

@@ -9,3 +9,5 @@ publish = false
 [dependencies]
 # The career save file is JSON, in the browser's field names.
 serde_json = "1.0.145"
+# Snapshots and messages for network play (cj-net), encoded with postcard.
+serde = { version = "1.0.229", features = ["derive"] }

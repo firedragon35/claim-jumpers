@@ -23,10 +23,12 @@ pub mod js;
 pub mod mods;
 pub mod opposition;
 pub mod parts;
+pub mod perm;
 pub mod physics;
 pub mod rivals;
 pub mod rng;
 pub mod tutorial;
+pub mod wire;
 pub mod world;
 
 pub use events::Event;

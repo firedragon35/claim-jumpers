@@ -1,10 +1,11 @@
 //! Local co-op (src/js/10e-modes.js): a second player flies a partner tug.
+//! It is a single-player feature: the partner always crews for pilot 0.
 //! It can latch onto the tail of the cable so two tugs haul one chain, and
 //! it has a light cutter. It can't be wrecked (a support role) and shares
 //! the shift's bank.
 
 use crate::cable::rope_constraint;
-use crate::consts::{BAY_X, BAY_Y, WORLD_H, WORLD_W};
+use crate::consts::{BAY_X, BAY_Y};
 use crate::entities::{Body, Bullet};
 use crate::events::{Radio, Sfx};
 use crate::js;
@@ -29,7 +30,7 @@ pub const P2_DAMAGE: f64 = 0.7;
 pub const P2_BREAK: f64 = 2.2;
 
 /// P2's controls this step (readP2); `latch` is the button held.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct P2Input {
     /// Forward throttle, 0 to 1.
     pub thrust: f64,
@@ -43,7 +44,7 @@ pub struct P2Input {
 }
 
 /// The partner tug flown by player 2 (`world.p2`); present only in local co-op.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Partner {
     /// The partner's physics body (position, velocity, radius, mass).
     pub b: Body,
@@ -84,7 +85,10 @@ impl World {
 
     /// The cable's last piece (the tail P2 latches onto), as an item index.
     fn tail_index(&self) -> Option<usize> {
-        self.chain.last().and_then(|id| self.item_index(*id))
+        self.pilots[0]
+            .chain
+            .last()
+            .and_then(|id| self.item_index(*id))
     }
 
     /// Advances the partner one step: steering, drag, rock bounces, the cutter, the latch toggle and the latch-break check.
@@ -103,8 +107,8 @@ impl World {
             p.b.vx *= P2_MAX_SPEED / sp;
             p.b.vy *= P2_MAX_SPEED / sp;
         }
-        p.b.x = (p.b.x + p.b.vx * dt).clamp(20.0, WORLD_W - 20.0);
-        p.b.y = (p.b.y + p.b.vy * dt).clamp(20.0, WORLD_H - 20.0);
+        p.b.x = (p.b.x + p.b.vx * dt).clamp(self.edge_lo + 20.0, self.edge_hi - 20.0);
+        p.b.y = (p.b.y + p.b.vy * dt).clamp(self.edge_lo + 20.0, self.edge_hi - 20.0);
         // Bounce off rocks rather than pass through them.
         for r in &self.rocks {
             let (dx, dy) = (p.b.x - r.b.x, p.b.y - r.b.y);
@@ -130,6 +134,7 @@ impl World {
             p.fire_t = P2_FIRE;
             let (c, s) = (p.angle.cos(), p.angle.sin());
             shot = Some(Bullet {
+                blame: crate::world::Blame::Pilot(0),
                 x: p.b.x + c * 16.0,
                 y: p.b.y + s * 16.0,
                 vx: p.b.vx + c * 820.0,

@@ -2,10 +2,10 @@
 //!
 //! Update order follows step() in src/js/16-simulation-step.js.
 
-use crate::career::{tier, Career, Rep, Tier};
+use crate::career::{tier, Career, Mode, Rep, Tier};
 use crate::consts::*;
 use crate::entities::*;
-use crate::events::{Event, Radio, Sfx, Tint};
+use crate::events::{Emitted, Event, Radio, Sfx, Tint};
 use crate::input::{Action, Input};
 use crate::items::ItemType;
 use crate::js;
@@ -13,7 +13,7 @@ use crate::mods::Mods;
 use crate::rng::Rng;
 
 /// Camera centre in world units, and zoom (screen px per world unit).
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Camera {
     pub x: f64,
     pub y: f64,
@@ -21,7 +21,7 @@ pub struct Camera {
 }
 
 /// Counters for the shift in progress, shown on the report and read by contracts.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Stats {
     /// Items banked this shift (stored cores count too).
     pub items: u32,
@@ -34,7 +34,7 @@ pub struct Stats {
 }
 
 /// This shift's credited kills by rival hull.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Kills {
     pub skiff: u32,
     pub cutter: u32,
@@ -49,27 +49,182 @@ pub struct Kills {
     pub boss: u32,
 }
 
-/// The whole simulation state for one shift: the tug, cable, field entities, opposition, timers and the event queue. Stepping it advances the shift deterministically from `rng`.
+/// Who answers for damage being dealt: credited with kills, bounties and
+/// tallies, and blamed with wanted stars and lost standing.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum Blame {
+    /// Nothing says. In single-player that is the player, as in the browser
+    /// (every kill not marked otherwise is yours); with several pilots it is
+    /// nobody, so damage that no code path traced to a pilot credits no one.
+    #[default]
+    Unset,
+    /// Nobody: a rogue sentry's shot, or a blast no player set off.
+    Nobody,
+    /// The pilot at this index into [`World::pilots`].
+    Pilot(usize),
+}
+
+/// What a server settles for a whole shared shift; each pilot's career
+/// supplies the rest (see [`World::for_careers`]).
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct SharedShift {
+    /// The belt the players voted for, and its conditions this shift.
+    pub belt: crate::field::Belt,
+    pub cond: crate::field::Condition,
+    /// The server's difficulty mode, which sets the rivals' arrival rate.
+    pub mode: Mode,
+    /// Shifts started on the server, counting this one.
+    pub shift_no: i32,
+    /// The rival grudge carried over from the last shift (the belt's floor
+    /// applies on top).
+    pub grudge: f64,
+}
+
+/// One player's tug, the cable it tows, and everything the shift keeps for
+/// that player: loadout, bank, counters, standing with the law, and the
+/// career the shift settles into.
+///
+/// A shift holds one pilot per player in [`World::pilots`]. Single-player is
+/// the one-pilot case: `pilots[0]` is the player's tug, and the golden traces
+/// pin its behaviour exactly.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct Pilot {
+    pub ship: Ship,
+    /// Item ids from the tug outward: chain[0] hangs off the tug.
+    pub chain: Vec<u32>,
+    /// The tug's performance numbers from this pilot's loadout.
+    pub mods: Mods,
+    /// Difficulty multipliers from this pilot's career mode (Standard mode
+    /// is 1 and 1).
+    pub diff_damage: f64,
+    pub diff_fees: f64,
+    /// Credits banked this shift.
+    pub banked: f64,
+    pub stats: Stats,
+    /// The delivery in progress: its running total and when it last grew.
+    pub delivery_total: f64,
+    pub delivery_t: f64,
+    /// This shift's credited kills, the rival bounties paid into its
+    /// earnings, and rounds fired.
+    pub kills: Kills,
+    pub bounties: f64,
+    pub shots_fired: u32,
+    /// Seconds the UNDER ATTACK warning stays up, and when its klaxon last
+    /// sounded.
+    pub under_attack_t: f64,
+    pub(crate) attack_alarm_at: f64,
+    /// The career being played, as it stood when the shift began (plus any
+    /// loan credit from confiscations). Collectors and the law read it.
+    pub career: Option<Career>,
+    /// Wanted stars (0..=5), and seconds until the next one fades.
+    pub wanted: u32,
+    pub wanted_cool_t: f64,
+    /// Collector triggers for this pilot: whether a thin wallet has been
+    /// checked, and when a fat cable may next draw a collector.
+    pub low_wallet_checked: bool,
+    pub fat_cable_ready_at: f64,
+    /// Whether the tug is inside a reactor radiation cloud.
+    pub in_cloud: bool,
+    /// Rival kills this shift by method.
+    pub habit_kills: crate::career::Habits,
+    /// The money side of the opposition, settled at the end of the shift.
+    pub impounded: bool,
+    pub impound_fee: f64,
+    pub confiscated: f64,
+    pub loan_credit: f64,
+    pub fines: f64,
+    pub fine_from_cargo: f64,
+    pub arrests: u32,
+    /// The co-pilot aboard and the accepted contract.
+    pub crew: Option<crate::field::Crew>,
+    pub contract: Option<crate::field::Contract>,
+    /// Banked pieces by type (for delivery contracts).
+    pub delivered: Vec<(ItemType, u32)>,
+    /// Rogue cores stored at the bay this shift.
+    pub cores_banked: u32,
+    /// Cargo has been cut loose mid-swing this shift (a training step).
+    pub threw_cargo: bool,
+    /// Standing changes earned this shift, applied when it ends.
+    pub rep_delta: Rep,
+    /// Set while this pilot's player is disconnected: the tug is out of the
+    /// field (see [`World::set_away`]). Never sent to clients.
+    #[serde(skip)]
+    pub away: Option<Away>,
+}
+
+/// What an away pilot took out of the field, to put back on return.
+#[derive(Clone, Debug)]
+pub struct Away {
+    /// The tow chain's item ids, emptied while away so nothing looks for
+    /// cargo that isn't in the field.
+    pub chain: Vec<u32>,
+    /// The towed cargo, in chain order.
+    pub cargo: Vec<Item>,
+    /// Whether the tug was flying (a wreck keeps its respawn countdown).
+    pub alive: bool,
+}
+
+impl Pilot {
+    /// A fresh tug at the bay, built for `mods`, with nothing on the cable,
+    /// nothing banked and a clean record.
+    pub fn new(mods: Mods) -> Pilot {
+        Pilot {
+            ship: Ship::new(&mods),
+            chain: Vec::new(),
+            mods,
+            diff_damage: 1.0,
+            diff_fees: 1.0,
+            banked: 0.0,
+            stats: Stats::default(),
+            delivery_total: 0.0,
+            delivery_t: -99.0,
+            kills: Kills::default(),
+            bounties: 0.0,
+            shots_fired: 0,
+            under_attack_t: 0.0,
+            attack_alarm_at: -99.0,
+            career: None,
+            wanted: 0,
+            wanted_cool_t: WANTED_COOLDOWN,
+            low_wallet_checked: false,
+            fat_cable_ready_at: 0.0,
+            in_cloud: false,
+            habit_kills: Default::default(),
+            impounded: false,
+            impound_fee: 0.0,
+            confiscated: 0.0,
+            loan_credit: 0.0,
+            fines: 0.0,
+            fine_from_cargo: 0.0,
+            arrests: 0,
+            crew: None,
+            contract: None,
+            delivered: Vec::new(),
+            cores_banked: 0,
+            threw_cargo: false,
+            rep_delta: Rep::default(),
+            away: None,
+        }
+    }
+}
+
+/// The whole simulation state for one shift: the pilots, field entities, opposition, timers and the event queue. Stepping it advances the shift deterministically from `rng`.
 pub struct World {
     pub rng: Rng,
     /// Seconds simulated this shift.
     pub t: f64,
     pub time_left: f64,
-    /// Credits banked this shift.
-    pub banked: f64,
     pub shift_no: i32,
-    pub mods: Mods,
-    /// Difficulty multipliers (Standard mode is 1 and 1).
-    pub diff_damage: f64,
-    pub diff_fees: f64,
     /// The belt's price multiplier (1 in the starting belt).
     pub belt_value: f64,
-    pub stats: Stats,
-    pub delivery_total: f64,
-    pub delivery_t: f64,
-    pub ship: Ship,
-    /// Item ids from the tug outward: chain[0] hangs off the tug.
-    pub chain: Vec<u32>,
+    /// The field's edges, the same on both axes: 0 and WORLD_W for a solo
+    /// field, further out for a server sized for more pilots (see
+    /// [`World::size_for`]); the carrier stays at the centre.
+    pub edge_lo: f64,
+    pub edge_hi: f64,
+    /// The players' tugs, cables and per-player state; always at least one,
+    /// and `pilots[0]` is the local player in single-player.
+    pub pilots: Vec<Pilot>,
     pub items: Vec<Item>,
     pub rocks: Vec<Rock>,
     pub wrecks: Vec<Wreck>,
@@ -82,26 +237,16 @@ pub struct World {
     pub next_id: u32,
     /// The rival crews' grudge (jumpers destroyed); sets their stage.
     pub grudge: f64,
-    pub kills: Kills,
-    /// Rival bounties paid into this shift's earnings.
-    pub bounties: f64,
-    pub shots_fired: u32,
     /// Countdowns to the next rival arrival and field refills. A test
     /// field starts them at infinity so nothing arrives on its own.
     pub jumper_timer: f64,
     pub rock_timer: f64,
     pub wreck_timer: f64,
-    /// Seconds the UNDER ATTACK warning stays up.
-    pub under_attack_t: f64,
-    attack_alarm_at: f64,
     /// Difficulty and belt multipliers on rival arrivals (Standard mode,
     /// Hollis Belt: 1, 0 and 1).
     pub diff_jumper_rate: f64,
     pub diff_jumper_cap: f64,
     pub belt_rivals: f64,
-    /// The career being played, as it stood when the shift began (plus any
-    /// loan credit from confiscations). Collectors and the law read it.
-    pub career: Option<Career>,
     pub drones: Vec<crate::opposition::Drone>,
     pub collectors: Vec<crate::opposition::Collector>,
     pub nets: Vec<crate::opposition::Net>,
@@ -110,52 +255,32 @@ pub struct World {
     pub missiles: Vec<crate::opposition::Missile>,
     pub sentries: Vec<crate::opposition::Sentry>,
     pub refinery: Option<crate::opposition::Refinery>,
-    /// Wanted stars (0..=5), and the countdown to the next law unit.
-    pub wanted: u32,
+    /// The countdown to the next law unit, and to the next patrol.
     pub reinforce_t: Option<f64>,
     pub patrol_t: f64,
-    /// Seconds into the shift when collectors arrive.
-    pub collector_queue: Vec<f64>,
-    pub low_wallet_checked: bool,
-    pub fat_cable_ready_at: f64,
+    /// Collector arrivals: seconds into the shift, and the pilot each comes for.
+    pub collector_queue: Vec<(f64, usize)>,
     pub refinery_t: f64,
     pub miner_announce_t: f64,
     /// The mode's first collector shift and net-tearing multiplier.
     pub collector_from: i32,
     pub net_tear: f64,
-    /// Damage done now is not the player's (a rogue sentry's shot).
-    pub no_blame: bool,
-    /// Reactor radiation clouds, and whether the tug is in one.
+    /// Who answers for damage dealt right now; see [`Blame`].
+    pub blame: Blame,
+    /// Reactor radiation clouds.
     pub clouds: Vec<RadCloud>,
-    pub in_cloud: bool,
-    /// Seconds until the next wanted star fades.
-    pub wanted_cool_t: f64,
     /// Seconds until a new set of refinery charges arrives.
     pub charge_respawn_t: f64,
-    /// Rival kills this shift by method, and the habit the crews have adapted to.
-    pub habit_kills: crate::career::Habits,
+    /// The habit the crews have adapted to.
     pub rival_counter: Option<crate::career::Habit>,
     /// What the crews' war chest has bought, and the cargo they got away with this shift.
     pub crew_level: usize,
     pub rival_loot: f64,
     pub(crate) intel_told: bool,
     pub vault_opened: bool,
-    /// The money side of the opposition, settled at the end of the shift.
-    pub impounded: bool,
-    pub impound_fee: f64,
-    pub confiscated: f64,
-    pub loan_credit: f64,
-    pub fines: f64,
-    pub fine_from_cargo: f64,
-    pub arrests: u32,
     /// The belt being worked and its condition this shift.
     pub belt: crate::field::Belt,
     pub cond: crate::field::Condition,
-    /// The co-pilot aboard and the accepted contract.
-    pub crew: Option<crate::field::Crew>,
-    pub contract: Option<crate::field::Contract>,
-    /// Banked pieces by type (for delivery contracts).
-    pub delivered: Vec<(ItemType, u32)>,
     /// The field event: when it fires, whether it has, and the ion storm.
     pub event_t: f64,
     pub event_done: bool,
@@ -165,7 +290,6 @@ pub struct World {
     pub hauler: Option<crate::field::Hauler>,
     pub escort_done: bool,
     pub escort_failed: bool,
-    pub cores_banked: u32,
     pub hold_opened: bool,
     /// The boss crew taken down this shift, if any.
     pub boss_down: Option<&'static str>,
@@ -176,13 +300,12 @@ pub struct World {
     pub forced_event: Option<crate::field::Event>,
     /// The guided first shift, while it runs.
     pub tut: Option<crate::tutorial::Tutorial>,
-    /// Cargo has been cut loose mid-swing this shift (a training step).
-    pub threw_cargo: bool,
-    /// Standing changes earned this shift, applied when it ends.
-    pub rep_delta: Rep,
     /// Rival crews respect you: half as many hunters come.
     pub rivals_good: bool,
     pub cam: Camera,
+    /// The pilot the camera follows and whose screen flashes and shakes:
+    /// the local player (always 0 in single-player).
+    pub view_pilot: usize,
     /// Viewport size in logical pixels; the camera's zoom depends on it.
     pub view: (f64, f64),
     /// Screen shake amplitude and white flash, both decaying each step.
@@ -192,8 +315,12 @@ pub struct World {
     warned_ten: bool,
     /// The shift has ended: the clock reached zero or the tug was impounded.
     pub shift_over: bool,
-    /// Effects, sounds and radio lines raised since the last drain.
-    pub events: Vec<Event>,
+    /// Effects, sounds and radio lines raised since the last drain, each
+    /// with the pilot it concerns.
+    pub events: Vec<Emitted>,
+    /// The pilot whose events are being raised right now, if any (see
+    /// [`World::with_hearer`]).
+    pub hearer: Option<usize>,
 }
 
 impl World {
@@ -204,17 +331,11 @@ impl World {
             rng,
             t: 0.0,
             time_left: SHIFT_SECONDS,
-            banked: 0.0,
             shift_no: 1,
-            ship: Ship::new(&mods),
-            mods,
-            diff_damage: 1.0,
-            diff_fees: 1.0,
+            pilots: vec![Pilot::new(mods)],
             belt_value: 1.0,
-            stats: Stats::default(),
-            delivery_total: 0.0,
-            delivery_t: -99.0,
-            chain: Vec::new(),
+            edge_lo: 0.0,
+            edge_hi: WORLD_W,
             items: Vec::new(),
             rocks: Vec::new(),
             wrecks: Vec::new(),
@@ -224,20 +345,13 @@ impl World {
             ebullets: Vec::new(),
             next_id: 1,
             grudge: 0.0,
-            kills: Kills::default(),
-            bounties: 0.0,
-            shots_fired: 0,
             jumper_timer: f64::INFINITY,
             rock_timer: f64::INFINITY,
             wreck_timer: f64::INFINITY,
-            under_attack_t: 0.0,
-            attack_alarm_at: -99.0,
             diff_jumper_rate: 1.0,
             diff_jumper_cap: 0.0,
             belt_rivals: 1.0,
-            rep_delta: Rep::default(),
             rivals_good: false,
-            career: None,
             drones: Vec::new(),
             collectors: Vec::new(),
             nets: Vec::new(),
@@ -246,39 +360,23 @@ impl World {
             missiles: Vec::new(),
             sentries: Vec::new(),
             refinery: None,
-            wanted: 0,
             reinforce_t: None,
             patrol_t: f64::INFINITY,
             collector_queue: Vec::new(),
-            low_wallet_checked: false,
-            fat_cable_ready_at: 0.0,
             refinery_t: f64::INFINITY,
             miner_announce_t: 0.0,
             collector_from: 2,
             net_tear: 1.0,
-            no_blame: false,
+            blame: Blame::Unset,
             clouds: Vec::new(),
-            in_cloud: false,
-            wanted_cool_t: WANTED_COOLDOWN,
             charge_respawn_t: crate::opposition::CHARGE_RESPAWN_TIME,
-            habit_kills: Default::default(),
             rival_counter: None,
             crew_level: 0,
             rival_loot: 0.0,
             intel_told: false,
             vault_opened: false,
-            impounded: false,
-            impound_fee: 0.0,
-            confiscated: 0.0,
-            loan_credit: 0.0,
-            fines: 0.0,
-            fine_from_cargo: 0.0,
-            arrests: 0,
             belt: crate::field::Belt::Hollis,
             cond: crate::field::Condition::Normal,
-            crew: None,
-            contract: None,
-            delivered: Vec::new(),
             event_t: f64::INFINITY,
             event_done: true,
             ion_t: 0.0,
@@ -286,14 +384,13 @@ impl World {
             hauler: None,
             escort_done: false,
             escort_failed: false,
-            cores_banked: 0,
             hold_opened: false,
             boss_down: None,
             p2: None,
             p2_input: Default::default(),
             forced_event: None,
             tut: None,
-            threw_cargo: false,
+            view_pilot: 0,
             cam: Camera {
                 x: BAY_X,
                 y: BAY_Y,
@@ -306,38 +403,112 @@ impl World {
             warned_ten: false,
             shift_over: false,
             events: Vec::new(),
+            hearer: None,
         }
     }
 
     /// A new shift: the field is seeded and Marge opens the channel.
     pub fn new_shift(rng: Rng, view: (f64, f64)) -> World {
+        World::new_shift_for(rng, view, 1)
+    }
+
+    /// A new shift on a field sized for up to `limit` pilots.
+    pub fn new_shift_for(rng: Rng, view: (f64, f64), limit: usize) -> World {
         let mut w = World::empty(rng, view);
+        w.size_for(limit);
         w.setup_opposition();
         w.start_shift();
         w.setup_miners();
         w
     }
 
+    /// A shared shift on a server, sized for up to `limit` pilots: `shared`
+    /// settles what belongs to the whole field, and each of `careers` gives
+    /// pilot `i` its tug, difficulty, crew and contract. With no careers the
+    /// field still has its one waiting tug, as `new_shift_for` does.
+    pub fn for_careers(
+        rng: Rng,
+        view: (f64, f64),
+        limit: usize,
+        shared: &SharedShift,
+        careers: &[Career],
+    ) -> World {
+        let mut w = World::empty(rng, view);
+        w.size_for(limit);
+        w.shift_no = shared.shift_no;
+        let d = shared.mode.def();
+        w.diff_jumper_rate = d.jumper_rate;
+        w.diff_jumper_cap = d.jumper_cap;
+        let bd = shared.belt.def();
+        w.belt = shared.belt;
+        w.belt_value = bd.value;
+        w.belt_rivals = bd.rivals;
+        w.cond = shared.cond;
+        w.grudge = shared.grudge.max(bd.grudge_floor);
+        for c in careers {
+            w.add_career_pilot(c);
+        }
+        // The rival crews' levels follow the best-funded career among them.
+        w.crew_level = careers.iter().map(Career::crew_level).max().unwrap_or(0);
+        w.event_t = w
+            .rng
+            .range(crate::field::EVENT_WINDOW.0, crate::field::EVENT_WINDOW.1);
+        // The server's first shift is the quiet one: no field event.
+        w.event_done = shared.shift_no == 1;
+        w.setup_opposition();
+        w.start_shift();
+        w.setup_after_populate();
+        w.setup_miners();
+        w
+    }
+
+    /// Adds the next pilot, flying career `c`'s tug at its mode's difficulty
+    /// with its crew and contract, parked a little apart from the others at
+    /// the bay; returns its index. The field's first career takes over the
+    /// world's own waiting tug.
+    pub fn add_career_pilot(&mut self, c: &Career) -> usize {
+        let p = if self.pilots[0].career.is_none() {
+            0
+        } else {
+            let mut pl = Pilot::new(c.mods());
+            pl.ship.b.y += 70.0 * self.pilots.len() as f64;
+            self.pilots.push(pl);
+            self.pilots.len() - 1
+        };
+        let pl = &mut self.pilots[p];
+        pl.mods = c.mods();
+        let at = pl.ship.b;
+        pl.ship = Ship::new(&pl.mods);
+        pl.ship.b.x = at.x;
+        pl.ship.b.y = at.y;
+        let d = c.mode.def();
+        pl.diff_damage = d.damage;
+        pl.diff_fees = d.fees;
+        pl.career = Some(c.clone());
+        self.pilot_from_career(p, c);
+        p
+    }
+
     /// The next shift of a career (newGame): its loadout, difficulty, shift
     /// number, carried-over rival grudge, and the field the career has picked.
     pub fn for_career(rng: Rng, view: (f64, f64), c: &Career) -> World {
         let mut w = World::empty(rng, view);
-        w.mods = c.mods();
-        w.ship = Ship::new(&w.mods);
+        w.pilots[0].mods = c.mods();
+        w.pilots[0].ship = Ship::new(&w.pilots[0].mods);
         w.shift_no = c.shift;
         let d = c.mode.def();
-        w.diff_damage = d.damage;
-        w.diff_fees = d.fees;
+        w.pilots[0].diff_damage = d.damage;
+        w.pilots[0].diff_fees = d.fees;
         w.diff_jumper_rate = d.jumper_rate;
         w.diff_jumper_cap = d.jumper_cap;
         // Crews who hate you start the shift already annoyed.
         let bad = tier(c.rep.rivals) == Tier::Bad;
         w.grudge = c.grudge + if bad { 2.0 } else { 0.0 };
         w.rivals_good = tier(c.rep.rivals) == Tier::Good;
-        w.career = Some(c.clone());
+        w.pilots[0].career = Some(c.clone());
         w.rival_counter = c.habits.dominant();
         w.crew_level = c.crew_level();
-        w.setup_career_field(c);
+        w.setup_career_field(0, c);
         w.setup_opposition();
         w.start_shift();
         w.setup_after_populate();
@@ -355,9 +526,32 @@ impl World {
         w.radio(Radio::Start, true, false);
     }
 
-    /// Queues an event for the front end (sounds, radio lines, popups) to drain.
+    /// Queues an event for the front end (sounds, radio lines, popups) to
+    /// drain, addressed to the pilot being processed (see `with_hearer`).
     pub(crate) fn emit(&mut self, e: Event) {
-        self.events.push(e);
+        self.events.push(Emitted {
+            to: self.hearer,
+            event: e,
+        });
+    }
+
+    /// Run `f` with the events it raises addressed to pilot `p` (`None`:
+    /// everyone).
+    pub(crate) fn with_hearer<T>(
+        &mut self,
+        p: Option<usize>,
+        f: impl FnOnce(&mut World) -> T,
+    ) -> T {
+        let was = self.hearer;
+        self.hearer = p;
+        let out = f(self);
+        self.hearer = was;
+        out
+    }
+
+    /// Whether `e` was raised since the last drain, for anyone.
+    pub fn heard(&self, e: &Event) -> bool {
+        self.events.iter().any(|n| &n.event == e)
     }
     /// Queues a sound effect event.
     pub(crate) fn sfx(&mut self, s: Sfx) {
@@ -431,13 +625,27 @@ impl World {
     pub(crate) fn edge_point(&mut self, min_dist: f64) -> (f64, f64) {
         for _ in 0..20 {
             let p = match self.rng.int(0, 3) {
-                0 => (self.rng.range(0.0, WORLD_W), -40.0),
-                1 => (WORLD_W + 40.0, self.rng.range(0.0, WORLD_H)),
-                2 => (self.rng.range(0.0, WORLD_W), WORLD_H + 40.0),
-                _ => (-40.0, self.rng.range(0.0, WORLD_H)),
+                0 => (
+                    self.rng.range(self.edge_lo, self.edge_hi),
+                    self.edge_lo - 40.0,
+                ),
+                1 => (
+                    self.edge_hi + 40.0,
+                    self.rng.range(self.edge_lo, self.edge_hi),
+                ),
+                2 => (
+                    self.rng.range(self.edge_lo, self.edge_hi),
+                    self.edge_hi + 40.0,
+                ),
+                _ => (
+                    self.edge_lo - 40.0,
+                    self.rng.range(self.edge_lo, self.edge_hi),
+                ),
             };
-            let s = &self.ship.b;
-            if !self.ship.alive || js::dist(p.0, p.1, s.x, s.y) > min_dist {
+            let clear = self.pilots.iter().all(|pl| {
+                !pl.ship.alive || js::dist(p.0, p.1, pl.ship.b.x, pl.ship.b.y) > min_dist
+            });
+            if clear {
                 return p;
             }
         }
@@ -466,10 +674,11 @@ impl World {
     /// starter salvage near the carrier so the first hook comes quickly.
     pub fn populate(&mut self) {
         let (mut n, mut tries) = (0, 0);
-        while n < START_WRECKS && tries < 400 {
+        let (wrecks, items) = (self.area_count(START_WRECKS), self.area_count(START_ITEMS));
+        while n < wrecks && tries < 400 * self.area().ceil() as usize {
             tries += 1;
-            let x = self.rng.range(300.0, WORLD_W - 300.0);
-            let y = self.rng.range(300.0, WORLD_H - 300.0);
+            let x = self.rng.range(self.edge_lo + 300.0, self.edge_hi - 300.0);
+            let y = self.rng.range(self.edge_lo + 300.0, self.edge_hi - 300.0);
             if self.clear_spot(x, y, 160.0, 1100.0) {
                 let w = make_wreck(&mut self.rng, x, y, self.shift_no);
                 self.wrecks.push(w);
@@ -477,7 +686,8 @@ impl World {
             }
         }
         let (mut n, mut tries) = (0, 0);
-        while n < START_ROCKS && tries < 2000 {
+        let rocks = self.area_count(START_ROCKS);
+        while n < rocks && tries < 2000 * self.area().ceil() as usize {
             tries += 1;
             let roll = self.rng.next();
             let size = if roll < 0.4 {
@@ -487,15 +697,15 @@ impl World {
             } else {
                 1
             };
-            let x = self.rng.range(100.0, WORLD_W - 100.0);
-            let y = self.rng.range(100.0, WORLD_H - 100.0);
+            let x = self.rng.range(self.edge_lo + 100.0, self.edge_hi - 100.0);
+            let y = self.rng.range(self.edge_lo + 100.0, self.edge_hi - 100.0);
             if self.clear_spot(x, y, rock_size(size).0, 650.0) {
                 let r = make_rock_drifting(&mut self.rng, size, x, y);
                 self.rocks.push(r);
                 n += 1;
             }
         }
-        for _ in 0..START_ITEMS {
+        for _ in 0..items {
             let a = self.rng.angle();
             let d = self.rng.range(500.0, 1300.0);
             let kind = if self.rng.chance(0.6) {
@@ -516,33 +726,53 @@ impl World {
         }
     }
 
-    /// A one-shot cable command. In the browser these run from key and
-    /// button handlers between frames, i.e. before the next step.
+    /// A one-shot cable command for the first pilot (single-player).
     pub fn action(&mut self, a: Action) {
+        self.action_for(0, a);
+    }
+
+    /// A one-shot cable command for pilot `p`. In the browser these run from
+    /// key and button handlers between frames, i.e. before the next step.
+    pub fn action_for(&mut self, p: usize, a: Action) {
         if self.shift_over {
             return;
         }
         match a {
-            Action::Hook => self.try_hook(),
-            Action::Drop => self.drop_last(),
-            Action::Cut => self.cut_all(),
-            Action::Grind => self.grind_last(),
+            Action::Hook => self.with_hearer(Some(p), |w| w.try_hook(p)),
+            Action::Drop => self.with_hearer(Some(p), |w| w.drop_last(p)),
+            Action::Cut => self.with_hearer(Some(p), |w| w.cut_all(p)),
+            Action::Grind => self.with_hearer(Some(p), |w| w.grind_last(p)),
         }
     }
 
-    /// Advance one fixed step of `dt` seconds (normally [`STEP`]).
+    /// Advance one fixed step of `dt` seconds (normally [`STEP`]) with the
+    /// first pilot's controls (single-player).
     pub fn step(&mut self, input: &Input, dt: f64) {
+        self.step_all(std::slice::from_ref(input), dt);
+    }
+
+    /// Advance one fixed step of `dt` seconds with each pilot's controls:
+    /// `inputs[p]` flies `pilots[p]`.
+    ///
+    /// # Panics
+    /// If `inputs` does not hold exactly one entry per pilot (a caller bug).
+    pub fn step_all(&mut self, inputs: &[Input], dt: f64) {
+        assert_eq!(inputs.len(), self.pilots.len(), "one input per pilot");
         if self.shift_over {
             return;
         }
         self.t += dt;
         self.time_left -= dt;
 
-        self.update_ship(input, dt);
+        for (p, input) in inputs.iter().enumerate() {
+            self.with_hearer(Some(p), |w| w.update_ship(p, input, dt));
+        }
         self.update_partner(dt);
         self.update_scoop(dt);
         for j in 0..self.jumpers.len() {
-            self.update_jumper(j, dt);
+            let b = self.jumpers[j].b;
+            let p = self.nearest_pilot(b.x, b.y);
+            self.with_hearer(Some(p), |w| w.update_jumper(j, dt));
         }
         for i in 0..self.items.len() {
             let it = &mut self.items[i];
@@ -585,25 +815,31 @@ impl World {
         self.resolve_collisions();
         self.update_bullets(dt);
         for c in 0..self.crabs.len() {
-            self.update_crab(c, dt);
+            let p = self.crabs[c].on;
+            self.with_hearer(Some(p), |w| w.update_crab(c, dt));
         }
         self.update_refinery(dt);
         for i in 0..self.drones.len() {
             self.update_drone(i, dt);
         }
         for i in 0..self.collectors.len() {
-            self.update_collector(i, dt);
+            let p = self.collectors[i].target;
+            self.with_hearer(Some(p), |w| w.update_collector(i, dt));
         }
         for i in 0..self.sheriffs.len() {
-            self.update_sheriff(i, dt);
+            let p = self.sheriffs[i].target;
+            self.with_hearer(Some(p), |w| w.update_sheriff(i, dt));
         }
         for i in 0..self.miners.len() {
-            self.update_miner(i, dt);
+            let b = self.miners[i].b;
+            let p = self.nearest_pilot(b.x, b.y);
+            self.with_hearer(Some(p), |w| w.update_miner(i, dt));
         }
         self.update_nets(dt);
         self.update_missiles(dt);
         for i in 0..self.sentries.len() {
-            self.update_sentry(i, dt);
+            let p = self.sentries[i].pilot;
+            self.with_hearer(Some(p), |w| w.update_sentry(i, dt));
         }
         // An impound ends the shift mid-step.
         if self.shift_over {
@@ -618,7 +854,9 @@ impl World {
         self.update_spawns(dt);
         self.shake = (self.shake - dt * 30.0).max(0.0);
         self.screen_flash = (self.screen_flash - dt * 1.6).max(0.0);
-        self.under_attack_t = (self.under_attack_t - dt).max(0.0);
+        for pl in &mut self.pilots {
+            pl.under_attack_t = (pl.under_attack_t - dt).max(0.0);
+        }
         self.sweep_dead();
         self.update_camera(dt);
 
@@ -657,21 +895,28 @@ impl World {
         // updateEffects runs too: shake, flash and the attack warning fade.
         self.shake = (self.shake - dt * 30.0).max(0.0);
         self.screen_flash = (self.screen_flash - dt * 1.6).max(0.0);
-        self.under_attack_t = (self.under_attack_t - dt).max(0.0);
+        for pl in &mut self.pilots {
+            pl.under_attack_t = (pl.under_attack_t - dt).max(0.0);
+        }
         let a = self.t * 0.05;
         self.cam.x = CARRIER_X + a.cos() * 500.0;
         self.cam.y = CARRIER_Y + a.sin() * 350.0;
         self.cam.zoom = (self.view.0.min(self.view.1) / 1100.0).clamp(0.45, 0.9);
     }
 
-    /// Tug flight: rotation and thrust, both blunted by the weight on the winch.
-    fn update_ship(&mut self, input: &Input, dt: f64) {
-        let s = &mut self.ship;
+    /// Pilot `p`'s tug flight: rotation and thrust, both blunted by the
+    /// weight on the winch.
+    pub(crate) fn update_ship(&mut self, p: usize, input: &Input, dt: f64) {
+        // An away tug is frozen out of the field: no flight, no respawn.
+        if self.pilots[p].away.is_some() {
+            return;
+        }
+        let s = &mut self.pilots[p].ship;
         s.flash = (s.flash - dt).max(0.0);
         if !s.alive {
             s.respawn_t -= dt;
             if s.respawn_t <= 0.0 {
-                self.respawn_ship();
+                self.respawn_ship(p);
             }
             self.emit(Event::Thrust {
                 level: 0.0,
@@ -681,10 +926,10 @@ impl World {
             return;
         }
         s.invuln = (s.invuln - dt).max(0.0);
-        let load = self.tow_mass();
-        let load_ratio = load / self.mods.winch_cap;
-        let mods = &self.mods;
-        let s = &mut self.ship;
+        let load = self.tow_mass(p);
+        let load_ratio = load / self.pilots[p].mods.winch_cap;
+        let pl = &mut self.pilots[p];
+        let (mods, s) = (&pl.mods, &mut pl.ship);
 
         // Heat sink shared by the guns and side thrusters.
         s.heat = (s.heat - HEAT_COOL * dt).max(0.0);
@@ -838,6 +1083,7 @@ impl World {
             s.slugs -= 1;
             s.fire_t = SLUG_INTERVAL;
             self.bullets.push(Bullet {
+                blame: Blame::Pilot(p),
                 x: s.b.x + nx * MUZZLE,
                 y: s.b.y + ny * MUZZLE,
                 vx: s.b.vx + nx * SLUG_SPEED,
@@ -855,6 +1101,7 @@ impl World {
             for &off in &mods.barrels {
                 let (ox, oy) = (-ny * off, nx * off);
                 self.bullets.push(Bullet {
+                    blame: Blame::Pilot(p),
                     x: s.b.x + nx * MUZZLE + ox,
                     y: s.b.y + ny * MUZZLE + oy,
                     vx: s.b.vx + nx * BULLET_SPEED,
@@ -871,6 +1118,7 @@ impl World {
                 for side in [-1.0, 1.0] {
                     let a = s.angle + side * f64::from(k) * CANNON_SPREAD_ANGLE;
                     self.bullets.push(Bullet {
+                        blame: Blame::Pilot(p),
                         x: s.b.x + nx * MUZZLE,
                         y: s.b.y + ny * MUZZLE,
                         vx: s.b.vx + a.cos() * BULLET_SPEED,
@@ -888,7 +1136,7 @@ impl World {
             s.heat += HEAT_PER_SHOT
                 * (1.0 + 0.6 * (mods.guns() as f64 - 1.0) + 0.15 * f64::from(mods.cannon_spread))
                 * mods.heat_mul;
-            self.shots_fired += 1;
+            pl.shots_fired += 1;
             shots = mods.guns();
         }
 
@@ -951,7 +1199,7 @@ impl World {
             self.sfx(a);
         }
         if ripped {
-            let (x, y) = (self.ship.b.x, self.ship.b.y);
+            let (x, y) = (self.pilots[p].ship.b.x, self.pilots[p].ship.b.y);
             self.burst(x, y, 4, Tint::Collector, 90.0);
             self.sfx(Sfx::Rip);
         }
@@ -963,7 +1211,7 @@ impl World {
             self.sfx(Sfx::Missile);
         }
         if torn {
-            self.free_ship(true);
+            self.free_ship(p, true);
         }
         if low {
             self.radio(Radio::HullLow, true, false);
@@ -976,21 +1224,143 @@ impl World {
     /// Run `f` with any kill it causes left uncredited: no bounty, grudge,
     /// wanted stars or tally (withoutBlame).
     pub(crate) fn without_blame(&mut self, f: impl FnOnce(&mut World)) {
-        let was = self.no_blame;
-        self.no_blame = true;
-        f(self);
-        self.no_blame = was;
+        self.with_blame(Blame::Nobody, f);
     }
 
-    /// All hull damage funnels through here, so the difficulty scale applies once.
-    pub fn damage_ship(&mut self, n: f64) {
-        let s = &mut self.ship;
+    /// Run `f` with `blame` answering for the damage it deals. `Unset` leaves
+    /// whatever blame is already in force.
+    pub(crate) fn with_blame(&mut self, blame: Blame, f: impl FnOnce(&mut World)) {
+        if blame == Blame::Unset {
+            f(self);
+            return;
+        }
+        let was = self.blame;
+        self.blame = blame;
+        f(self);
+        self.blame = was;
+    }
+
+    /// The pilot a carried blame (on a round, missile or reactor) names:
+    /// `Unset` defers to the blame in force now.
+    pub fn resolve_blame(&self, blame: Blame) -> Option<usize> {
+        match blame {
+            Blame::Pilot(p) => Some(p),
+            Blame::Nobody => None,
+            Blame::Unset => self.blamed(),
+        }
+    }
+
+    /// How much busier the field is than a solo one: 1 for one pilot, plus
+    /// [`CROWD_SHARE`] for each extra pilot. Salvage, refills and rival
+    /// arrivals scale by it so a crowd doesn't split one player's field.
+    pub fn crowd(&self) -> f64 {
+        1.0 + CROWD_SHARE * (self.pilots.len() as f64 - 1.0)
+    }
+
+    /// Sizes the field for up to `limit` pilots, before it is seeded: its
+    /// area is a solo field's times the crowd factor for that many (1 for
+    /// one pilot, plus CROWD_SHARE for each more; 20 pilots: 10.5x the area,
+    /// about 3.2x as wide), grown evenly around the carrier.
+    pub fn size_for(&mut self, limit: usize) {
+        let crowd = 1.0 + CROWD_SHARE * (limit.max(1) as f64 - 1.0);
+        let grow = (WORLD_W * crowd.sqrt() - WORLD_W) / 2.0;
+        self.edge_lo = -grow;
+        self.edge_hi = WORLD_W + grow;
+    }
+
+    /// The field's area as a multiple of a solo field's (1 when solo).
+    pub fn area(&self) -> f64 {
+        ((self.edge_hi - self.edge_lo) / WORLD_W).powi(2)
+    }
+
+    /// How many of a solo field's `n` a field this size holds (`n` when solo).
+    pub(crate) fn area_count(&self, n: usize) -> usize {
+        (n as f64 * self.area()).round() as usize
+    }
+
+    /// The local player's pilot: the one the camera follows ([`World::view_pilot`]).
+    pub fn me(&self) -> &Pilot {
+        &self.pilots[self.view_pilot]
+    }
+
+    /// The local player's pilot, to change.
+    pub fn me_mut(&mut self) -> &mut Pilot {
+        let p = self.view_pilot;
+        &mut self.pilots[p]
+    }
+
+    /// The pilot whose tug is nearest (x, y), preferring live tugs; the
+    /// first pilot wins a tie. With one pilot this is always 0.
+    pub fn nearest_pilot(&self, x: f64, y: f64) -> usize {
+        let d = |p: usize| js::dist(x, y, self.pilots[p].ship.b.x, self.pilots[p].ship.b.y);
+        (0..self.pilots.len())
+            .min_by(|&a, &b| {
+                let (la, lb) = (self.pilots[a].ship.alive, self.pilots[b].ship.alive);
+                lb.cmp(&la).then(d(a).total_cmp(&d(b)))
+            })
+            .unwrap_or(0)
+    }
+
+    /// Takes pilot `p`'s tug and towed cargo out of the field while its
+    /// player is away, so nothing can hurt, rob or chase it; [`World::set_back`]
+    /// puts both back where they were. The tug counts as not flying, which
+    /// is what keeps it out of every system's reach.
+    pub fn set_away(&mut self, p: usize) {
+        if self.pilots[p].away.is_some() {
+            return;
+        }
+        let chain = std::mem::take(&mut self.pilots[p].chain);
+        let mut cargo = Vec::with_capacity(chain.len());
+        for &id in &chain {
+            if let Some(i) = self.items.iter().position(|it| it.id == id) {
+                cargo.push(self.items.remove(i));
+            }
+        }
+        let pl = &mut self.pilots[p];
+        pl.away = Some(Away {
+            chain,
+            cargo,
+            alive: pl.ship.alive,
+        });
+        pl.ship.alive = false;
+    }
+
+    /// Brings pilot `p`'s tug and cargo back into the field (see
+    /// [`World::set_away`]).
+    pub fn set_back(&mut self, p: usize) {
+        let Some(away) = self.pilots[p].away.take() else {
+            return;
+        };
+        self.pilots[p].ship.alive = away.alive;
+        self.pilots[p].chain = away.chain;
+        self.items.extend(away.cargo);
+    }
+
+    /// The pilot credited or blamed for damage dealt right now, if any.
+    pub fn blamed(&self) -> Option<usize> {
+        match self.blame {
+            Blame::Pilot(p) => Some(p),
+            Blame::Nobody => None,
+            Blame::Unset => (self.pilots.len() == 1).then_some(0),
+        }
+    }
+
+    /// All hull damage to pilot `p`'s tug funnels through here, so the
+    /// difficulty scale applies once.
+    pub fn damage_ship(&mut self, p: usize, n: f64) {
+        self.with_hearer(Some(p), |w| w.hurt_tug(p, n));
+    }
+
+    /// The body of [`World::damage_ship`].
+    fn hurt_tug(&mut self, p: usize, n: f64) {
+        let pl = &mut self.pilots[p];
+        let s = &mut pl.ship;
         if !s.alive || s.invuln > 0.0 || n <= 0.0 {
             return;
         }
-        let mut n = n * self.diff_damage;
+        let mut n = n * pl.diff_damage;
         // The shield takes the hit first; any hit restarts the recharge delay.
-        s.shield_delay_t = self.mods.shield_delay;
+        s.shield_delay_t = pl.mods.shield_delay;
         if s.shield > 0.0 {
             let absorbed = s.shield.min(n);
             s.shield -= absorbed;
@@ -1012,7 +1382,7 @@ impl World {
                 return;
             }
         }
-        let s = &mut self.ship;
+        let s = &mut self.pilots[p].ship;
         s.hp -= n;
         s.flash = 0.15;
         let dead = s.hp <= 0.0;
@@ -1025,42 +1395,49 @@ impl World {
             });
         }
         if dead {
-            self.kill_ship();
+            self.kill_ship(p);
         }
     }
 
-    /// Wreck the tug: cargo floats free, the deductible is charged, respawn soon.
-    pub fn kill_ship(&mut self) {
-        let s = &mut self.ship;
+    /// Wreck pilot `p`'s tug: cargo floats free, the deductible is charged,
+    /// respawn soon.
+    pub fn kill_ship(&mut self, p: usize) {
+        self.with_hearer(Some(p), |w| w.wreck_tug(p));
+    }
+
+    /// The body of [`World::kill_ship`].
+    fn wreck_tug(&mut self, p: usize) {
+        let s = &mut self.pilots[p].ship;
         s.alive = false;
         s.hp = 0.0;
         s.respawn_t = RESPAWN_TIME;
         let (x, y) = (s.b.x, s.b.y);
-        self.stats.deaths += 1;
-        let deductible = js::round(DEDUCTIBLE * self.diff_fees * self.crew_fee_mul());
-        self.banked = (self.banked - deductible).max(0.0);
+        self.pilots[p].stats.deaths += 1;
+        let deductible = js::round(DEDUCTIBLE * self.pilots[p].diff_fees * self.crew_fee_mul(p));
+        self.pilots[p].banked = (self.pilots[p].banked - deductible).max(0.0);
         self.popup(
             x,
             y - 30.0,
             format!("-{deductible} deductible"),
             Tint::Danger,
         );
-        self.sever_at(0);
+        self.sever_at(p, 0);
         for c in 0..self.crabs.len() {
-            if self.crabs[c].state == CrabState::Latched {
+            if self.crabs[c].state == CrabState::Latched && self.crabs[c].on == p {
                 let vx = self.rng.range(-150.0, 150.0);
                 let vy = self.rng.range(-150.0, 150.0);
                 self.fling_crab(c, vx, vy);
             }
         }
-        if self.ship.net.is_some() {
-            self.free_ship(false);
+        if self.pilots[p].ship.net.is_some() {
+            self.free_ship(p, false);
         }
-        self.clear_record();
+        self.clear_record(p);
         // A wrecked tug is a bad debt: a collector comes looking 20 s
         // later, once the mode's collectors have started appearing.
-        if self.collectors.is_empty() && self.shift_no >= self.collector_from {
-            self.collector_queue.push(self.t + 20.0);
+        let chasing = self.collectors.iter().any(|c| c.target == p);
+        if !chasing && self.shift_no >= self.collector_from {
+            self.collector_queue.push((self.t + 20.0, p));
         }
         self.explosion_fx(x, y, 150.0, Tint::Hazard);
         // The shockwave. Not the player's kills: dying near a sheriff earns no stars.
@@ -1069,42 +1446,45 @@ impl World {
         self.sfx(Sfx::Boom);
         self.radio(Radio::Dead, true, false);
         // After the "tug is down" call, so Marge warns about them last.
-        self.go_rogue();
+        self.go_rogue(p);
     }
 
-    fn respawn_ship(&mut self) {
-        let s = &mut self.ship;
+    /// Bring pilot `p`'s tug back at the bay with a fresh hull and a short
+    /// grace period.
+    fn respawn_ship(&mut self, p: usize) {
+        let pl = &mut self.pilots[p];
+        let s = &mut pl.ship;
         s.b.x = BAY_X;
         s.b.y = BAY_Y;
         s.b.vx = 0.0;
         s.b.vy = 0.0;
         s.angle = std::f64::consts::PI;
         s.av = 0.0;
-        s.hp = self.mods.max_hp;
+        s.hp = pl.mods.max_hp;
         s.alive = true;
         s.invuln = SHIP_INVULN;
         s.low_warned = false;
         s.spin_meter = 0.0;
-        s.shield = self.mods.shield_max;
+        s.shield = pl.mods.shield_max;
         s.shield_delay_t = 0.0;
         s.heat = 0.0;
         s.overheated = false;
-        s.missiles = self.mods.missile_rack;
+        s.missiles = pl.mods.missile_rack;
         s.stun_t = 0.0;
         s.burn_t = 0.0;
         s.engine_heat = 0.0;
         s.engine_over_t = 0.0;
     }
 
-    /// Any hostile opening fire on the tug, or landing a hit, raises the
+    /// Any hostile opening fire on pilot `p`'s tug, or landing a hit, raises the
     /// UNDER ATTACK warning; the klaxon sounds at most every few seconds.
-    pub(crate) fn under_attack(&mut self) {
-        if !self.ship.alive {
+    pub(crate) fn under_attack(&mut self, p: usize) {
+        if !self.pilots[p].ship.alive {
             return;
         }
-        self.under_attack_t = ATTACK_HUD_HOLD;
-        if self.t - self.attack_alarm_at > ATTACK_ALARM_GAP {
-            self.attack_alarm_at = self.t;
+        self.pilots[p].under_attack_t = ATTACK_HUD_HOLD;
+        if self.t - self.pilots[p].attack_alarm_at > ATTACK_ALARM_GAP {
+            self.pilots[p].attack_alarm_at = self.t;
             self.sfx(Sfx::AttackAlarm);
         }
     }
@@ -1113,7 +1493,7 @@ impl World {
     /// particles themselves are drawn by the game from the event.
     pub(crate) fn explosion_fx(&mut self, x: f64, y: f64, size: f64, tint: Tint) {
         let k = size / 100.0;
-        let s = &self.ship;
+        let s = &self.pilots[self.view_pilot].ship;
         // The closer you are, the harder the flash and shake hit.
         let near = if s.alive {
             (1.0 - js::dist(x, y, s.b.x, s.b.y) / 1500.0).clamp(0.0, 1.0)
@@ -1151,22 +1531,30 @@ impl World {
                 it.b.vy += ((BAY_Y - it.b.y) / d) * pull;
             }
         }
-        let s = &self.ship;
+        for p in 0..self.pilots.len() {
+            self.with_hearer(Some(p), |w| w.serve_at_bay(p, dt));
+        }
+    }
+
+    /// Pilot `p`'s tug parked at the bay: sanctuary from the law, repairs,
+    /// and the crew prying crabs off the hull.
+    fn serve_at_bay(&mut self, p: usize, dt: f64) {
+        let s = &self.pilots[p].ship;
         if s.alive && js::dist(s.b.x, s.b.y, BAY_X, BAY_Y) < BAY_REPAIR_RANGE {
             // Sanctuary: the carrier is private property. Reaching the bay
             // wipes the wanted level and sends the law home.
-            let chased = self
-                .sheriffs
-                .iter()
-                .any(|sh| !sh.dead && sh.state == crate::opposition::SheriffState::Pursuit);
-            if self.wanted > 0 || chased {
-                self.clear_record();
+            let chased = self.sheriffs.iter().any(|sh| {
+                !sh.dead && sh.state == crate::opposition::SheriffState::Pursuit && sh.target == p
+            });
+            if self.pilots[p].wanted > 0 || chased {
+                self.clear_record(p);
                 self.radio(Radio::Sanctuary, true, false);
             }
-            let s = &mut self.ship;
+            let max_hp = self.pilots[p].mods.max_hp;
+            let s = &mut self.pilots[p].ship;
             let mut repaired_low = false;
-            if s.hp < self.mods.max_hp {
-                s.hp = self.mods.max_hp.min(s.hp + BAY_REPAIR_RATE * dt);
+            if s.hp < max_hp {
+                s.hp = max_hp.min(s.hp + BAY_REPAIR_RATE * dt);
                 repaired_low = s.hp < 70.0;
             }
             if s.hp > 40.0 {
@@ -1177,7 +1565,7 @@ impl World {
             }
             // The bay crew pries crabs off the hull.
             for c in 0..self.crabs.len() {
-                if self.crabs[c].state == CrabState::Latched {
+                if self.crabs[c].state == CrabState::Latched && self.crabs[c].on == p {
                     self.kill_crab(c);
                 }
             }
@@ -1187,43 +1575,56 @@ impl World {
     /// Credit an item. Bankings within two seconds of each other count as
     /// one "delivery", which the end screen reports as the best delivery.
     pub fn bank_item(&mut self, i: usize) {
+        // Cargo pays the pilot who hooked it; loose cargo drifting in pays
+        // the pilot nearest the bay.
+        let p = self.items[i]
+            .owner
+            .unwrap_or_else(|| self.nearest_pilot(BAY_X, BAY_Y));
+        self.with_hearer(Some(p), |w| w.credit_item(p, i));
+    }
+
+    /// The body of [`World::bank_item`], crediting pilot `p`.
+    fn credit_item(&mut self, p: usize, i: usize) {
         // Rogue cores are stored for the shop, not sold here.
         if self.items[i].kind == ItemType::Core {
-            self.store_core(i);
+            self.store_core(p, i);
             return;
         }
         // The broker gets a better price; the popup shows what was paid.
-        if self.crew == Some(crate::field::Crew::Broker) {
+        if self.pilots[p].crew == Some(crate::field::Crew::Broker) {
             let it = &mut self.items[i];
             it.value = js::round(it.value * crate::field::BROKER_RATE);
         }
         let kind = self.items[i].kind;
-        match self.delivered.iter_mut().find(|d| d.0 == kind) {
+        match self.pilots[p].delivered.iter_mut().find(|d| d.0 == kind) {
             Some(d) => d.1 += 1,
-            None => self.delivered.push((kind, 1)),
+            None => self.pilots[p].delivered.push((kind, 1)),
         }
         let it = &self.items[i];
         let (x, y, value, rare, hidden) = (it.b.x, it.b.y, it.value, it.rare, it.hidden);
         let tint = it.tint;
         let named = rare || hidden || it.kind == ItemType::Blackbox;
-        let label = it.label;
-        self.banked += value;
-        self.stats.items += 1;
-        if self.t - self.delivery_t < DELIVERY_WINDOW {
-            self.delivery_total += value;
+        let label = it.label();
+        self.pilots[p].banked += value;
+        self.pilots[p].stats.items += 1;
+        if self.t - self.pilots[p].delivery_t < DELIVERY_WINDOW {
+            self.pilots[p].delivery_total += value;
         } else {
-            self.delivery_total = value;
+            self.pilots[p].delivery_total = value;
         }
-        self.delivery_t = self.t;
-        self.stats.best_run = self.stats.best_run.max(self.delivery_total);
-        self.emit(Event::Unlock("firstBank"));
-        if self.delivery_total >= 5000.0 {
-            self.emit(Event::Unlock("bigHaul"));
+        self.pilots[p].delivery_t = self.t;
+        self.pilots[p].stats.best_run = self.pilots[p]
+            .stats
+            .best_run
+            .max(self.pilots[p].delivery_total);
+        self.emit(Event::Unlock(crate::events::Achievement::FirstBank));
+        if self.pilots[p].delivery_total >= 5000.0 {
+            self.emit(Event::Unlock(crate::events::Achievement::BigHaul));
         }
-        if self.delivery_total >= 1500.0 {
-            let text = format!("{} cr delivery", fmt_credits(self.delivery_total));
+        if self.pilots[p].delivery_total >= 1500.0 {
+            let text = format!("{} cr delivery", fmt_credits(self.pilots[p].delivery_total));
             self.emit(Event::Highlight {
-                score: self.delivery_total,
+                score: self.pilots[p].delivery_total,
                 text,
             });
         }
@@ -1330,15 +1731,18 @@ impl World {
         self.nets.retain(|n| n.life > 0.0);
         self.missiles.retain(|m| m.life > 0.0);
         let items = &self.items;
-        self.chain.retain(|id| items.iter().any(|it| it.id == *id));
+        for pl in &mut self.pilots {
+            pl.chain.retain(|id| items.iter().any(|it| it.id == *id));
+        }
     }
 
     /// The camera leads the tug's velocity and zooms out as the cargo train
     /// grows, so a long swinging load stays on screen.
-    fn update_camera(&mut self, dt: f64) {
-        let s = &self.ship;
+    pub fn update_camera(&mut self, dt: f64) {
+        let v = self.view_pilot;
+        let s = &self.pilots[v].ship;
         let base = (self.view.0.min(self.view.1) / 900.0).clamp(0.5, 1.1);
-        let span = self
+        let span = self.pilots[v]
             .chain
             .iter()
             .filter_map(|id| self.items.iter().find(|it| it.id == *id))
@@ -1368,9 +1772,10 @@ impl World {
         self.cam.zoom += (target_zoom - self.cam.zoom) * (1.0 - (-2.0 * dt).exp());
     }
 
-    /// Total mass on the winch, tonnes.
-    pub fn tow_mass(&self) -> f64 {
-        self.chain
+    /// Total mass on pilot `p`'s winch, tonnes.
+    pub fn tow_mass(&self, p: usize) -> f64 {
+        self.pilots[p]
+            .chain
             .iter()
             .filter_map(|id| self.items.iter().find(|it| it.id == *id))
             .map(|it| it.b.mass)
@@ -1378,9 +1783,10 @@ impl World {
             .fold(0.0, |a, b| a + b)
     }
 
-    /// Total value of the cargo on the line.
-    pub fn line_value(&self) -> f64 {
-        self.chain
+    /// Total value of the cargo on pilot `p`'s line.
+    pub fn line_value(&self, p: usize) -> f64 {
+        self.pilots[p]
+            .chain
             .iter()
             .filter_map(|id| self.items.iter().find(|it| it.id == *id))
             .map(|it| it.value)

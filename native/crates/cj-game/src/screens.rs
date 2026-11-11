@@ -58,6 +58,25 @@ pub enum Act {
     ResetKeys,
     /// Leave a menu screen for the one it was opened from.
     Back,
+    /// The launch choice: play alone, host a server, or join one.
+    SinglePlayer,
+    Host,
+    /// Step the hosted server's player limit (2 to 20).
+    CycleLimit,
+    /// Step the hosted server's career difficulty mode.
+    CycleHostMode,
+    OpenJoin,
+    /// Look up the server at the address typed on the Join screen, or,
+    /// once it has answered, join it.
+    Join,
+    /// In the break between online shifts: ready for the next one.
+    Ready,
+    /// Leave the server from the lobby.
+    LeaveServer,
+    /// Start typing a line for the public chat.
+    OpenChat,
+    /// Open the shop from the lobby in the break between online shifts.
+    OpenShop,
     BoardTab(usize),
     PlaySound(usize),
     PlayAll,
@@ -442,6 +461,361 @@ fn guide(look: &Look, u: &Ui, tab: usize, x: f32, y: f32, w: f32) {
 /* ------------------------------- Pause -------------------------------- */
 
 /// Draws the pause menu and returns the action the player picked, if any. `voice_on` is Marge's voice setting and `armed_menu` is whether the main-menu button is waiting for a second press to end the shift.
+/// The first screen: play alone, host a server for others, or join one.
+pub fn launch(
+    look: &Look,
+    u: &mut Ui,
+    input: &MenuInput,
+    view: (f32, f32),
+    dpi: f32,
+    limit: usize,
+    mode: Mode,
+) -> Option<Act> {
+    let (w, h) = (900.0, 330.0);
+    u.begin(input, (w, h), view, dpi);
+    let r = Rect::new(20.0, 20.0, 860.0, 290.0);
+    card(r);
+    let (x, mut y) = (r.x + 36.0, r.y + 34.0);
+    label(look, u, "Hollis Belt Salvage", x, y, c(col::MUTED));
+    y += 22.0;
+    text(
+        look,
+        u,
+        "Claim Jumpers",
+        x,
+        y,
+        64.0,
+        Which::Display,
+        c(col::HAZARD),
+    );
+    y += 72.0;
+    text(
+        look,
+        u,
+        "Fly your own career, or share a shift with other tugs.",
+        x,
+        y,
+        18.0,
+        Which::Body,
+        c(col::TEXT),
+    );
+    y += 44.0;
+    let mut act = None;
+    let (p, r1) = u.button_at(look, "single", x, y, Style::Primary, "Single player", true);
+    if p {
+        act = Some(Act::SinglePlayer);
+    }
+    let by = y + (r1.h - 37.0) / 2.0;
+    let (p, r2) = u.button_at(
+        look,
+        "host",
+        r1.x + r1.w + 12.0,
+        by,
+        Style::Ghost,
+        "Host server",
+        true,
+    );
+    if p {
+        act = Some(Act::Host);
+    }
+    let (p, r3) = u.button_at(
+        look,
+        "join",
+        r2.x + r2.w + 12.0,
+        by,
+        Style::Ghost,
+        "Join remote host",
+        true,
+    );
+    if p {
+        act = Some(Act::OpenJoin);
+    }
+    if u.button_at(
+        look,
+        "quit",
+        r3.x + r3.w + 12.0,
+        by,
+        Style::Ghost,
+        "Quit",
+        true,
+    )
+    .0
+    {
+        act = Some(Act::Quit);
+    }
+    // The field a hosted server makes grows with how many it's for.
+    let lim = format!("Host for up to {limit} players");
+    let (p, lr) = u.button_at(look, "limit", r2.x, by + 50.0, Style::Ghost, &lim, true);
+    if p {
+        act = Some(Act::CycleLimit);
+    }
+    // Every career on a hosted server plays at the host's chosen mode.
+    let m = format!("Careers: {}", mode.def().label);
+    if u.button_at(
+        look,
+        "mode",
+        lr.x + lr.w + 12.0,
+        by + 50.0,
+        Style::Ghost,
+        &m,
+        true,
+    )
+    .0
+    {
+        act = Some(Act::CycleHostMode);
+    }
+    act
+}
+
+/// What the Join screen shows besides the address being typed.
+pub struct JoinView<'a> {
+    pub address: &'a str,
+    /// What the server said about itself (or that it's being asked), and
+    /// the colour to say it in.
+    pub status: Option<(String, u32)>,
+    /// The server has answered and has room: the button joins.
+    pub can_join: bool,
+    /// The server is being looked up: the button waits.
+    pub looking: bool,
+}
+
+/// Joining a server: the host's address is typed in (the port is always
+/// 47820), then the server is looked up before joining.
+pub fn join(
+    look: &Look,
+    u: &mut Ui,
+    input: &MenuInput,
+    view: (f32, f32),
+    dpi: f32,
+    v: JoinView,
+) -> Option<Act> {
+    let address = v.address;
+    let (w, h) = (900.0, 360.0);
+    u.begin(input, (w, h), view, dpi);
+    let r = Rect::new(20.0, 20.0, 860.0, 320.0);
+    card(r);
+    let (x, mut y) = (r.x + 36.0, r.y + 34.0);
+    label(look, u, "Join remote host", x, y, c(col::MUTED));
+    y += 22.0;
+    text(
+        look,
+        u,
+        "Whose shift?",
+        x,
+        y,
+        48.0,
+        Which::Display,
+        c(col::HAZARD),
+    );
+    y += 62.0;
+    label(
+        look,
+        u,
+        "The host's IP address (port 47820)",
+        x,
+        y,
+        c(col::MUTED),
+    );
+    y += 18.0;
+    let field = Rect::new(x, y, 360.0, 34.0);
+    u.button(
+        look,
+        "address",
+        field,
+        Style::Belt { picked: true },
+        "",
+        true,
+    );
+    text(
+        look,
+        u,
+        &format!("{address}_"),
+        field.x + 10.0,
+        field.y + 8.0,
+        15.0,
+        Which::Body,
+        c(col::TEXT),
+    );
+    y += 44.0;
+    if let Some((s, rgb)) = &v.status {
+        text(look, u, s, x, y, 15.0, Which::Body, c(*rgb));
+    }
+    y += 30.0;
+    let mut act = None;
+    let (go, ok) = if v.looking {
+        ("Join", v.can_join)
+    } else {
+        ("Find server", !address.is_empty())
+    };
+    let (p, jr) = u.button_at(look, "go", x, y, Style::Primary, go, ok);
+    if p {
+        act = Some(Act::Join);
+    }
+    let by = y + (jr.h - 37.0) / 2.0;
+    if u.button_at(
+        look,
+        "back",
+        jr.x + jr.w + 12.0,
+        by,
+        Style::Ghost,
+        "Back",
+        true,
+    )
+    .0 || input.back
+    {
+        act = Some(Act::Back);
+    }
+    act
+}
+
+/// What the lobby screen shows: the server's list, and where this
+/// player stands.
+pub struct LobbyView<'a> {
+    pub lobby: Option<&'a cj_net::Lobby>,
+    /// Waiting to be let into the next shift (rather than between shifts).
+    pub waiting: bool,
+    /// This player has said they are ready.
+    pub ready: bool,
+    /// The server has given this player their career, so the shop can open.
+    pub can_shop: bool,
+}
+
+/// The lobby between online shifts, and for players waiting to join one:
+/// who is on the server, this shift's scores, and the countdown.
+pub fn lobby(
+    look: &Look,
+    u: &mut Ui,
+    input: &MenuInput,
+    view: (f32, f32),
+    dpi: f32,
+    v: LobbyView,
+) -> Option<Act> {
+    let rows = v.lobby.map_or(0, |l| l.players.len());
+    let h = 250.0 + 24.0 * rows as f32;
+    u.begin(input, (900.0, h + 40.0), view, dpi);
+    let r = Rect::new(20.0, 20.0, 860.0, h);
+    card(r);
+    let (x, mut y) = (r.x + 36.0, r.y + 34.0);
+    let (kicker, title) = match (v.waiting, v.lobby.map(|l| l.phase)) {
+        (true, Some(cj_net::Phase::Shift { .. })) => ("In the lobby", "Next shift soon"),
+        (true, _) => ("In the lobby", "Between shifts"),
+        (false, _) => ("Shift over", "Between shifts"),
+    };
+    label(look, u, kicker, x, y, c(col::MUTED));
+    y += 22.0;
+    text(look, u, title, x, y, 48.0, Which::Display, c(col::HAZARD));
+    y += 62.0;
+    let line = match v.lobby.map(|l| l.phase) {
+        Some(cj_net::Phase::Shift { time_left }) => format!(
+            "This shift ends in {}:{:02}. You fly in the next one.",
+            (time_left / 60.0) as u32,
+            (time_left % 60.0) as u32
+        ),
+        Some(cj_net::Phase::Break { seconds_left }) => format!(
+            "The next shift starts when everyone is ready, or in {} s.",
+            seconds_left.ceil() as u32
+        ),
+        None => "Asking the server who is here...".to_owned(),
+    };
+    text(look, u, &line, x, y, 15.0, Which::Body, c(col::TEXT));
+    y += 24.0;
+    // The belt votes so far, in the break.
+    if let Some(l) = v.lobby.filter(|l| !l.votes.is_empty()) {
+        let votes: Vec<String> = l
+            .votes
+            .iter()
+            .map(|(b, n)| format!("{} {n}", b.def().name))
+            .collect();
+        let s = format!("Belt votes: {}", votes.join(" · "));
+        text(look, u, &s, x, y, 13.0, Which::Body, c(col::MUTED));
+    }
+    y += 22.0;
+    if let Some(l) = v.lobby {
+        let cols = [x, x + 330.0, x + 470.0, x + 560.0, x + 650.0];
+        for (i, head) in ["Pilot", "Banked", "Kills", "Deaths", ""]
+            .iter()
+            .enumerate()
+        {
+            label(look, u, head, cols[i], y, c(col::MUTED));
+        }
+        y += 20.0;
+        for p in &l.players {
+            let state = match (p.slot, p.away, p.ready) {
+                (None, _, true) | (Some(_), false, true) => "ready",
+                (None, _, false) => "waiting",
+                (Some(_), true, _) => "away",
+                (Some(_), false, false) => "",
+            };
+            let cells = [
+                p.name.clone(),
+                fmt_credits(p.banked as f64),
+                p.kills.to_string(),
+                p.deaths.to_string(),
+                state.to_owned(),
+            ];
+            for (i, s) in cells.iter().enumerate() {
+                text(look, u, s, cols[i], y, 15.0, Which::Body, c(col::TEXT));
+            }
+            y += 24.0;
+        }
+    }
+    y += 16.0;
+    let mut act = None;
+    let in_break = matches!(v.lobby.map(|l| l.phase), Some(cj_net::Phase::Break { .. }));
+    let ready_label = if v.ready { "Ready" } else { "I'm ready" };
+    let (p, rr) = u.button_at(
+        look,
+        "ready",
+        x,
+        y,
+        Style::Primary,
+        ready_label,
+        in_break && !v.ready,
+    );
+    if p {
+        act = Some(Act::Ready);
+    }
+    let by = y + (rr.h - 37.0) / 2.0;
+    let (p, sr) = u.button_at(
+        look,
+        "shop",
+        rr.x + rr.w + 12.0,
+        by,
+        Style::Ghost,
+        "Shop & belt",
+        in_break && v.can_shop,
+    );
+    if p {
+        act = Some(Act::OpenShop);
+    }
+    let (p, cr) = u.button_at(
+        look,
+        "chat",
+        sr.x + sr.w + 12.0,
+        by,
+        Style::Ghost,
+        "Chat",
+        true,
+    );
+    if p {
+        act = Some(Act::OpenChat);
+    }
+    if u.button_at(
+        look,
+        "leave",
+        cr.x + cr.w + 12.0,
+        by,
+        Style::Ghost,
+        "Leave server",
+        true,
+    )
+    .0
+    {
+        act = Some(Act::LeaveServer);
+    }
+    act
+}
+
 pub fn pause(
     look: &Look,
     u: &mut Ui,
@@ -586,15 +960,15 @@ pub struct Report {
 impl Report {
     /// Captures the report from the settlement, the world's stats and kills, the career and the best score. `is_best` marks a new best.
     pub fn new(st: Settlement, w: &World, career: &Career, best: f64, is_best: bool) -> Report {
-        let k = &w.kills;
+        let k = &w.me().kills;
         Report {
             settlement: st,
-            world_items: w.stats.items,
-            best_run: w.stats.best_run,
-            jumpers: w.stats.jumpers,
-            lost: w.stats.lost,
-            deaths: w.stats.deaths,
-            bounties: w.bounties,
+            world_items: w.me().stats.items,
+            best_run: w.me().stats.best_run,
+            jumpers: w.me().stats.jumpers,
+            lost: w.me().stats.lost,
+            deaths: w.me().stats.deaths,
+            bounties: w.me().bounties,
             kills: [
                 (k.skiff, "skiffs", "skiff"),
                 (k.cutter, "cutters", "cutter"),
@@ -608,14 +982,14 @@ impl Report {
                 (k.rogue, "rogue sentries", "rogue sentry"),
                 (k.jaws, "kessler jaws", "set of Kessler jaws"),
             ],
-            impounded: w.impounded,
-            impound_fee: w.impound_fee,
+            impounded: w.me().impounded,
+            impound_fee: w.me().impound_fee,
             time_left: w.time_left,
-            confiscated: w.confiscated,
-            loan_credit: w.loan_credit,
-            arrests: w.arrests,
-            fines: w.fines,
-            fine_from_cargo: w.fine_from_cargo,
+            confiscated: w.me().confiscated,
+            loan_credit: w.me().loan_credit,
+            arrests: w.me().arrests,
+            fines: w.me().fines,
+            fine_from_cargo: w.me().fine_from_cargo,
             career: career.clone(),
             mode: career.mode,
             best,

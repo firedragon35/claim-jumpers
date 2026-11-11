@@ -1,4 +1,5 @@
 //! The guided first shift (src/js/11-guided-first-shift.js). Marge walks
+//! Training is single-player only, so it always watches pilot 0.
 //! a new pilot through one mechanic at a time; each step completes on an
 //! observable action. While it runs, rivals stay away and the shift's
 //! field event waits. Whether training has been done is remembered by the
@@ -10,7 +11,7 @@ use crate::js;
 use crate::world::World;
 
 /// The step being taught, and how long its action has held true.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Tutorial {
     pub step: usize,
     pub hold_t: f64,
@@ -46,11 +47,18 @@ impl World {
 
     fn tutorial_step_done(&self, step: usize) -> bool {
         match step {
-            0 => js::dist(self.ship.b.x, self.ship.b.y, BAY_X, BAY_Y) > 450.0,
-            1 => !self.chain.is_empty(),
-            2 => self.stats.items > 0,
-            3 => self.shots_fired >= 6,
-            _ => self.threw_cargo,
+            0 => {
+                js::dist(
+                    self.pilots[0].ship.b.x,
+                    self.pilots[0].ship.b.y,
+                    BAY_X,
+                    BAY_Y,
+                ) > 450.0
+            }
+            1 => !self.pilots[0].chain.is_empty(),
+            2 => self.pilots[0].stats.items > 0,
+            3 => self.pilots[0].shots_fired >= 6,
+            _ => self.pilots[0].threw_cargo,
         }
     }
 
@@ -59,7 +67,7 @@ impl World {
         let Some(step) = self.tut.as_ref().map(|t| t.step) else {
             return;
         };
-        if !self.ship.alive {
+        if !self.pilots[0].ship.alive {
             return;
         }
         let done = self.tutorial_step_done(step);

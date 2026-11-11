@@ -244,7 +244,7 @@ const REP_IMPOUNDED_BANK: f64 = -5.0;
 // ---------------------------------------------------------------------
 
 /// A refinery security drone.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Drone {
     pub id: u32,
     pub b: Body,
@@ -254,10 +254,13 @@ pub struct Drone {
     pub fire_t: f64,
     pub flash: f64,
     pub dead: bool,
+    /// Where its next volley starts looking: volleys rotate through the
+    /// pilots in range, in pilot order (owner's rule, 2026-11-11).
+    pub next_target: usize,
 }
 
 /// What a debt collector is doing.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum CollectorState {
     /// Hold station off the tug and fire nets when lined up (or shadow it).
     Approach,
@@ -270,7 +273,7 @@ pub enum CollectorState {
 }
 
 /// A debt collector: shadows the tug, then nets and tows it when payment is at risk.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Collector {
     pub id: u32,
     pub b: Body,
@@ -292,10 +295,12 @@ pub struct Collector {
     /// Eaten by the jaws (not your doing).
     pub by_jaws: bool,
     pub dead: bool,
+    /// The pilot it came to collect from.
+    pub target: usize,
 }
 
 /// A debt collector's net in flight.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Net {
     pub id: u32,
     pub x: f64,
@@ -309,7 +314,7 @@ pub struct Net {
 }
 
 /// The tug caught in a net.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct NetHold {
     /// The collector holding the tether.
     pub by: u32,
@@ -317,7 +322,7 @@ pub struct NetHold {
 }
 
 /// What a sheriff (or other law unit) is doing.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum SheriffState {
     Patrol,
     Pursuit,
@@ -325,7 +330,7 @@ pub enum SheriffState {
 }
 
 /// A law unit: sheriff, deputy, marshal or SWAT, depending on the wanted level.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Sheriff {
     pub id: u32,
     pub b: Body,
@@ -351,10 +356,13 @@ pub struct Sheriff {
     pub provoked: bool,
     pub by_jaws: bool,
     pub dead: bool,
+    /// The pilot this unit watches: the nearest tug on patrol, its quarry
+    /// once a pursuit starts.
+    pub target: usize,
 }
 
 /// A mining-crew tug that drills rocks and turns on the player if shot.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Miner {
     pub id: u32,
     pub b: Body,
@@ -373,7 +381,7 @@ pub struct Miner {
 }
 
 /// What a missile is chasing.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Tgt {
     Net(u32),
     Jumper(u32),
@@ -386,7 +394,7 @@ pub enum Tgt {
 }
 
 /// An auto-defense missile or torpedo in flight.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Missile {
     pub x: f64,
     pub y: f64,
@@ -396,12 +404,14 @@ pub struct Missile {
     pub target: Option<Tgt>,
     pub life: f64,
     pub torpedo: bool,
+    /// The pilot whose rack launched it, who answers for what it hits.
+    pub pilot: usize,
     /// How well it turns toward its target (below 1 means it lost its lock).
     pub tracking: f64,
 }
 
 /// A sentry drone orbiting the tug; every survivor goes rogue when the tug is gone.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Sentry {
     pub id: u32,
     pub x: f64,
@@ -417,10 +427,12 @@ pub struct Sentry {
     pub rogue: bool,
     pub wander: (f64, f64),
     pub dead: bool,
+    /// The pilot whose drone bay launched it.
+    pub pilot: usize,
 }
 
 /// The stages of the Kessler refinery's vault and jaws.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum RefineryState {
     /// Arrived, quiet; charges float nearby.
     Dormant,
@@ -437,7 +449,7 @@ pub enum RefineryState {
 }
 
 /// One of the refinery's three vault sockets: its angle on the station and whether it holds a charge.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Socket {
     pub a: f64,
     pub filled: bool,
@@ -445,7 +457,7 @@ pub struct Socket {
 }
 
 /// The Kessler refinery: a rotating station with a vault, security drones and processing jaws.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Refinery {
     pub b: Body,
     pub angle: f64,
@@ -500,13 +512,14 @@ impl Refinery {
     }
 }
 
-/// Unit vector toward the field edge nearest to (x, y) (nearestExit).
-pub fn nearest_exit(x: f64, y: f64) -> (f64, f64) {
+/// Unit vector toward the edge nearest to (x, y) of a field spanning
+/// `lo`..`hi` on both axes (nearestExit).
+pub fn nearest_exit(x: f64, y: f64, lo: f64, hi: f64) -> (f64, f64) {
     let opts = [
-        (x, (-1.0, 0.0)),
-        (WORLD_W - x, (1.0, 0.0)),
-        (y, (0.0, -1.0)),
-        (WORLD_H - y, (0.0, 1.0)),
+        (x - lo, (-1.0, 0.0)),
+        (hi - x, (1.0, 0.0)),
+        (y - lo, (0.0, -1.0)),
+        (hi - y, (0.0, 1.0)),
     ];
     // A stable sort by distance: ties keep this order, as in the browser.
     let mut best = opts[0];
@@ -518,8 +531,9 @@ pub fn nearest_exit(x: f64, y: f64) -> (f64, f64) {
     best.1
 }
 
-fn out_of_field(x: f64, y: f64, m: f64) -> bool {
-    x < -m || y < -m || x > WORLD_W + m || y > WORLD_H + m
+/// Whether (x, y) is more than `m` outside a field spanning `lo`..`hi`.
+fn out_of_field(x: f64, y: f64, m: f64, lo: f64, hi: f64) -> bool {
+    x < lo - m || y < lo - m || x > hi + m || y > hi + m
 }
 
 impl World {
@@ -532,21 +546,24 @@ impl World {
 
     /// A faction's standing tier for the career being played (neutral
     /// with no career).
-    pub(crate) fn standing_bank(&self) -> Tier {
-        self.career
+    pub(crate) fn standing_bank(&self, p: usize) -> Tier {
+        self.pilots[p]
+            .career
             .as_ref()
             .map_or(Tier::Neutral, |c| tier(c.rep.bank))
     }
     /// The law's standing tier for the career being played (neutral with no career).
-    pub(crate) fn standing_law(&self) -> Tier {
-        self.career
+    pub(crate) fn standing_law(&self, p: usize) -> Tier {
+        self.pilots[p]
+            .career
             .as_ref()
             .map_or(Tier::Neutral, |c| tier(c.rep.law))
     }
 
+    /// Adds a kill to the tally of the pilot who answers for it, if any.
     fn count_kill(&mut self, f: impl FnOnce(&mut crate::world::Kills)) {
-        if !self.no_blame {
-            f(&mut self.kills);
+        if let Some(by) = self.blamed() {
+            f(&mut self.pilots[by].kills);
         }
     }
 
@@ -561,8 +578,8 @@ impl World {
         // drift is tangential, so the station doesn't close on the carrier.
         let a = self.rng.range(0.0, TAU);
         let d = self.rng.range(1700.0, 2000.0);
-        let x = (CARRIER_X + a.cos() * d).clamp(600.0, WORLD_W - 600.0);
-        let y = (CARRIER_Y + a.sin() * d).clamp(600.0, WORLD_H - 600.0);
+        let x = (CARRIER_X + a.cos() * d).clamp(self.edge_lo + 600.0, self.edge_hi - 600.0);
+        let y = (CARRIER_Y + a.sin() * d).clamp(self.edge_lo + 600.0, self.edge_hi - 600.0);
         let da = a + if self.rng.next() < 0.5 { 1.0 } else { -1.0 } * (PI / 2.0);
         let drift = 6.0;
         let angle = self.rng.range(0.0, TAU);
@@ -715,13 +732,16 @@ impl World {
         let r = self.refinery.as_ref().expect("refinery");
         match r.state {
             RefineryState::Dormant | RefineryState::Locked => {
-                let s = &self.ship;
-                let near = s.alive && s.b.dist_to(&r.b) < 900.0;
-                let towing_charge = self
-                    .chain
+                let near = self
+                    .pilots
                     .iter()
-                    .filter_map(|id| self.item_index(*id))
-                    .any(|i| self.items[i].kind == ItemType::Charge);
+                    .any(|pl| pl.ship.alive && pl.ship.b.dist_to(&r.b) < 900.0);
+                let towing_charge = self.pilots.iter().any(|pl| {
+                    pl.chain
+                        .iter()
+                        .filter_map(|id| self.item_index(*id))
+                        .any(|i| self.items[i].kind == ItemType::Charge)
+                });
                 if r.state == RefineryState::Dormant && (near || towing_charge) {
                     self.wake_refinery();
                 }
@@ -818,7 +838,7 @@ impl World {
         r.state = RefineryState::Open;
         r.wake_t = 2.5;
         self.vault_opened = true;
-        self.emit(Event::Unlock("vault"));
+        self.emit(Event::Unlock(crate::events::Achievement::Vault));
         self.emit(Event::Highlight {
             score: 1800.0,
             text: "Cracked the Kessler vault".to_owned(),
@@ -870,12 +890,16 @@ impl World {
 
     /// Jaws destroyed: they stop pulling for good and shed salvage.
     fn wreck_jaws(&mut self) {
+        let p = self
+            .refinery
+            .as_ref()
+            .map_or(0, |r| self.nearest_pilot(r.b.x, r.b.y));
         let r = self.refinery.as_mut().expect("refinery");
         r.state = RefineryState::Wrecked;
         r.hunger = 0.0;
         let r = r.clone();
         // Always tallied, even in a no-blame blast, as the browser's wreckJaws does.
-        self.kills.jaws += 1;
+        self.pilots[p].kills.jaws += 1;
         let (mx, my) = r.maw();
         for kind in [
             ItemType::Engine,
@@ -953,10 +977,18 @@ impl World {
                 i += 1;
                 continue;
             }
-            let (x, y, towed, value, volatile) =
-                (it.b.x, it.b.y, it.towed, it.value, it.def().volatile);
+            let (x, y, towed, value, volatile, owner) = (
+                it.b.x,
+                it.b.y,
+                it.towed,
+                it.value,
+                it.def().volatile,
+                it.owner,
+            );
             if towed {
-                self.stats.lost += value;
+                if let Some(o) = owner {
+                    self.pilots[o].stats.lost += value;
+                }
                 self.radio(Radio::AteCargo, true, false);
             }
             self.remove_item(i);
@@ -1021,10 +1053,13 @@ impl World {
                 eat(c.x, c.y, Tint::Crab, &mut eats);
             }
         }
-        if self.ship.alive {
-            let d = pull(&mut self.ship.b, pull_r.get());
-            if d < MAW_R + self.ship.b.r {
-                self.damage_ship(45.0 * dt);
+        for p in 0..self.pilots.len() {
+            if !self.pilots[p].ship.alive {
+                continue;
+            }
+            let d = pull(&mut self.pilots[p].ship.b, pull_r.get());
+            if d < MAW_R + self.pilots[p].ship.b.r {
+                self.damage_ship(p, 45.0 * dt);
                 self.radio(Radio::JawsShip, true, true);
             }
         }
@@ -1065,13 +1100,15 @@ impl World {
             fire_t,
             flash: 0.0,
             dead: false,
+            next_target: 0,
         });
     }
 
     /// Advances refinery security drone `i` one step: orbiting the station and attacking.
     pub(crate) fn update_drone(&mut self, i: usize, dt: f64) {
+        /// How far a security drone will open fire, in px.
+        const DRONE_RANGE: f64 = 800.0;
         let r = self.refinery.as_ref().map(|r| r.b);
-        let s = self.ship.b;
         let d = &mut self.drones[i];
         d.flash = (d.flash - dt).max(0.0);
         d.fire_t -= dt;
@@ -1080,14 +1117,32 @@ impl World {
             let (tx, ty) = (r.x + d.orbit.cos() * 420.0, r.y + d.orbit.sin() * 420.0);
             steer(&mut d.b, &mut d.angle, tx, ty, 220.0, 260.0, dt);
         }
-        if !self.ship.alive {
+        // Volleys rotate through the live tugs in range; with none in range
+        // the drone tracks the nearest tug.
+        let db = self.drones[i].b;
+        let in_range: Vec<usize> = (0..self.pilots.len())
+            .filter(|&q| {
+                let s = &self.pilots[q].ship;
+                s.alive && db.dist_to(&s.b) < DRONE_RANGE
+            })
+            .collect();
+        let next = self.drones[i].next_target;
+        let p = in_range
+            .iter()
+            .copied()
+            .find(|&q| q >= next)
+            .or(in_range.first().copied())
+            .unwrap_or_else(|| self.nearest_pilot(db.x, db.y));
+        if !self.pilots[p].ship.alive {
             return;
         }
+        let s = self.pilots[p].ship.b;
         let d = &mut self.drones[i];
         d.angle = (s.y - d.b.y).atan2(s.x - d.b.x);
         let dist = d.b.dist_to(&s);
-        if d.fire_t <= 0.0 && dist < 800.0 {
+        if d.fire_t <= 0.0 && dist < DRONE_RANGE {
             d.fire_t = self.rng.range(1.6, 2.4);
+            d.next_target = p + 1;
             let lead = dist / 480.0;
             let db = d.b;
             let a = (s.y + s.vy * lead - db.y).atan2(s.x + s.vx * lead - db.x)
@@ -1102,7 +1157,7 @@ impl World {
                 ..Bullet::default()
             });
             self.sfx(Sfx::EnemyShot(dist.min(65535.0) as u16));
-            self.under_attack();
+            self.under_attack(p);
         }
     }
 
@@ -1133,17 +1188,17 @@ impl World {
 
     /// Is this shift's installment at risk? Collectors only net you when
     /// it is (paymentAtRisk).
-    pub fn payment_at_risk(&self) -> bool {
-        let Some(c) = self.career.as_ref() else {
+    pub fn payment_at_risk(&self, p: usize) -> bool {
+        let Some(c) = self.pilots[p].career.as_ref() else {
             return false;
         };
         let due = c.due(0);
-        let have = c.wallet + self.banked;
+        let have = c.wallet + self.pilots[p].banked;
         if have >= due {
             return false;
         }
         // Good standing buys time; bad standing wants a safety margin.
-        let trust = self.standing_bank();
+        let trust = self.standing_bank(p);
         if trust == Tier::Good {
             return self.time_left < 45.0;
         }
@@ -1151,19 +1206,20 @@ impl World {
             return true;
         }
         let elapsed = self.t.max(30.0);
-        let projected = have + (self.banked / elapsed) * self.time_left + self.line_value() * 0.5;
+        let projected =
+            have + (self.pilots[p].banked / elapsed) * self.time_left + self.line_value(p) * 0.5;
         projected < due * if trust == Tier::Bad { 1.25 } else { 1.0 }
     }
 
     /// Spawns a debt collector just outside a field edge, at least 1,300 px from the tug (when a spot that far exists).
-    pub fn spawn_collector(&mut self) {
+    pub fn spawn_collector(&mut self, p: usize) {
         let (px, py) = self.edge_point(1300.0);
         let id = self.fresh_id();
         self.collectors.push(Collector {
             id,
             b: Body {
-                x: px.clamp(40.0, WORLD_W - 40.0),
-                y: py.clamp(40.0, WORLD_H - 40.0),
+                x: px.clamp(self.edge_lo + 40.0, self.edge_hi - 40.0),
+                y: py.clamp(self.edge_lo + 40.0, self.edge_hi - 40.0),
                 vx: 0.0,
                 vy: 0.0,
                 r: 22.0,
@@ -1185,6 +1241,7 @@ impl World {
             provoked: false,
             by_jaws: false,
             dead: false,
+            target: p,
         });
         self.radio(Radio::Collector, true, false);
         self.sfx(Sfx::Siren);
@@ -1198,11 +1255,12 @@ impl World {
     /// A greedy collector got you off the field: the whole load is stolen
     /// with no credit to your loan; the tug is released.
     fn jack_haul(&mut self, c: usize) {
-        let value = self.line_value();
-        self.drop_chain_into(Tint::Collector);
-        self.stats.lost += value;
+        let p = self.collectors[c].target;
+        let value = self.line_value(p);
+        self.drop_chain_into(p, Tint::Collector);
+        self.pilots[p].stats.lost += value;
         let exit = self.collectors[c].exit;
-        let s = &mut self.ship;
+        let s = &mut self.pilots[p].ship;
         s.net = None;
         s.b.vx = -exit.0 * 240.0;
         s.b.vy = -exit.1 * 240.0;
@@ -1228,8 +1286,8 @@ impl World {
     }
 
     /// Remove every piece on the line, with a burst each (seizures).
-    fn drop_chain_into(&mut self, tint: Tint) {
-        let ids = self.chain.clone();
+    fn drop_chain_into(&mut self, p: usize, tint: Tint) {
+        let ids = self.pilots[p].chain.clone();
         for id in ids {
             if let Some(i) = self.item_index(id) {
                 let (x, y) = (self.items[i].b.x, self.items[i].b.y);
@@ -1247,8 +1305,9 @@ impl World {
 
     /// Advances collector `i` one step according to its `CollectorState`.
     pub(crate) fn update_collector(&mut self, i: usize, dt: f64) {
-        let s = self.ship.b;
-        let alive = self.ship.alive;
+        let p = self.collectors[i].target;
+        let s = self.pilots[p].ship.b;
+        let alive = self.pilots[p].ship.alive;
         {
             let c = &mut self.collectors[i];
             c.flash = (c.flash - dt).max(0.0);
@@ -1257,7 +1316,7 @@ impl World {
         let id = self.collectors[i].id;
         match self.collectors[i].state {
             CollectorState::Tow => {
-                let holding = alive && self.ship.net.is_some_and(|n| n.by == id);
+                let holding = alive && self.pilots[p].ship.net.is_some_and(|n| n.by == id);
                 let c = &mut self.collectors[i];
                 if !holding {
                     c.state = CollectorState::Recover;
@@ -1270,13 +1329,13 @@ impl World {
                 // Distance from the tug to the edge it's dragged toward.
                 let e = c.exit;
                 let edge = if e.0 < 0.0 {
-                    s.x
+                    s.x - self.edge_lo
                 } else if e.0 > 0.0 {
-                    WORLD_W - s.x
+                    self.edge_hi - s.x
                 } else if e.1 < 0.0 {
-                    s.y
+                    s.y - self.edge_lo
                 } else {
-                    WORLD_H - s.y
+                    self.edge_hi - s.y
                 };
                 if !c.edge_warned && edge < 500.0 {
                     c.edge_warned = true;
@@ -1287,7 +1346,7 @@ impl World {
                 if edge < -60.0 {
                     if self.collectors[i].greedy {
                         self.jack_haul(i);
-                    } else if self.line_value() >= FAT_CABLE_VALUE {
+                    } else if self.line_value(p) >= FAT_CABLE_VALUE {
                         self.confiscate(i);
                     } else {
                         self.impound(i);
@@ -1309,11 +1368,11 @@ impl World {
             }
             CollectorState::Leave => {
                 let c = &mut self.collectors[i];
-                let e = nearest_exit(c.b.x, c.b.y);
+                let e = nearest_exit(c.b.x, c.b.y, self.edge_lo, self.edge_hi);
                 c.b.vx += e.0 * 240.0 * dt;
                 c.b.vy += e.1 * 240.0 * dt;
                 c.angle = c.b.vy.atan2(c.b.vx);
-                if out_of_field(c.b.x, c.b.y, 120.0) {
+                if out_of_field(c.b.x, c.b.y, 120.0, self.edge_lo, self.edge_hi) {
                     c.dead = true;
                 }
             }
@@ -1321,9 +1380,9 @@ impl World {
                 if !alive {
                     return;
                 }
-                let at_risk = self.payment_at_risk();
-                let line = self.line_value();
-                let bad_bank = self.standing_bank() == Tier::Bad;
+                let at_risk = self.payment_at_risk(p);
+                let line = self.line_value(p);
+                let bad_bank = self.standing_bank(p) == Tier::Bad;
                 let c = &mut self.collectors[i];
                 let d = nonzero(c.b.dist_to(&s));
                 // With the payment covered, a collector only shadows you.
@@ -1370,7 +1429,7 @@ impl World {
                 if c.fire_t <= 0.0
                     && d < COLLECTOR_FIRE_RANGE
                     && !sanctuary
-                    && self.ship.net.is_none()
+                    && self.pilots[p].ship.net.is_none()
                 {
                     c.fire_t = 3.5;
                     // Lead the shot; nets are slow, so a moving tug can dodge.
@@ -1390,7 +1449,7 @@ impl World {
                         owner: id,
                     });
                     self.sfx(Sfx::NetFire);
-                    self.under_attack();
+                    self.under_attack(p);
                 }
             }
         }
@@ -1407,7 +1466,12 @@ impl World {
             if n.life <= 0.0 {
                 continue;
             }
-            let s = &self.ship;
+            let owner = n.owner;
+            let p = self
+                .collector_index(owner)
+                .map_or(0, |c| self.collectors[c].target);
+            let n = &mut self.nets[k];
+            let s = &self.pilots[p].ship;
             if s.alive
                 && s.net.is_none()
                 && s.invuln <= 0.0
@@ -1437,22 +1501,23 @@ impl World {
 
     /// Collector `c`'s net has landed: the tug is netted and held by that collector.
     pub fn net_ship(&mut self, c: usize) {
-        let s = self.ship.b;
+        let p = self.collectors[c].target;
+        let s = self.pilots[p].ship.b;
         let cl = &mut self.collectors[c];
-        self.ship.net = Some(NetHold {
+        self.pilots[p].ship.net = Some(NetHold {
             by: cl.id,
             hp: NET_HP,
         });
-        self.ship.last_turn_sign = 0.0;
+        self.pilots[p].ship.last_turn_sign = 0.0;
         cl.state = CollectorState::Tow;
         cl.tether = cl.b.dist_to(&s) + 5.0;
-        cl.exit = nearest_exit(cl.b.x, cl.b.y);
+        cl.exit = nearest_exit(cl.b.x, cl.b.y, self.edge_lo, self.edge_hi);
         cl.edge_warned = false;
         self.shake = 8.0;
         self.burst(s.x, s.y, 16, Tint::Collector, 140.0);
         self.sfx(Sfx::Netted);
         // Let the "uh-oh" finish before the netted warble starts.
-        self.ship.alarm_t = 1.2;
+        self.pilots[p].ship.alarm_t = 1.2;
         self.emit(Event::Rumble {
             strength: 0.6,
             ms: 300.0,
@@ -1461,8 +1526,8 @@ impl World {
     }
 
     /// Release the tug from a net; `torn` means the player broke out.
-    pub(crate) fn free_ship(&mut self, torn: bool) {
-        let by = self.ship.net.take().map(|n| n.by);
+    pub(crate) fn free_ship(&mut self, p: usize, torn: bool) {
+        let by = self.pilots[p].ship.net.take().map(|n| n.by);
         if let Some(c) = by.and_then(|id| self.collector_index(id)) {
             let cl = &mut self.collectors[c];
             if !cl.dead {
@@ -1471,7 +1536,7 @@ impl World {
             }
         }
         if torn {
-            let (x, y) = (self.ship.b.x, self.ship.b.y);
+            let (x, y) = (self.pilots[p].ship.b.x, self.pilots[p].ship.b.y);
             self.burst(x, y, 24, Tint::Collector, 220.0);
             self.popup(x, y - 30.0, "TORN FREE".to_owned(), Tint::Collector);
             self.sfx(Sfx::TornFree);
@@ -1492,8 +1557,10 @@ impl World {
         }
         cl.dead = true;
         let (b, id, by_jaws) = (cl.b, cl.id, cl.by_jaws);
-        if self.ship.net.is_some_and(|h| h.by == id) {
-            self.free_ship(false);
+        for p in 0..self.pilots.len() {
+            if self.pilots[p].ship.net.is_some_and(|h| h.by == id) {
+                self.free_ship(p, false);
+            }
         }
         // Repo-ship armour is good salvage.
         for _ in 0..2 {
@@ -1510,13 +1577,13 @@ impl World {
         self.items.push(it);
         self.explosion_fx(b.x, b.y, 115.0, Tint::Collector);
         self.sfx(Sfx::Boom);
-        if by_jaws || self.no_blame {
+        let Some(by) = self.blamed().filter(|_| !by_jaws) else {
             return;
-        }
-        self.kills.collector += 1;
+        };
+        self.pilots[by].kills.collector += 1;
         // Destroying a debt collector is a crime: one wanted star.
-        self.rep_delta.bank += REP_COLLECTOR_KILL_BANK;
-        self.add_wanted(1, b.x, b.y);
+        self.pilots[by].rep_delta.bank += REP_COLLECTOR_KILL_BANK;
+        self.add_wanted(by, 1, b.x, b.y);
         if by_item.is_some_and(|m| m >= 3.0) {
             self.popup(b.x, b.y - 26.0, "SMASHED".to_owned(), Tint::Cable);
             self.radio(Radio::Smash, true, false);
@@ -1526,7 +1593,7 @@ impl World {
                 text: "Smashed a debt collector with cargo".to_owned(),
             });
         } else {
-            let line = if self.wanted > 1 {
+            let line = if self.pilots[by].wanted > 1 {
                 Radio::WantedMore
             } else {
                 Radio::CollectorKill
@@ -1538,16 +1605,17 @@ impl World {
     /// The collector got a tug with a fat cable off the field: the whole
     /// load is taken as payment (credited at CONFISCATE_RATE).
     fn confiscate(&mut self, c: usize) {
-        let value = self.line_value();
+        let p = self.collectors[c].target;
+        let value = self.line_value(p);
         let credit = js::round(value * CONFISCATE_RATE / 10.0) * 10.0;
-        self.drop_chain_into(Tint::Collector);
-        if let Some(car) = self.career.as_mut() {
+        self.drop_chain_into(p, Tint::Collector);
+        if let Some(car) = self.pilots[p].career.as_mut() {
             car.loan = (car.loan - credit).max(0.0);
         }
-        self.confiscated += value;
-        self.loan_credit += credit;
+        self.pilots[p].confiscated += value;
+        self.pilots[p].loan_credit += credit;
         let exit = self.collectors[c].exit;
-        let s = &mut self.ship;
+        let s = &mut self.pilots[p].ship;
         s.net = None;
         s.b.vx = -exit.0 * 240.0;
         s.b.vy = -exit.1 * 240.0;
@@ -1555,7 +1623,7 @@ impl World {
         let (x, y) = (s.b.x, s.b.y);
         self.collectors[c].dead = true; // leaves with the goods
         let back = self.t + self.rng.range(COLLECTOR_RETURN.0, COLLECTOR_RETURN.1);
-        self.collector_queue.push(back);
+        self.collector_queue.push((back, p));
         self.popup(
             x,
             y - 34.0,
@@ -1573,65 +1641,74 @@ impl World {
 
     /// The collector got the tug off the field: impound fee, shift over.
     fn impound(&mut self, c: usize) {
+        let p = self.collectors[c].target;
         self.sfx(Sfx::SadTrombone);
-        let fee = self.banked.min(js::round(
-            IMPOUND_FEE * self.diff_fees * self.crew_fee_mul(),
+        let fee = self.pilots[p].banked.min(js::round(
+            IMPOUND_FEE * self.pilots[p].diff_fees * self.crew_fee_mul(p),
         ));
-        self.banked -= fee;
-        self.impounded = true;
-        self.rep_delta.bank += REP_IMPOUNDED_BANK;
-        self.impound_fee = fee;
+        self.pilots[p].banked -= fee;
+        self.pilots[p].impounded = true;
+        self.pilots[p].rep_delta.bank += REP_IMPOUNDED_BANK;
+        self.pilots[p].impound_fee = fee;
         self.collectors[c].dead = true;
-        self.ship.net = None;
+        self.pilots[p].ship.net = None;
         self.shift_over = true;
     }
 
     /* -------------------------------- The law ------------------------------- */
 
-    /// Add wanted stars (capped); crime gets a response soon after.
-    pub fn add_wanted(&mut self, n: u32, x: f64, y: f64) {
-        let before = self.wanted;
-        self.wanted = (self.wanted + n).min(WANTED_MAX);
-        self.wanted_cool_t = WANTED_COOLDOWN;
-        if self.wanted > before {
-            self.rep_delta.law += REP_STAR_GAINED_LAW * f64::from(self.wanted - before);
+    /// Add wanted stars (capped) to pilot `p`; crime gets a response soon after.
+    pub fn add_wanted(&mut self, p: usize, n: u32, x: f64, y: f64) {
+        let before = self.pilots[p].wanted;
+        self.pilots[p].wanted = (self.pilots[p].wanted + n).min(WANTED_MAX);
+        self.pilots[p].wanted_cool_t = WANTED_COOLDOWN;
+        if self.pilots[p].wanted > before {
+            self.pilots[p].rep_delta.law +=
+                REP_STAR_GAINED_LAW * f64::from(self.pilots[p].wanted - before);
             self.popup(
                 x,
                 y - 48.0,
-                format!("WANTED {}", "★".repeat(self.wanted as usize)),
+                format!("WANTED {}", "★".repeat(self.pilots[p].wanted as usize)),
                 Tint::Law,
             );
             self.sfx(Sfx::WantedUp);
         }
         let soon = self.rng.range(6.0, 12.0);
         self.reinforce_t = Some(self.reinforce_t.unwrap_or(10.0).min(soon));
-        if self.wanted == WANTED_MAX && before < WANTED_MAX {
+        if self.pilots[p].wanted == WANTED_MAX && before < WANTED_MAX {
             self.radio(Radio::Swat, true, false);
-            self.emit(Event::Unlock("fiveStar"));
+            self.emit(Event::Unlock(crate::events::Achievement::FiveStar));
         }
     }
 
-    /// A wanted star fades after a stretch with nobody chasing you.
+    /// A wanted star fades after a stretch with nobody chasing its pilot.
     pub(crate) fn update_wanted_cooldown(&mut self, dt: f64) {
+        for p in 0..self.pilots.len() {
+            self.with_hearer(Some(p), |w| w.update_wanted_cooldown_for(p, dt));
+        }
+    }
+
+    /// Pilot `p`'s wanted cooldown.
+    fn update_wanted_cooldown_for(&mut self, p: usize, dt: f64) {
         let chased = self
             .sheriffs
             .iter()
-            .any(|sh| !sh.dead && sh.state == SheriffState::Pursuit);
-        if self.wanted == 0 || chased {
-            self.wanted_cool_t = WANTED_COOLDOWN;
+            .any(|sh| !sh.dead && sh.state == SheriffState::Pursuit && sh.target == p);
+        if self.pilots[p].wanted == 0 || chased {
+            self.pilots[p].wanted_cool_t = WANTED_COOLDOWN;
             return;
         }
-        self.wanted_cool_t -= dt;
-        if self.wanted_cool_t > 0.0 {
+        self.pilots[p].wanted_cool_t -= dt;
+        if self.pilots[p].wanted_cool_t > 0.0 {
             return;
         }
-        self.wanted_cool_t = WANTED_COOLDOWN;
-        if self.wanted == 1 {
-            self.clear_record();
+        self.pilots[p].wanted_cool_t = WANTED_COOLDOWN;
+        if self.pilots[p].wanted == 1 {
+            self.clear_record(p);
         } else {
-            self.wanted -= 1;
-            let (x, y) = (self.ship.b.x, self.ship.b.y);
-            let stars = "★".repeat(self.wanted as usize);
+            self.pilots[p].wanted -= 1;
+            let (x, y) = (self.pilots[p].ship.b.x, self.pilots[p].ship.b.y);
+            let stars = "★".repeat(self.pilots[p].wanted as usize);
             self.popup(x, y - 48.0, format!("WANTED {stars}"), Tint::Law);
         }
     }
@@ -1659,21 +1736,21 @@ impl World {
     }
 
     /// Patrols come round more often when the law dislikes you.
-    fn next_patrol_delay(&mut self) -> f64 {
-        let bad = self.standing_law() == Tier::Bad;
+    fn next_patrol_delay(&mut self, p: usize) -> f64 {
+        let bad = self.standing_law(p) == Tier::Bad;
         self.rng.range(90.0, 150.0) * self.cond.def().patrol * if bad { 0.7 } else { 1.0 }
     }
 
     /// Spawn a law unit; `responding` units come straight for you.
-    pub fn spawn_sheriff(&mut self, responding: bool) {
-        let t = law_tier(self.wanted.max(1)).expect("tier");
+    pub fn spawn_sheriff(&mut self, p: usize, responding: bool) {
+        let t = law_tier(self.pilots[p].wanted.max(1)).expect("tier");
         let (px, py) = self.edge_point(1200.0);
         let id = self.fresh_id();
         self.sheriffs.push(Sheriff {
             id,
             b: Body {
-                x: px.clamp(40.0, WORLD_W - 40.0),
-                y: py.clamp(40.0, WORLD_H - 40.0),
+                x: px.clamp(self.edge_lo + 40.0, self.edge_hi - 40.0),
+                y: py.clamp(self.edge_lo + 40.0, self.edge_hi - 40.0),
                 vx: 0.0,
                 vy: 0.0,
                 r: if t.swat { 24.0 } else { 20.0 },
@@ -1706,6 +1783,7 @@ impl World {
             provoked: false,
             by_jaws: false,
             dead: false,
+            target: p,
         });
         if responding {
             let line = if t.swat {
@@ -1747,27 +1825,41 @@ impl World {
 
     /// A wrecked tug, or reaching the bay, wipes the slate: no stars, every
     /// unit leaves, reinforcements are cancelled.
-    pub(crate) fn clear_record(&mut self) {
-        let was = self.wanted;
-        self.wanted = 0;
-        self.reinforce_t = None;
+    pub fn clear_record(&mut self, p: usize) {
+        let was = self.pilots[p].wanted;
+        self.pilots[p].wanted = 0;
+        // Reinforcements stop once nobody is wanted any more.
+        if self.pilots.iter().all(|pl| pl.wanted == 0) {
+            self.reinforce_t = None;
+        }
         for sh in &mut self.sheriffs {
-            if !sh.dead {
+            if !sh.dead && sh.target == p {
                 sh.state = SheriffState::Leave;
                 sh.shakedown = false;
                 sh.cuff = 0.0;
             }
         }
         if was > 0 {
-            let (x, y) = (self.ship.b.x, self.ship.b.y);
+            let (x, y) = (self.pilots[p].ship.b.x, self.pilots[p].ship.b.y);
             self.popup(x, y - 52.0, "WANTED CLEARED".to_owned(), Tint::Law);
         }
     }
 
+    /// The pilot law unit `k` watches this step: a patrol keeps an eye on the
+    /// nearest tug, while a pursuit stays on its quarry.
+    fn sheriff_target(&mut self, k: usize) -> usize {
+        if self.sheriffs[k].state != SheriffState::Pursuit {
+            let b = self.sheriffs[k].b;
+            self.sheriffs[k].target = self.nearest_pilot(b.x, b.y);
+        }
+        self.sheriffs[k].target
+    }
+
     /// Advances law unit `k` one step according to its `SheriffState`.
     pub(crate) fn update_sheriff(&mut self, k: usize, dt: f64) {
-        let s = self.ship.b;
-        let alive = self.ship.alive;
+        let p = self.sheriff_target(k);
+        let s = self.pilots[p].ship.b;
+        let alive = self.pilots[p].ship.alive;
         let sh = &mut self.sheriffs[k];
         sh.flash = (sh.flash - dt).max(0.0);
         sh.fire_t -= dt;
@@ -1777,18 +1869,18 @@ impl World {
             f64::INFINITY
         };
         if sh.state == SheriffState::Patrol
-            && self.wanted > 0
+            && self.pilots[p].wanted > 0
             && alive
-            && d < detect_range(self.wanted)
+            && d < detect_range(self.pilots[p].wanted)
         {
             self.start_pursuit(k);
         }
         // A clean tug hauling cargo near a patrol: each second, a small
         // chance he decides to "inspect" the cargo, i.e. steal it.
-        let line = self.line_value();
+        let line = self.line_value(p);
         let sh = &mut self.sheriffs[k];
         if sh.state == SheriffState::Patrol
-            && self.wanted == 0
+            && self.pilots[p].wanted == 0
             && alive
             && d < detect_range(1)
             && line > 0.0
@@ -1796,7 +1888,7 @@ impl World {
             sh.shake_roll_t -= dt;
             if sh.shake_roll_t <= 0.0 {
                 sh.shake_roll_t = 1.0;
-                let law = match self.standing_law() {
+                let law = match self.standing_law(p) {
                     Tier::Good => 0.0,
                     Tier::Bad => 2.0,
                     Tier::Neutral => 1.0,
@@ -1812,7 +1904,7 @@ impl World {
             SheriffState::Pursuit => {
                 // Checked after the shakedown roll, so a roll that just
                 // started a chase isn't cancelled in the same frame.
-                let target = alive && (self.wanted > 0 || sh.shakedown);
+                let target = alive && (self.pilots[p].wanted > 0 || sh.shakedown);
                 if !target {
                     sh.state = SheriffState::Patrol;
                     sh.cuff = 0.0;
@@ -1862,7 +1954,7 @@ impl World {
                         ..Bullet::default()
                     });
                     self.sfx(Sfx::StunShot(d.min(65535.0) as u16));
-                    self.under_attack();
+                    self.under_attack(p);
                 }
                 // Cuffing: stay out of reach. The meter drains once clear.
                 let sh = &mut self.sheriffs[k];
@@ -1877,7 +1969,7 @@ impl World {
                 }
                 // Losing him: far enough away for long enough.
                 let sh = &mut self.sheriffs[k];
-                if d > detect_range(self.wanted.max(1)) * SHERIFF_LOSE_MULT {
+                if d > detect_range(self.pilots[p].wanted.max(1)) * SHERIFF_LOSE_MULT {
                     sh.lost_t += dt;
                     if sh.lost_t > SHERIFF_LOSE_TIME {
                         sh.state = SheriffState::Patrol;
@@ -1890,13 +1982,13 @@ impl World {
                 }
             }
             SheriffState::Leave => {
-                let e = nearest_exit(sh.b.x, sh.b.y);
+                let e = nearest_exit(sh.b.x, sh.b.y, self.edge_lo, self.edge_hi);
                 sh.b.vx += e.0 * 320.0 * dt;
                 sh.b.vy += e.1 * 320.0 * dt;
                 sh.angle = sh.b.vy.atan2(sh.b.vx);
-                if out_of_field(sh.b.x, sh.b.y, 120.0) {
+                if out_of_field(sh.b.x, sh.b.y, 120.0, self.edge_lo, self.edge_hi) {
                     sh.dead = true;
-                    self.patrol_t = self.next_patrol_delay();
+                    self.patrol_t = self.next_patrol_delay(p);
                 }
             }
             SheriffState::Patrol => {
@@ -1906,8 +1998,8 @@ impl World {
                     .wp
                     .is_none_or(|(wx, wy)| js::dist(wx, wy, sh.b.x, sh.b.y) < 120.0);
                 if need_wp {
-                    let wx = self.rng.range(400.0, WORLD_W - 400.0);
-                    let wy = self.rng.range(400.0, WORLD_H - 400.0);
+                    let wx = self.rng.range(self.edge_lo + 400.0, self.edge_hi - 400.0);
+                    let wy = self.rng.range(self.edge_lo + 400.0, self.edge_hi - 400.0);
                     self.sheriffs[k].wp = Some((wx, wy));
                 }
                 let sh = &mut self.sheriffs[k];
@@ -1930,20 +2022,22 @@ impl World {
     /// warning; destroying him is a crime: two stars, and the next patrol
     /// comes in fast.
     pub fn hurt_sheriff(&mut self, k: usize, n: f64, by_item: Option<f64>) {
+        let blamed = self.blamed();
         let sh = &mut self.sheriffs[k];
         if sh.dead {
             return;
         }
         sh.hp -= n;
         sh.flash = 0.1;
-        let warn = !sh.by_jaws && !self.no_blame && !sh.warned && self.wanted == 0;
+        let by = blamed.filter(|_| !sh.by_jaws);
+        let warn = by.is_some_and(|p| !sh.warned && self.pilots[p].wanted == 0);
         if warn {
             sh.warned = true;
             self.radio(Radio::SheriffShotAt, true, false);
         }
         let sh = &mut self.sheriffs[k];
         if sh.hp > 0.0 {
-            if self.wanted > 0 && !self.no_blame {
+            if blamed.is_some_and(|p| self.pilots[p].wanted > 0) {
                 self.start_pursuit(k);
             }
             return;
@@ -1962,12 +2056,12 @@ impl World {
         self.sfx(Sfx::Boom);
         // The department sends someone else, quickly.
         self.patrol_t = self.rng.range(25.0, 45.0);
-        if by_jaws || self.no_blame {
+        let Some(by) = self.blamed().filter(|_| !by_jaws) else {
             return;
-        }
-        self.kills.law += 1;
-        self.rep_delta.law += REP_LAW_KILL_LAW;
-        self.add_wanted(2, b.x, b.y);
+        };
+        self.pilots[by].kills.law += 1;
+        self.pilots[by].rep_delta.law += REP_LAW_KILL_LAW;
+        self.add_wanted(by, 2, b.x, b.y);
         if by_item.is_some_and(|m| m >= 3.0) {
             self.popup(b.x, b.y - 26.0, "SMASHED".to_owned(), Tint::Cable);
             self.emit(Event::HitStop(HITSTOP_SMASH));
@@ -1983,6 +2077,7 @@ impl World {
     /// on your line first, then this shift's earnings; the record resets
     /// and the tug goes back to the bay. The shift goes on.
     pub fn arrest(&mut self, k: usize) {
+        let p = self.sheriffs[k].target;
         // Every unit stands down once someone has you.
         for u in &mut self.sheriffs {
             u.state = SheriffState::Leave;
@@ -1992,28 +2087,28 @@ impl World {
             self.shakedown_take(k);
             return;
         }
-        let stars = self.wanted;
-        let mul = match self.standing_law() {
+        let stars = self.pilots[p].wanted;
+        let mul = match self.standing_law(p) {
             Tier::Good => 0.7,
             Tier::Bad => 1.3,
             Tier::Neutral => 1.0,
         };
         let fine = js::round(FINE_PER_STAR * f64::from(stars) * mul);
-        self.rep_delta.law += REP_ARRESTED_LAW;
-        let cargo = self.line_value();
-        self.drop_chain_into(Tint::Law);
+        self.pilots[p].rep_delta.law += REP_ARRESTED_LAW;
+        let cargo = self.line_value(p);
+        self.drop_chain_into(p, Tint::Law);
         let from_cargo = fine.min(cargo);
-        let from_earnings = self.banked.min(fine - from_cargo);
-        self.banked -= from_earnings;
-        self.fines += from_cargo + from_earnings;
-        self.fine_from_cargo += from_cargo;
-        self.stats.lost += cargo;
-        self.arrests += 1;
-        self.wanted = 0;
-        if self.ship.net.is_some() {
-            self.free_ship(false);
+        let from_earnings = self.pilots[p].banked.min(fine - from_cargo);
+        self.pilots[p].banked -= from_earnings;
+        self.pilots[p].fines += from_cargo + from_earnings;
+        self.pilots[p].fine_from_cargo += from_cargo;
+        self.pilots[p].stats.lost += cargo;
+        self.pilots[p].arrests += 1;
+        self.pilots[p].wanted = 0;
+        if self.pilots[p].ship.net.is_some() {
+            self.free_ship(p, false);
         }
-        let s = &mut self.ship;
+        let s = &mut self.pilots[p].ship;
         s.b.x = BAY_X;
         s.b.y = BAY_Y;
         s.b.vx = 0.0;
@@ -2046,11 +2141,12 @@ impl World {
     /// A crooked shakedown: no fine, no stars; he takes the cargo on your
     /// line and lets you go where you are.
     fn shakedown_take(&mut self, k: usize) {
-        let cargo = self.line_value();
-        self.drop_chain_into(Tint::Law);
-        self.stats.lost += cargo;
+        let p = self.sheriffs[k].target;
+        let cargo = self.line_value(p);
+        self.drop_chain_into(p, Tint::Law);
+        self.pilots[p].stats.lost += cargo;
         self.sheriffs[k].shakedown = false;
-        let s = &mut self.ship;
+        let s = &mut self.pilots[p].ship;
         s.stun_t = 0.0;
         s.invuln = 2.0;
         let (x, y) = (s.b.x, s.b.y);
@@ -2268,61 +2364,68 @@ impl World {
 
     /// Reloads and launches the tug's missiles, then flies the ones in the air.
     pub fn update_missiles(&mut self, dt: f64) {
-        // Launching: reload the rack, then fire if a target is in range.
-        if self.mods.missiles && self.ship.alive {
-            let m = &self.mods;
-            let s = &mut self.ship;
-            if s.missiles < m.missile_rack {
-                s.missile_reload_t -= dt;
-                if s.missile_reload_t <= 0.0 {
-                    s.missiles += 1;
+        // Launching, for each pilot's rack: reload it, then fire if a target
+        // is in range.
+        for p in 0..self.pilots.len() {
+            if self.pilots[p].mods.missiles && self.pilots[p].ship.alive {
+                let pl = &mut self.pilots[p];
+                let (m, s) = (&pl.mods, &mut pl.ship);
+                if s.missiles < m.missile_rack {
+                    s.missile_reload_t -= dt;
+                    if s.missile_reload_t <= 0.0 {
+                        s.missiles += 1;
+                        s.missile_reload_t = m.missile_reload;
+                    }
+                }
+                if s.missiles >= m.missile_rack {
                     s.missile_reload_t = m.missile_reload;
                 }
-            }
-            if s.missiles >= m.missile_rack {
-                s.missile_reload_t = m.missile_reload;
-            }
-            s.missile_gap_t -= dt;
-            if s.missiles > 0 && s.missile_gap_t <= 0.0 {
-                let sb = s.b;
-                if let Some(first) = self.pick_missile_target(sb.x, sb.y) {
-                    self.ship.missile_gap_t = MISSILE_GAP;
-                    // A salvo spreads over different targets when there are several.
-                    let salvo = self.mods.missile_salvo.min(self.ship.missiles);
-                    for i in 0..salvo {
-                        let target = if i == 0 {
-                            first
-                        } else {
-                            self.pick_missile_target(sb.x, sb.y).unwrap_or(first)
-                        };
-                        let adapted = self.rival_counter == Some(crate::career::Habit::Missile);
-                        let miss =
-                            self.mods.missile_miss + if adapted { HABIT_MISSILE_MISS } else { 0.0 };
-                        let tracking = if self.rng.next() < miss {
-                            MISSILE_WILD_TRACKING
-                        } else {
-                            1.0
-                        };
-                        let s = &mut self.ship;
-                        s.missiles -= 1;
-                        // Launch from the pods, kicked out sideways.
-                        let side = if s.missiles % 2 == 1 { 1.0 } else { -1.0 };
-                        let (px, py) = (-s.angle.sin() * side, s.angle.cos() * side);
-                        let torpedo = self.mods.torpedo;
-                        self.missiles.push(Missile {
-                            x: s.b.x + px * 14.0,
-                            y: s.b.y + py * 14.0,
-                            vx: s.b.vx + px * 160.0,
-                            vy: s.b.vy + py * 160.0,
-                            angle: s.angle,
-                            target: Some(target),
-                            life: MISSILE_LIFE * if torpedo { 1.5 } else { 1.0 },
-                            torpedo,
-                            tracking,
-                        });
+                s.missile_gap_t -= dt;
+                if s.missiles > 0 && s.missile_gap_t <= 0.0 {
+                    let sb = s.b;
+                    if let Some(first) = self.pick_missile_target(sb.x, sb.y) {
+                        self.pilots[p].ship.missile_gap_t = MISSILE_GAP;
+                        // A salvo spreads over different targets when there are several.
+                        let salvo = self.pilots[p]
+                            .mods
+                            .missile_salvo
+                            .min(self.pilots[p].ship.missiles);
+                        for i in 0..salvo {
+                            let target = if i == 0 {
+                                first
+                            } else {
+                                self.pick_missile_target(sb.x, sb.y).unwrap_or(first)
+                            };
+                            let adapted = self.rival_counter == Some(crate::career::Habit::Missile);
+                            let miss = self.pilots[p].mods.missile_miss
+                                + if adapted { HABIT_MISSILE_MISS } else { 0.0 };
+                            let tracking = if self.rng.next() < miss {
+                                MISSILE_WILD_TRACKING
+                            } else {
+                                1.0
+                            };
+                            let torpedo = self.pilots[p].mods.torpedo;
+                            let s = &mut self.pilots[p].ship;
+                            s.missiles -= 1;
+                            // Launch from the pods, kicked out sideways.
+                            let side = if s.missiles % 2 == 1 { 1.0 } else { -1.0 };
+                            let (px, py) = (-s.angle.sin() * side, s.angle.cos() * side);
+                            self.missiles.push(Missile {
+                                pilot: p,
+                                x: s.b.x + px * 14.0,
+                                y: s.b.y + py * 14.0,
+                                vx: s.b.vx + px * 160.0,
+                                vy: s.b.vy + py * 160.0,
+                                angle: s.angle,
+                                target: Some(target),
+                                life: MISSILE_LIFE * if torpedo { 1.5 } else { 1.0 },
+                                torpedo,
+                                tracking,
+                            });
+                        }
+                        self.sfx(Sfx::Missile);
+                        self.radio(Radio::MissilesLive, false, true);
                     }
-                    self.sfx(Sfx::Missile);
-                    self.radio(Radio::MissilesLive, false, true);
                 }
             }
         }
@@ -2341,7 +2444,8 @@ impl World {
                 .and_then(|t| self.target_body(t).map(|_| t));
             if alive_t.is_none() {
                 let (mx, my) = (self.missiles[k].x, self.missiles[k].y);
-                self.missiles[k].target = if self.ship.alive {
+                let launcher = self.missiles[k].pilot;
+                self.missiles[k].target = if self.pilots[launcher].ship.alive {
                     self.pick_missile_target(mx, my)
                 } else {
                     None
@@ -2377,13 +2481,15 @@ impl World {
                         self.hurt_target(t, 0.0);
                         self.burst(tb.x, tb.y, 14, Tint::Collector, 160.0);
                     } else {
-                        let dmg = self.mods.missile_dmg;
-                        self.hurt_target(t, dmg);
+                        let launcher = self.missiles[k].pilot;
+                        let dmg = self.pilots[launcher].mods.missile_dmg;
+                        let blame = crate::world::Blame::Pilot(launcher);
+                        self.with_blame(blame, |w| w.hurt_target(t, dmg));
                         if let Tgt::Jumper(id) = t {
-                            if self.jumper_index(id).is_some_and(|j| self.jumpers[j].dead)
-                                && !self.no_blame
-                            {
-                                self.habit_kills.missile += 1.0;
+                            let dead = self.jumper_index(id).is_some_and(|j| self.jumpers[j].dead);
+                            let by = self.resolve_blame(blame);
+                            if let Some(by) = by.filter(|_| dead) {
+                                self.pilots[by].habit_kills.missile += 1.0;
                             }
                         }
                     }
@@ -2452,10 +2558,10 @@ impl World {
     /* ------------------------------ Sentries ------------------------------ */
 
     /// A sentry drone launched from the bay (makeSentry).
-    pub fn make_sentry(&mut self, i: usize, n: usize) -> Sentry {
-        let s = self.ship.b;
+    pub fn make_sentry(&mut self, p: usize, i: usize, n: usize) -> Sentry {
+        let s = self.pilots[p].ship.b;
         let a = i as f64 / n.max(1) as f64 * TAU;
-        let fire_t = self.rng.range(0.2, self.mods.drone_fire);
+        let fire_t = self.rng.range(0.2, self.pilots[p].mods.drone_fire);
         let id = self.fresh_id();
         Sentry {
             id,
@@ -2464,7 +2570,7 @@ impl World {
             vx: 0.0,
             vy: 0.0,
             r: 9.0,
-            hp: self.mods.drone_hp,
+            hp: self.pilots[p].mods.drone_hp,
             orbit: a,
             fire_t,
             angle: a,
@@ -2472,21 +2578,25 @@ impl World {
             rogue: false,
             wander: (0.0, 0.0),
             dead: false,
+            pilot: p,
         }
     }
 
     /// The tug is gone: every surviving sentry goes rogue.
-    pub(crate) fn go_rogue(&mut self) {
+    pub(crate) fn go_rogue(&mut self, p: usize) {
         let loose: Vec<usize> = (0..self.sentries.len())
-            .filter(|&i| !self.sentries[i].dead && !self.sentries[i].rogue)
+            .filter(|&i| {
+                let d = &self.sentries[i];
+                d.pilot == p && !d.dead && !d.rogue
+            })
             .collect();
         if loose.is_empty() {
             return;
         }
         for i in loose {
             let a = self.rng.range(0.0, TAU);
-            let wx = self.rng.range(300.0, WORLD_W - 300.0);
-            let wy = self.rng.range(300.0, WORLD_H - 300.0);
+            let wx = self.rng.range(self.edge_lo + 300.0, self.edge_hi - 300.0);
+            let wy = self.rng.range(self.edge_lo + 300.0, self.edge_hi - 300.0);
             let fire_t = self.rng.range(1.0, 2.0);
             let d = &mut self.sentries[i];
             d.rogue = true;
@@ -2502,8 +2612,8 @@ impl World {
     /// other drones, or orphans would just shoot each other).
     fn rogue_targets(&self) -> Vec<(Option<Tgt>, Body)> {
         let mut v = Vec::new();
-        if self.ship.alive {
-            v.push((None, self.ship.b));
+        for pl in self.pilots.iter().filter(|pl| pl.ship.alive) {
+            v.push((None, pl.ship.b));
         }
         v.extend(
             self.jumpers
@@ -2541,16 +2651,14 @@ impl World {
     /// A rogue's bolt hit something other than the tug. Real damage, but
     /// not yours: no grudge, no stars, no angry miners.
     fn rogue_hit(&mut self, t: Tgt, n: f64) {
-        self.no_blame = true;
-        match t {
+        self.without_blame(|w| match t {
             Tgt::Miner(id) => {
-                if let Some(i) = self.miners.iter().position(|m| m.id == id) {
-                    self.hurt_miner(i, n, false);
+                if let Some(i) = w.miners.iter().position(|m| m.id == id) {
+                    w.hurt_miner(i, n, false);
                 }
             }
-            _ => self.hurt_target(t, n),
-        }
-        self.no_blame = false;
+            _ => w.hurt_target(t, n),
+        });
     }
 
     /// What a rogue's bolt at (x, y) strikes, other than the tug.
@@ -2570,8 +2678,8 @@ impl World {
         let d = &self.sentries[i];
         if js::dist(d.wander.0, d.wander.1, d.x, d.y) < 120.0 {
             let w = (
-                self.rng.range(300.0, WORLD_W - 300.0),
-                self.rng.range(300.0, WORLD_H - 300.0),
+                self.rng.range(self.edge_lo + 300.0, self.edge_hi - 300.0),
+                self.rng.range(self.edge_lo + 300.0, self.edge_hi - 300.0),
             );
             self.sentries[i].wander = w;
         }
@@ -2601,8 +2709,8 @@ impl World {
         let k = (1.5 * dt).min(1.0);
         d.vx += (a.cos() * ROGUE_SPEED - d.vx) * k;
         d.vy += (a.sin() * ROGUE_SPEED - d.vy) * k;
-        d.x = (d.x + d.vx * dt).clamp(20.0, WORLD_W - 20.0);
-        d.y = (d.y + d.vy * dt).clamp(20.0, WORLD_H - 20.0);
+        d.x = (d.x + d.vx * dt).clamp(self.edge_lo + 20.0, self.edge_hi - 20.0);
+        d.y = (d.y + d.vy * dt).clamp(self.edge_lo + 20.0, self.edge_hi - 20.0);
         let Some((_, tb)) = target else {
             d.angle = d.vy.atan2(d.vx);
             return;
@@ -2634,7 +2742,8 @@ impl World {
 
     /// Advances sentry drone `i` one step; a rogue one wanders and hunts instead of orbiting.
     pub(crate) fn update_sentry(&mut self, i: usize, dt: f64) {
-        let s = self.ship.b;
+        let p = self.sentries[i].pilot;
+        let s = self.pilots[p].ship.b;
         let d = &mut self.sentries[i];
         d.flash = (d.flash - dt).max(0.0);
         if d.rogue {
@@ -2644,7 +2753,7 @@ impl World {
         d.fire_t -= dt;
         d.orbit += dt * 1.3;
         // Ease toward the orbit slot; with the tug wrecked, hold position.
-        if self.ship.alive {
+        if self.pilots[p].ship.alive {
             let (tx, ty) = (
                 s.x + d.orbit.cos() * SENTRY_ORBIT,
                 s.y + d.orbit.sin() * SENTRY_ORBIT,
@@ -2677,15 +2786,16 @@ impl World {
         let d = &mut self.sentries[i];
         d.angle = (tb.y + tb.vy * t - dy).atan2(tb.x + tb.vx * t - dx);
         if d.fire_t <= 0.0 {
-            d.fire_t = self.mods.drone_fire;
+            d.fire_t = self.pilots[p].mods.drone_fire;
             let a = d.angle;
             self.bullets.push(Bullet {
+                blame: crate::world::Blame::Pilot(p),
                 x: dx,
                 y: dy,
                 vx: a.cos() * sp,
                 vy: a.sin() * sp,
                 life: 0.7,
-                dmg: self.mods.drone_dmg,
+                dmg: self.pilots[p].mods.drone_dmg,
                 sentry: true,
                 ..Bullet::default()
             });
@@ -2717,8 +2827,8 @@ impl World {
             let it = self.new_item(ItemType::Core, x, y, vx, vy);
             self.items.push(it);
             self.radio(Radio::RogueDown, false, false);
-            if !self.no_blame {
-                self.emit(Event::Unlock("rogue"));
+            if self.blamed().is_some() {
+                self.emit(Event::Unlock(crate::events::Achievement::Rogue));
             }
             self.count_kill(|k| k.rogue += 1);
             return;
@@ -2734,8 +2844,8 @@ impl World {
     pub fn spawn_miners(&mut self, count: i32) {
         let (mut cx, mut cy) = (CARRIER_X, CARRIER_Y);
         for _ in 0..30 {
-            cx = self.rng.range(500.0, WORLD_W - 500.0);
-            cy = self.rng.range(500.0, WORLD_H - 500.0);
+            cx = self.rng.range(self.edge_lo + 500.0, self.edge_hi - 500.0);
+            cy = self.rng.range(self.edge_lo + 500.0, self.edge_hi - 500.0);
             if js::dist(cx, cy, CARRIER_X, CARRIER_Y) > 1300.0 {
                 break;
             }
@@ -2790,7 +2900,8 @@ impl World {
 
     /// Advances mining-crew tug `i` one step: cutting its rock, or attacking the tug while angry.
     pub(crate) fn update_miner(&mut self, i: usize, dt: f64) {
-        let s = self.ship.b;
+        let p = self.nearest_pilot(self.miners[i].b.x, self.miners[i].b.y);
+        let s = self.pilots[p].ship.b;
         let m = &mut self.miners[i];
         m.flash = (m.flash - dt).max(0.0);
         m.angry_t = (m.angry_t - dt).max(0.0);
@@ -2798,7 +2909,7 @@ impl World {
         m.beam = None;
 
         // Retaliation: hold close to the tug and cut it.
-        if m.angry_t > 0.0 && self.ship.alive {
+        if m.angry_t > 0.0 && self.pilots[p].ship.alive {
             let d = nonzero(m.b.dist_to(&s));
             let (tx, ty) = (
                 s.x + ((m.b.x - s.x) / d) * 180.0,
@@ -2813,8 +2924,8 @@ impl World {
                 if zap {
                     m.zap_t = 0.13;
                 }
-                self.under_attack();
-                self.damage_ship(MINER_BEAM_DPS * dt);
+                self.under_attack(p);
+                self.damage_ship(p, MINER_BEAM_DPS * dt);
                 if zap {
                     self.sfx(Sfx::BeamZap);
                 }
@@ -2868,7 +2979,7 @@ impl World {
                 m.retarget = 0.0;
             }
             // First time the tug wanders into a working crew, warn of the storm.
-            if self.ship.alive && s.dist_to(&self.miners[i].b) < 700.0 {
+            if self.pilots[p].ship.alive && s.dist_to(&self.miners[i].b) < 700.0 {
                 self.radio(Radio::Storm, false, true);
             }
         }
@@ -2920,7 +3031,8 @@ impl World {
     /// Collector waves, the refinery, patrols and the mining crew for a new
     /// shift (the opposition part of newGame).
     pub(crate) fn setup_opposition(&mut self) {
-        let mode = self
+        // The field's difficulty follows the first pilot's career.
+        let mode = self.pilots[0]
             .career
             .as_ref()
             .map(|c| c.mode)
@@ -2940,32 +3052,79 @@ impl World {
         } else {
             self.rng.range(90.0, 150.0)
         };
-        self.collector_queue = (0..waves).map(|i| first + f64::from(i) * 60.0).collect();
+        // Each pilot with a loan draws the same waves, a little apart.
+        self.collector_queue = (0..self.pilots.len())
+            .flat_map(|p| {
+                (0..waves).map(move |i| (first + f64::from(i) * 60.0 + p as f64 * 20.0, p))
+            })
+            .collect();
         // Shift 1 lets the player learn towing before the refinery shows up.
         self.refinery_t = if shift == 1 { 75.0 } else { REFINERY_ARRIVE_AT };
         self.patrol_t = self.rng.range(60.0, 140.0) * self.cond.def().patrol;
         self.miner_announce_t = 8.0;
         self.collector_from = d.collector_from;
         self.net_tear = d.net_tear;
-        // Sentries launch from the drone bay at the start of the shift.
-        let n = self.career.as_ref().map_or(0, |c| c.sentries as usize);
-        if self.mods.drone_bay {
-            for i in 0..n {
-                let s = self.make_sentry(i, n);
-                self.sentries.push(s);
+        // Sentries launch from each pilot's drone bay at the start of the shift.
+        for p in 0..self.pilots.len() {
+            let n = self.pilots[p]
+                .career
+                .as_ref()
+                .map_or(0, |c| c.sentries as usize);
+            if self.pilots[p].mods.drone_bay {
+                for i in 0..n {
+                    let s = self.make_sentry(p, i, n);
+                    self.sentries.push(s);
+                }
             }
         }
     }
 
     /// The mining crew joins after the field is seeded (end of newGame).
     pub(crate) fn setup_miners(&mut self) {
-        let mode = self
+        // The mining crew's size follows the first pilot's career mode.
+        let mode = self.pilots[0]
             .career
             .as_ref()
             .map(|c| c.mode)
             .unwrap_or(crate::career::Mode::Standard);
         let n = (miner_crew_for(self.shift_no) + mode.def().miner_crew).max(1);
         self.spawn_miners(n);
+    }
+
+    /// Pilot `p`'s money-driven collector triggers: a wallet short of the
+    /// installment, and a fat cable (once a minute at most).
+    fn money_triggers(&mut self, p: usize) {
+        // A collector still on the books for this pilot (even one wrecked this
+        // step) means nobody new is sent.
+        let chasing = self.collectors.iter().any(|c| c.target == p);
+        if !self.pilots[p].low_wallet_checked && self.t >= LOW_WALLET_CHECK_AT {
+            self.pilots[p].low_wallet_checked = true;
+            let short = self.pilots[p]
+                .career
+                .as_ref()
+                .map_or(0.0, |c| c.due(0) - (c.wallet + self.pilots[p].banked));
+            if short > 0.0 && !chasing {
+                self.collector_queue.push((self.t + 6.0, p));
+                let v = fmt_credits(short);
+                let text = format!(
+                    "Kessler Mutual ran your numbers, hon. You're {v} cr short of this shift's installment, so they're sending somebody. Bank something. Today."
+                );
+                self.radio_text(Radio::LowWallet, true, false, text);
+            }
+        }
+        let soon = self
+            .collector_queue
+            .iter()
+            .any(|&(t, q)| q == p && t - self.t < 20.0);
+        if self.t >= self.pilots[p].fat_cable_ready_at
+            && !chasing
+            && !soon
+            && self.line_value(p) >= FAT_CABLE_VALUE
+        {
+            self.pilots[p].fat_cable_ready_at = self.t + FAT_CABLE_COOLDOWN;
+            self.collector_queue.push((self.t + 8.0, p));
+            self.radio(Radio::FatCable, true, false);
+        }
     }
 
     /// The opposition's arrivals (the first half of updateSpawns).
@@ -2976,32 +3135,44 @@ impl World {
                 self.radio(Radio::Miners, true, false);
             }
         }
-        self.collector_queue.sort_by(|a, b| a.total_cmp(b));
-        while self.collector_queue.first().is_some_and(|&t| self.t >= t) {
-            self.collector_queue.remove(0);
-            if self.collectors.len() < COLLECTOR_MAX && self.ship.alive {
-                self.spawn_collector();
+        // Each queued arrival comes for one pilot.
+        self.collector_queue.sort_by(|a, b| a.0.total_cmp(&b.0));
+        while self
+            .collector_queue
+            .first()
+            .is_some_and(|&(t, _)| self.t >= t)
+        {
+            let (_, p) = self.collector_queue.remove(0);
+            // The cap on collectors out at once is per pilot.
+            let cap = COLLECTOR_MAX * self.pilots.len();
+            if self.collectors.len() < cap && self.pilots[p].ship.alive {
+                self.spawn_collector(p);
             }
         }
 
-        // The law. Wanted: units are dispatched until the response for your
-        // star level is out. Clean: one random patrol at a time.
+        // The law. Wanted: units are dispatched until the response for the
+        // most wanted pilot's star level is out (the first pilot on a tie).
+        // Clean: one random patrol at a time.
         // Lawless belts have no law at all: stars pile up, but nobody comes.
         let lawless = self.belt.def().lawless;
-        match law_tier(self.wanted).filter(|_| !lawless) {
-            Some(t) if self.ship.alive => {
+        let most = (0..self.pilots.len())
+            .max_by_key(|&p| (self.pilots[p].wanted, std::cmp::Reverse(p)))
+            .unwrap_or(0);
+        match law_tier(self.pilots[most].wanted).filter(|_| !lawless) {
+            Some(t) if self.pilots[most].ship.alive => {
                 let r = self.reinforce_t.unwrap_or(0.0) - dt;
                 self.reinforce_t = Some(r);
                 if self.active_law() < t.units && r <= 0.0 {
-                    self.spawn_sheriff(true);
+                    self.spawn_sheriff(most, true);
                     self.reinforce_t = Some(if t.swat { 2.0 } else { 4.0 });
                 }
             }
             _ => {
-                if !lawless && self.sheriffs.is_empty() && self.ship.alive {
+                let alive = self.pilots.iter().position(|pl| pl.ship.alive);
+                if let Some(p) = alive.filter(|_| !lawless && self.sheriffs.is_empty()) {
                     self.patrol_t -= dt;
                     if self.patrol_t <= 0.0 {
-                        self.spawn_sheriff(false);
+                        self.spawn_sheriff(p, false);
                     }
                 }
             }
@@ -3009,31 +3180,8 @@ impl World {
 
         // Money-driven triggers, once the mode's collectors have started.
         if self.shift_no >= self.collector_from {
-            if !self.low_wallet_checked && self.t >= LOW_WALLET_CHECK_AT {
-                self.low_wallet_checked = true;
-                let short = self
-                    .career
-                    .as_ref()
-                    .map_or(0.0, |c| c.due(0) - (c.wallet + self.banked));
-                if short > 0.0 && self.collectors.is_empty() {
-                    self.collector_queue.push(self.t + 6.0);
-                    let v = fmt_credits(short);
-                    let text = format!(
-                        "Kessler Mutual ran your numbers, hon. You're {v} cr short of this shift's installment, so they're sending somebody. Bank something. Today."
-                    );
-                    self.radio_text(Radio::LowWallet, true, false, text);
-                }
-            }
-            // Fat cable: a rich load draws a collector (once a minute at most).
-            let soon = self.collector_queue.iter().any(|t| t - self.t < 20.0);
-            if self.t >= self.fat_cable_ready_at
-                && self.collectors.is_empty()
-                && !soon
-                && self.line_value() >= FAT_CABLE_VALUE
-            {
-                self.fat_cable_ready_at = self.t + FAT_CABLE_COOLDOWN;
-                self.collector_queue.push(self.t + 8.0);
-                self.radio(Radio::FatCable, true, false);
+            for p in 0..self.pilots.len() {
+                self.with_hearer(Some(p), |w| w.money_triggers(p));
             }
         }
         if self.refinery.is_none() && self.refinery_t > 0.0 {

@@ -6,7 +6,7 @@
 //! the simulation depends on how (or whether) events are presented.
 
 /// Palette colours effects refer to (COL in src/js/02-utilities.js).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Tint {
     Hazard,
     Cable,
@@ -28,7 +28,7 @@ pub enum Tint {
 }
 
 /// One-shot sound effects (Sound.sfx in src/js/03-audio.js).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Sfx {
     Hook,
     Deny,
@@ -90,7 +90,7 @@ pub enum Sfx {
 }
 
 /// Lines Marge can say (the radio keys in src/js/04-dispatcher-radio.js).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Radio {
     /// Entering a radiation cloud.
     Radiation,
@@ -196,8 +196,46 @@ pub enum Radio {
     P2Free,
 }
 
+/// An achievement the simulation can award mid-shift (the profile keeps
+/// the rest), by the profile's id for it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum Achievement {
+    BigHaul,
+    Boss,
+    FirstBank,
+    FiveStar,
+    Rogue,
+    Smash,
+    Vault,
+}
+
+impl Achievement {
+    /// The profile's id for this achievement.
+    pub fn id(self) -> &'static str {
+        match self {
+            Achievement::BigHaul => "bigHaul",
+            Achievement::Boss => "boss",
+            Achievement::FirstBank => "firstBank",
+            Achievement::FiveStar => "fiveStar",
+            Achievement::Rogue => "rogue",
+            Achievement::Smash => "smash",
+            Achievement::Vault => "vault",
+        }
+    }
+}
+
+/// An event and the pilot it concerns. `None` is everyone (the shift clock,
+/// the field, the rival crews); `Some(p)` is pilot p's own, such as their
+/// radio lines, hull alarms and rumble. Other players hear a pilot's sounds
+/// from that pilot's tug.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct Emitted {
+    pub to: Option<usize>,
+    pub event: Event,
+}
+
 /// Something the simulation tells the game about this step: sounds, radio lines, slow motion, effects and floating text.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Event {
     Sfx(Sfx),
     /// A radio line. `force` interrupts the cooldown; `once` plays once per
@@ -219,7 +257,7 @@ pub enum Event {
         text: String,
     },
     /// An achievement was earned mid-shift (Profile.unlock), by its id.
-    Unlock(&'static str),
+    Unlock(Achievement),
     /// Sparks flying out from a point.
     Burst {
         x: f64,

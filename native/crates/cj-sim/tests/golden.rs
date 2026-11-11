@@ -72,17 +72,17 @@ fn build(sc: &Value, init: &Value) -> World {
                 levels.set(s, v as u8);
             }
         }
-        w.mods = compute_mods(
+        w.pilots[0].mods = compute_mods(
             &mounted,
             &levels,
             sc["tugClass"].as_u64().unwrap_or(0) as usize,
         );
-        w.ship.b.mass = w.mods.mass;
-        w.ship.hp = w.mods.max_hp;
-        w.ship.shield = w.mods.shield_max;
+        w.pilots[0].ship.b.mass = w.pilots[0].mods.mass;
+        w.pilots[0].ship.hp = w.pilots[0].mods.max_hp;
+        w.pilots[0].ship.shield = w.pilots[0].mods.shield_max;
     }
     let s = &sc["ship"];
-    let ship = &mut w.ship;
+    let ship = &mut w.pilots[0].ship;
     ship.b.x = num(s, "x", ship.b.x);
     ship.b.y = num(s, "y", ship.b.y);
     ship.b.vx = num(s, "vx", 0.0);
@@ -195,18 +195,18 @@ fn build(sc: &Value, init: &Value) -> World {
     if let Some(v) = sc["wallet"].as_f64() {
         career.wallet = v;
     }
-    w.career = Some(career);
+    w.pilots[0].career = Some(career);
     if let Some(v) = sc["timeLeft"].as_f64() {
         w.time_left = v;
     }
     for c in sc["collectors"].as_array().into_iter().flatten() {
-        w.spawn_collector();
+        w.spawn_collector(0);
         let k = w.collectors.last_mut().unwrap();
         k.b.x = num(c, "x", k.b.x);
         k.b.y = num(c, "y", k.b.y);
     }
     for s in sc["sheriffs"].as_array().into_iter().flatten() {
-        w.spawn_sheriff(s["responding"].as_bool().unwrap_or(false));
+        w.spawn_sheriff(0, s["responding"].as_bool().unwrap_or(false));
         let k = w.sheriffs.last_mut().unwrap();
         k.b.x = num(s, "x", k.b.x);
         k.b.y = num(s, "y", k.b.y);
@@ -230,19 +230,19 @@ fn build(sc: &Value, init: &Value) -> World {
     }
     let n = sc["sentries"].as_u64().unwrap_or(0) as usize;
     for i in 0..n {
-        let s = w.make_sentry(i, n);
+        let s = w.make_sentry(0, i, n);
         w.sentries.push(s);
     }
     if let Some(n) = sc["wanted"].as_u64() {
-        let (x, y) = (w.ship.b.x, w.ship.b.y);
-        w.add_wanted(n as u32, x, y);
+        let (x, y) = (w.pilots[0].ship.b.x, w.pilots[0].ship.b.y);
+        w.add_wanted(0, n as u32, x, y);
     }
     if let Some(v) = sc["reinforceT"].as_f64() {
         w.reinforce_t = Some(v);
     }
     w.cam = Camera {
-        x: w.ship.b.x,
-        y: w.ship.b.y,
+        x: w.pilots[0].ship.b.x,
+        y: w.pilots[0].ship.b.y,
         zoom: 1.0,
     };
     w
@@ -309,7 +309,7 @@ fn item_pos(w: &World, id: Option<u32>) -> f64 {
 }
 
 fn check_step(w: &World, want: &Value) -> Result<(), String> {
-    let s = &w.ship;
+    let s = &w.pilots[0].ship;
     let on = |b: bool| if b { 1.0 } else { 0.0 };
     cmp_row(
         "ship",
@@ -424,7 +424,11 @@ fn check_step(w: &World, want: &Value) -> Result<(), String> {
     cmp_row(
         "law",
         &want["law"],
-        &[f64::from(w.wanted), w.fines, f64::from(w.arrests)],
+        &[
+            f64::from(w.pilots[0].wanted),
+            w.pilots[0].fines,
+            f64::from(w.pilots[0].arrests),
+        ],
     )?;
     let types: Vec<&str> = w.items.iter().map(|it| it.kind.key()).collect();
     let want_types: Vec<&str> = want["types"]
@@ -462,7 +466,7 @@ fn check_step(w: &World, want: &Value) -> Result<(), String> {
             })
             .collect(),
     )?;
-    let chain: Vec<f64> = w
+    let chain: Vec<f64> = w.pilots[0]
         .chain
         .iter()
         .map(|id| w.item_index(*id).unwrap() as f64)
@@ -560,7 +564,7 @@ fn check_step(w: &World, want: &Value) -> Result<(), String> {
     cmp_row(
         "banked",
         &Value::from(vec![want["banked"].clone()]),
-        &[w.banked],
+        &[w.pilots[0].banked],
     )?;
     cmp_row("cam", &want["cam"], &[w.cam.x, w.cam.y, w.cam.zoom])
 }
@@ -584,7 +588,7 @@ fn run(name: &str) {
         .zip(trace["init"]["items"].as_array().unwrap())
     {
         assert_eq!(
-            it.label,
+            it.label(),
             want["label"].as_str().unwrap(),
             "{name}: item grade"
         );
@@ -626,7 +630,7 @@ fn run(name: &str) {
             for (_, a) in actions.iter().filter(|(at, _)| *at == k) {
                 match a {
                     Some(a) => w.action(*a),
-                    None => w.kill_ship(),
+                    None => w.kill_ship(0),
                 }
             }
             w.step(&input, STEP);

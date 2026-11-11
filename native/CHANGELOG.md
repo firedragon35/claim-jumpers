@@ -5,6 +5,54 @@ format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the port uses [Semantic Versioning](https://semver.org/) as defined in
 [CLAUDE.md](CLAUDE.md#versioning).
 
+## [1.3.0] - 2026-11-11
+
+Online co-op: up to 20 pilots share one shift.
+
+### Added
+
+- The game opens asking how to play: Single player, Host server or Join
+  remote host. Hosting runs the server in your game, for up to 2 to 20
+  pilots (the field grows with the crowd) at a career difficulty you pick.
+  Joining looks the server up first and shows how many pilots are on it,
+  or that it is full. The port is always 47820 (UDP). There's also a
+  headless `cj-server` for running a server without the game.
+- Your own tug and shots respond at once, however far away the server is.
+  The server decides everything, and corrections stay small even over a
+  laggy link that loses packets.
+- Every pilot's tug and tow line is drawn, each other pilot in their own
+  colour. Nearby players' sounds fade with distance, and the radar shows
+  what the server reports beyond your view.
+- Tab shows every pilot with this shift's credits, kills and deaths.
+  Enter opens a public chat, shown in the bottom-left corner over the
+  field.
+- Shift follows shift. In the break you see your own report, shop with
+  your career on that server (every purchase is checked by the server),
+  and vote for the next belt among those everyone's tug can fly. The next
+  shift starts when everyone is ready, or after 90 seconds.
+- Each server keeps its own career for each player, separate from your
+  single-player career, in the difficulty the host chose. A host's
+  careers are kept for the next time they host.
+- Players who join in a shift's last minute wait in the lobby for the
+  next one. A player who drops out keeps their tug and cargo safely out of
+  the field until they return.
+- Hints when nobody can get in: allowing the game through Windows
+  Firewall, and the address to give out. The player guide has a new
+  PLAYING ONLINE section, covering LAN play, port forwarding and Tailscale.
+
+### Changed
+
+- Other players' shots stop at your tug, but never hurt it. Damage between
+  players comes with opt-in PvP in a later version.
+- Radiation clouds burn every tug inside them. Rival and law bolts hit any
+  tug in their path, and a refinery drone takes turns between the tugs in
+  range.
+- Long messages wrap on screen instead of running off a narrow window.
+
+### Notes
+
+- Online play is IPv4 only, and the connection is not encrypted.
+
 ## [1.2.0] - 2026-11-09
 
 ### Added

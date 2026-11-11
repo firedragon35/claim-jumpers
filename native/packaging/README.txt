@@ -22,7 +22,9 @@ HOW TO PLAY
 The first time, Windows may show "Windows protected your PC" because the
 game isn't signed by a publisher. Click "More info", then "Run anyway".
 
-Your first shift starts with Marge's training. Press T to skip it.
+The game opens asking how to play: Single player, Host server or Join remote
+host (see PLAYING ONLINE). In single player, your first shift starts with
+Marge's training. Press T to skip it.
 
 
 CONTROLS
@@ -59,9 +61,50 @@ Your career, records, settings and leaderboard are saved automatically in:
 
     %APPDATA%\ClaimJumpers
 
-(paste that into the File Explorer address bar to open it). To back up or
-move your progress, copy that folder. To play from a different folder, set
-the CLAIM_JUMPERS_DATA environment variable to it.
+(paste that into the File Explorer address bar to open it). mp_id.txt in
+that folder is how servers recognise you when you come back. When you host,
+the players' careers on your server are kept in its servers\hosted folder.
+To back up or move your progress, copy that folder. To play from a
+different folder, set the CLAIM_JUMPERS_DATA environment variable to it.
+
+
+PLAYING ONLINE
+--------------
+Up to 20 pilots can share one shift. Everyone needs the same version of the
+game.
+
+Hosting: choose Host server. Before you do, you can pick how many pilots
+the server is for (the field grows with it) and the difficulty of every
+career on it. Your game runs the server, so the session ends when you
+leave. The first time, Windows Firewall may ask whether to allow Claim
+Jumpers: allow it on private networks, or nobody else can get in.
+
+Joining: choose Join remote host, type the host's IP address and press
+Find server. The game shows how many pilots are connected, or that the
+server is full; press Join. The port is always 47820 (UDP).
+
+  - On the same home network: use the address the host's game shows when
+    hosting (it looks like 192.168.x.x).
+  - Over the internet: the host forwards UDP port 47820 on their router to
+    their PC and gives out their public address. Some internet providers
+    don't allow this (carrier-grade NAT). Then the easiest way is Tailscale
+    (tailscale.com): install it on every PC, put them on the same tailnet,
+    and join with the host's Tailscale address (it looks like 100.x.y.z).
+
+Online keys: Tab shows every pilot with this shift's credits, kills and
+deaths. Enter opens the chat: type, then Enter sends (Esc cancels). The
+pause card doesn't stop the shared shift.
+
+Between shifts there is a break: see your report, shop, and vote for the
+next belt (only belts every pilot's tug can fly count). The next shift
+starts when everyone is ready, or after 90 seconds. A player joining in a
+shift's last minute waits in the lobby for the next one.
+
+Each server keeps its own career for you, separate from your single-player
+career, so you start fresh on every server. Other players' shots stop at
+your tug but never hurt it.
+
+The connection is not encrypted: don't share anything private in the chat.
 
 
 MARGE'S VOICE

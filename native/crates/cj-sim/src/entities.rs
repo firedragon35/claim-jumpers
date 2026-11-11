@@ -8,13 +8,21 @@ use crate::rng::Rng;
 use std::f64::consts::{PI, TAU};
 
 /// The physical part every colliding thing shares.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Body {
+    // On the network these travel as f32: precise to a few ten-thousandths
+    // of a unit across the field, at half the size (see `wire`).
+    #[serde(with = "crate::wire::f32_wire")]
     pub x: f64,
+    #[serde(with = "crate::wire::f32_wire")]
     pub y: f64,
+    #[serde(with = "crate::wire::f32_wire")]
     pub vx: f64,
+    #[serde(with = "crate::wire::f32_wire")]
     pub vy: f64,
+    #[serde(with = "crate::wire::f32_wire")]
     pub r: f64,
+    #[serde(with = "crate::wire::f32_wire")]
     pub mass: f64,
     /// Static bodies (the carrier hull) never move; their inverse mass is 0.
     pub fixed: bool,
@@ -42,7 +50,7 @@ impl Body {
 }
 
 /// One vertex of an irregular outline: angle and radius multiplier.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 pub struct ShapePt {
     pub a: f64,
     pub m: f64,
@@ -59,7 +67,7 @@ pub fn jagged_shape(rng: &mut Rng, count: i32, lo: f64, hi: f64) -> Vec<ShapePt>
 }
 
 /// The player's tug.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Ship {
     pub b: Body,
     pub angle: f64,
@@ -169,13 +177,12 @@ impl Ship {
 }
 
 /// A piece of salvage.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Item {
     /// Stable identity: the tow chain refers to items by id.
     pub id: u32,
     pub kind: ItemType,
     pub b: Body,
-    pub label: &'static str,
     pub grade: usize,
     pub tint: Option<u32>,
     pub rare: bool,
@@ -196,8 +203,11 @@ pub struct Item {
     pub thrown_t: f64,
     /// Seconds until a primed reactor blows; 0 when not primed.
     pub fuse: f64,
-    /// The player did not set this reactor off, so its blast is not credited.
-    pub no_blame: bool,
+    /// Who set this reactor off, and so answers for its blast.
+    pub primed_by: crate::world::Blame,
+    /// The pilot who last hooked this item onto their cable, if any: whose
+    /// cargo it is while towed, and whose throw it is while `thrown_t` runs.
+    pub owner: Option<usize>,
     /// The rival (jumper id) dragging this item off, if any.
     pub hooked_by: Option<u32>,
     /// Seconds until a towed rogue core next tries to zap the tug.
@@ -210,6 +220,23 @@ impl Item {
     /// The static definition (grades and base properties) of this item's type.
     pub fn def(&self) -> &'static ItemDef {
         self.kind.def()
+    }
+
+    /// Worth a detour, so shown on the radar: rares, sealed pods, black
+    /// boxes, keycards, cores and anything worth 800 or more.
+    pub fn worth_a_detour(&self) -> bool {
+        self.rare
+            || self.hidden
+            || matches!(
+                self.kind,
+                ItemType::Blackbox | ItemType::Keycard | ItemType::Core
+            )
+            || self.value >= 800.0
+    }
+
+    /// This piece's grade name, such as "Scrap" or "Rare alloy".
+    pub fn label(&self) -> &'static str {
+        self.def().grades[self.grade].name
     }
 }
 
@@ -272,7 +299,6 @@ pub fn make_item(
             mass: js::round(def.mass * g.mass_mul * 10.0) / 10.0,
             fixed: false,
         },
-        label: g.name,
         grade: gi,
         tint: g.tint,
         rare: def.grades.len() > 1 && gi == def.grades.len() - 1,
@@ -287,7 +313,8 @@ pub fn make_item(
         tension: 0.0,
         thrown_t: 0.0,
         fuse: 0.0,
-        no_blame: false,
+        primed_by: crate::world::Blame::Unset,
+        owner: None,
         hooked_by: None,
         zap_t: 1.0,
         shape,
@@ -296,7 +323,7 @@ pub fn make_item(
 }
 
 /// A crater on a rock, as fractions of its radius.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Crater {
     pub a: f64,
     pub d: f64,
@@ -304,7 +331,7 @@ pub struct Crater {
 }
 
 /// A breakable asteroid. Each size has its own radius and hit points, and a veined rock drops ore when broken.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Rock {
     /// Stable identity (a miner keeps cutting the same rock).
     pub id: u32,
@@ -383,7 +410,7 @@ pub fn make_rock_drifting(rng: &mut Rng, size: u8, x: f64, y: f64) -> Rock {
 }
 
 /// A derelict hull: it drifts, collides, and can be cut open for its contents.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Wreck {
     pub b: Body,
     /// A sealed hold: only its keycard opens it.
@@ -475,7 +502,7 @@ pub fn make_wreck(rng: &mut Rng, x: f64, y: f64, shift_no: i32) -> Wreck {
 }
 
 /// What a rival claim jumper is doing.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum JumperState {
     /// Looking for cargo to steal (or circling the tug if there is none).
     Hunt,
@@ -484,7 +511,7 @@ pub enum JumperState {
 }
 
 /// A rival claim jumper.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Jumper {
     pub id: u32,
     pub variant: Variant,
@@ -581,7 +608,7 @@ pub fn make_jumper(
 }
 
 /// What a scrap crab is doing (see updateCrab).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum CrabState {
     /// Sitting on a salvage piece; starts crawling once it is towed.
     Ride,
@@ -594,7 +621,7 @@ pub enum CrabState {
 }
 
 /// A scrap crab: it rides salvage, crawls along the cable toward the tug and then chews the hull (see `CrabState`).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Crab {
     pub state: CrabState,
     /// Item id it rides or crawls from.
@@ -614,6 +641,8 @@ pub struct Crab {
     pub leg_t: f64,
     pub chomp_t: f64,
     pub dead: bool,
+    /// The pilot whose cable it climbs or whose hull it chews.
+    pub on: usize,
 }
 
 /// Creates a crab in `state` at (`x`, `y`), riding or crawling from the item `host`, with a random perch angle and leg phase.
@@ -635,11 +664,12 @@ pub fn make_crab(rng: &mut Rng, state: CrabState, host: Option<u32>, x: f64, y: 
         leg_t,
         chomp_t: 0.0,
         dead: false,
+        on: 0,
     }
 }
 
 /// A reactor's radiation cloud, centred where it blew.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct RadCloud {
     pub x: f64,
     pub y: f64,
@@ -648,7 +678,7 @@ pub struct RadCloud {
 }
 
 /// A cannon round (yours) or a bolt (theirs).
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Bullet {
     pub x: f64,
     pub y: f64,
@@ -668,9 +698,14 @@ pub struct Bullet {
     /// A rogue sentry's bolt, and which sentry fired it.
     pub rogue: bool,
     pub owner: Option<u32>,
+    /// Who answers for what this round hits (a player's cannon, sentry or
+    /// partner round names its pilot).
+    pub blame: crate::world::Blame,
 }
 
 /// A named rival boss crew (a field event).
+// Serialize and Deserialize are written by hand in `wire`: a derived
+// Deserialize would borrow the name from the input for 'static.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Boss {
     pub name: &'static str,

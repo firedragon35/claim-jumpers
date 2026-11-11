@@ -5,7 +5,7 @@
 # crates/cj-game  the macroquad application, claim-jumpers.exe (Windows)
 [workspace]
 resolver = "2"
-members = ["crates/cj-sim", "crates/cj-game"]
+members = ["crates/cj-sim", "crates/cj-game", "crates/cj-net", "crates/cj-server"]
 
 [workspace.package]
 edition = "2021"

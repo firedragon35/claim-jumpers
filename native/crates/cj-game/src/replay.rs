@@ -68,10 +68,11 @@ impl Recorder {
             return;
         }
         self.rec_t = 1.0 / REPLAY_HZ;
-        let s = &w.ship;
+        let s = &w.me().ship;
         let near = |x: f64, y: f64| (x - s.b.x).hypot(y - s.b.y) < REPLAY_RADIUS;
         let f = |v: f64| v as f32;
         let chain = w
+            .me()
             .chain
             .iter()
             .filter_map(|id| w.items.iter().find(|it| it.id == *id))

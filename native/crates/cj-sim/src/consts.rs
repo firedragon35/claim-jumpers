@@ -276,7 +276,7 @@ pub fn jumper_interval_for(shift: i32, t: f64) -> f64 {
 }
 
 /// Rival hull variants (JUMPER_VARIANTS). Each multiplies the base jumper.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Variant {
     /// Small, fast and fragile; slower to cut a line.
     Skiff,
@@ -450,6 +450,11 @@ pub const ROCK_REFILL_TIME: f64 = 6.0;
 pub const ROCK_REFILL_CAP: usize = 90;
 pub const WRECK_REFILL_TIME: f64 = 45.0;
 pub const WRECK_REFILL_CAP: usize = 6;
+
+/// Each pilot beyond the first adds this share of a solo field's salvage,
+/// refills and rival arrivals (see `World::crowd`). A first guess, to be
+/// judged in the three-player play test (CJN-17).
+pub const CROWD_SHARE: f64 = 0.5;
 
 /* Hit feedback (src/js/10d-presentation.js): real seconds of freeze or slow
  * motion the game applies to its fixed-step accumulator. */

@@ -2,7 +2,7 @@
 //! merged from keyboard and gamepad by the game layer.
 
 /// Held controls, sampled once per simulation step.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Input {
     /// Forward throttle 0..1.
     pub thrust: f64,
@@ -18,7 +18,7 @@ pub struct Input {
 }
 
 /// One-shot cable commands, triggered on a key or button press.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Action {
     /// Hook the nearest free item onto the end of the chain.
     Hook,

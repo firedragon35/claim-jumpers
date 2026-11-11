@@ -13,7 +13,7 @@ use crate::rng::Rng;
 /* ------------------------------- Contracts ------------------------------ */
 
 /// The kinds of job a contract can ask for.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ContractKind {
     Deliver,
     Bank,
@@ -72,7 +72,7 @@ pub const DELIVER_COUNTS: [(ItemType, u32, &str); 4] = [
 ];
 
 /// One contract: the job, its target and its reward.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Contract {
     pub kind: ContractKind,
     /// Target (count, credits, or 1 for yes/no jobs).
@@ -148,7 +148,7 @@ impl Contract {
 
 /// Contract chains: three linked jobs from one client; the last pays big
 /// and unlocks a part you can't buy.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Chain {
     HollisFreight,
     SaltyDog,
@@ -222,7 +222,7 @@ pub fn chain_contract(ch: Chain, i: usize) -> Contract {
 /* --------------------------------- Crew --------------------------------- */
 
 /// One co-pilot at a time, paid a wage every shift, each with one perk.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Crew {
     Rigger,
     Adjuster,
@@ -292,7 +292,7 @@ impl Crew {
 /* ------------------------------ Belts ------------------------------ */
 
 /// The five belts the sector map offers, from the safest to the most dangerous.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Belt {
     Quiet,
     Hollis,
@@ -366,7 +366,7 @@ impl Belt {
 /* ---------------------------- Belt conditions ---------------------------- */
 
 /// A belt's condition for one shift; `roll_conditions` rolls one per belt.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Condition {
     Normal,
     OreBoom,
@@ -479,7 +479,7 @@ pub fn roll_conditions(rng: &mut Rng, shift: i32) -> [Condition; 5] {
 /* ------------------------------ Field events ------------------------------ */
 
 /// One field event per shift, partway through.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Event {
     /// Shields drop to zero and can't recharge for a while.
     Ion,
@@ -602,13 +602,13 @@ pub fn grudge_one_stage_down(grudge: f64) -> f64 {
 /* ------------------------------ In the field ------------------------------ */
 
 use crate::career::{tier, Career, Tier};
-use crate::consts::{BAY_X, BAY_Y, CARRIER_X, CARRIER_Y, WORLD_H, WORLD_W};
+use crate::consts::{BAY_X, BAY_Y, CARRIER_X, CARRIER_Y};
 use crate::entities::{make_wreck, Body, Boss};
 use crate::events::{Radio, Sfx, Tint};
 use crate::world::World;
 
 /// An escorted freight hauler crossing the field to the bay.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Hauler {
     pub b: Body,
     pub hp: f64,
@@ -643,8 +643,8 @@ impl Hauler {
 
 impl World {
     /// The claims adjuster haggles deductibles and impound fees down.
-    pub fn crew_fee_mul(&self) -> f64 {
-        if self.crew == Some(Crew::Adjuster) {
+    pub fn crew_fee_mul(&self, p: usize) -> f64 {
+        if self.pilots[p].crew == Some(Crew::Adjuster) {
             ADJUSTER_FEES
         } else {
             1.0
@@ -653,22 +653,22 @@ impl World {
 
     /// Progress toward a contract this shift, in the contract's own units
     /// (items delivered, credits banked, rivals wrecked, or 0/1 flags).
-    pub fn contract_progress(&self, k: &Contract) -> f64 {
+    pub fn contract_progress(&self, p: usize, k: &Contract) -> f64 {
         match k.kind {
-            ContractKind::Deliver => self
+            ContractKind::Deliver => self.pilots[p]
                 .delivered
                 .iter()
                 .find(|d| Some(d.0) == k.cargo)
                 .map_or(0.0, |d| f64::from(d.1)),
-            ContractKind::Bank => self.banked,
-            ContractKind::Rivals => f64::from(self.stats.jumpers),
+            ContractKind::Bank => self.pilots[p].banked,
+            ContractKind::Rivals => f64::from(self.pilots[p].stats.jumpers),
             // A clean shift counts what was banked, but only while the tug
             // has never been wrecked.
             ContractKind::Clean => {
-                if self.stats.deaths > 0 {
+                if self.pilots[p].stats.deaths > 0 {
                     0.0
                 } else {
-                    self.banked
+                    self.pilots[p].banked
                 }
             }
             ContractKind::Escort => f64::from(u8::from(self.escort_done)),
@@ -679,7 +679,7 @@ impl World {
     /// The belt, its condition, the crew and the contract for a career's
     /// shift (the phase 6 part of newGame and applyCrew). Runs before the
     /// field is populated, so belt multipliers apply to the first rocks.
-    pub(crate) fn setup_career_field(&mut self, c: &Career) {
+    pub(crate) fn setup_career_field(&mut self, p: usize, c: &Career) {
         let bd = c.belt.def();
         self.belt = c.belt;
         self.belt_value = bd.value;
@@ -695,22 +695,30 @@ impl World {
         // you start the shift already annoyed.
         let bad = tier(c.rep.rivals) == Tier::Bad;
         self.grudge = c.grudge.max(bd.grudge_floor) + if bad { 2.0 } else { 0.0 };
-        self.crew = c.crew;
-        if self.crew == Some(Crew::Rigger) {
-            self.mods.hook_range *= 1.3;
-            self.mods.reel *= 1.25;
+        self.pilot_from_career(p, c);
+        self.event_t = self.rng.range(EVENT_WINDOW.0, EVENT_WINDOW.1);
+        // The first shift is the quiet one: no field event.
+        self.event_done = c.shift == 1;
+    }
+
+    /// What pilot `p` brings from career `c` into any shift, alone or
+    /// shared: the hired crew (a rigger lengthens the hook and speeds the
+    /// reel) and a contract taken for this shift (an escort brings the
+    /// hauler). It draws no random numbers.
+    pub(crate) fn pilot_from_career(&mut self, p: usize, c: &Career) {
+        self.pilots[p].crew = c.crew;
+        if self.pilots[p].crew == Some(Crew::Rigger) {
+            self.pilots[p].mods.hook_range *= 1.3;
+            self.pilots[p].mods.reel *= 1.25;
         }
-        self.contract = c.contract.clone().filter(|_| c.contract_shift == c.shift);
-        if self
+        self.pilots[p].contract = c.contract.clone().filter(|_| c.contract_shift == c.shift);
+        if self.pilots[p]
             .contract
             .as_ref()
             .is_some_and(|k| k.kind == ContractKind::Escort)
         {
             self.escort_at = Some(ESCORT_CONTRACT_AT);
         }
-        self.event_t = self.rng.range(EVENT_WINDOW.0, EVENT_WINDOW.1);
-        // The first shift is the quiet one: no field event.
-        self.event_done = c.shift == 1;
     }
 
     /// After the field is seeded: a salvage glut's extra wrecks, and on
@@ -720,8 +728,8 @@ impl World {
         let (mut n, mut tries) = (0, 0);
         while n < extra && tries < 200 {
             tries += 1;
-            let x = self.rng.range(300.0, WORLD_W - 300.0);
-            let y = self.rng.range(300.0, WORLD_H - 300.0);
+            let x = self.rng.range(self.edge_lo + 300.0, self.edge_hi - 300.0);
+            let y = self.rng.range(self.edge_lo + 300.0, self.edge_hi - 300.0);
             if self.clear_spot(x, y, 160.0, 1100.0) {
                 let w = make_wreck(&mut self.rng, x, y, self.shift_no);
                 self.wrecks.push(w);
@@ -741,7 +749,9 @@ impl World {
         }
         self.clouds.retain(|c| c.t > 0.0);
         if self.clouds.is_empty() {
-            self.in_cloud = false;
+            for pl in &mut self.pilots {
+                pl.in_cloud = false;
+            }
             return;
         }
         let clouds = self.clouds.clone();
@@ -773,8 +783,22 @@ impl World {
                 }
             }
         });
-        let now_inside = self.ship.alive && inside(&self.ship.b);
-        if now_inside && !self.in_cloud {
+        for p in 0..self.pilots.len() {
+            self.with_hearer(Some(p), |w| w.irradiate(p, dt));
+        }
+    }
+
+    /// Pilot `p`'s tug in a radiation cloud: the shield drops and the hull
+    /// cooks. Any tug passing through is affected, whoever's reactor made
+    /// the cloud (owner's rule, 2026-11-11).
+    fn irradiate(&mut self, p: usize, dt: f64) {
+        let ship = self.pilots[p].ship.b;
+        let inside = self
+            .clouds
+            .iter()
+            .any(|c| js::dist(c.x, c.y, ship.x, ship.y) < RAD_CLOUD_RADIUS);
+        let now_inside = self.pilots[p].ship.alive && inside;
+        if now_inside && !self.pilots[p].in_cloud {
             self.radio_text(
                 Radio::Radiation,
                 true,
@@ -782,16 +806,16 @@ impl World {
                 "That's radiation, hotshot. Your shields are useless in there and the hull is cooking. Get out.".to_owned(),
             );
         }
-        self.in_cloud = now_inside;
-        if now_inside && self.ship.invuln <= 0.0 {
-            let delay = self.mods.shield_delay;
-            let burn = RAD_HULL_DPS * self.diff_damage * dt;
-            let s = &mut self.ship;
+        self.pilots[p].in_cloud = now_inside;
+        if now_inside && self.pilots[p].ship.invuln <= 0.0 {
+            let delay = self.pilots[p].mods.shield_delay;
+            let burn = RAD_HULL_DPS * self.pilots[p].diff_damage * dt;
+            let s = &mut self.pilots[p].ship;
             s.shield = 0.0;
             s.shield_delay_t = delay;
             s.hp -= burn;
             if s.hp <= 0.0 {
-                self.kill_ship();
+                self.kill_ship(p);
             }
         }
     }
@@ -800,10 +824,12 @@ impl World {
     /// escort, cores on the line, the ion storm, and the shift's event.
     pub(crate) fn update_events(&mut self, dt: f64) {
         self.update_radiation(dt);
-        let max_hp = self.mods.max_hp;
-        let s = &mut self.ship;
-        if s.alive && self.mods.hull_seal && s.hp < max_hp {
-            s.hp = max_hp.min(s.hp + 1.5 * dt);
+        // Each self-sealing hull mends itself.
+        for pl in &mut self.pilots {
+            let (max_hp, hull_seal, s) = (pl.mods.max_hp, pl.mods.hull_seal, &mut pl.ship);
+            if s.alive && hull_seal && s.hp < max_hp {
+                s.hp = max_hp.min(s.hp + 1.5 * dt);
+            }
         }
         if self.hauler.is_none() && self.escort_at.is_some_and(|t| self.t >= t) {
             self.spawn_hauler(false);
@@ -812,12 +838,15 @@ impl World {
         self.update_cores(dt);
         if self.ion_t > 0.0 {
             self.ion_t -= dt;
-            self.ship.shield = 0.0;
+            for pl in &mut self.pilots {
+                pl.ship.shield = 0.0;
+            }
             if self.ion_t <= 0.0 {
                 self.radio(Radio::IonClear, true, false);
             }
         }
-        if self.tut.is_some() || self.event_done || !self.ship.alive {
+        let anyone_flying = self.pilots.iter().any(|pl| pl.ship.alive);
+        if self.tut.is_some() || self.event_done || !anyone_flying {
             return;
         }
         self.event_t -= dt;
@@ -851,18 +880,20 @@ impl World {
             Event::Convoy => self.spawn_hauler(true),
             Event::Ion => {
                 self.ion_t = ION_STORM_TIME;
-                if self.ship.shield > 0.0 {
+                if self.pilots.iter().any(|pl| pl.ship.shield > 0.0) {
                     self.sfx(Sfx::ShieldDown);
                 }
-                self.ship.shield = 0.0;
+                for pl in &mut self.pilots {
+                    pl.ship.shield = 0.0;
+                }
                 self.radio(Radio::IonStorm, true, false);
             }
             Event::Derelict => {
                 let (px, py) = self.edge_point(1300.0);
                 let mut w = make_wreck(
                     &mut self.rng,
-                    px.clamp(250.0, WORLD_W - 250.0),
-                    py.clamp(250.0, WORLD_H - 250.0),
+                    px.clamp(self.edge_lo + 250.0, self.edge_hi - 250.0),
+                    py.clamp(self.edge_lo + 250.0, self.edge_hi - 250.0),
                     self.shift_no,
                 );
                 w.freighter = true;
@@ -884,8 +915,8 @@ impl World {
                 } else {
                     crate::consts::Variant::Brute
                 };
-                let x = px.clamp(40.0, WORLD_W - 40.0);
-                let y = py.clamp(40.0, WORLD_H - 40.0);
+                let x = px.clamp(self.edge_lo + 40.0, self.edge_hi - 40.0);
+                let y = py.clamp(self.edge_lo + 40.0, self.edge_hi - 40.0);
                 let mut j = self.new_jumper(x, y, Some(variant));
                 j.hp *= BOSS_HP_MUL;
                 j.hunter = true;
@@ -907,8 +938,8 @@ impl World {
         let (px, py) = self.edge_point(1600.0);
         self.hauler = Some(Hauler {
             b: Body {
-                x: px.clamp(60.0, WORLD_W - 60.0),
-                y: py.clamp(60.0, WORLD_H - 60.0),
+                x: px.clamp(self.edge_lo + 60.0, self.edge_hi - 60.0),
+                y: py.clamp(self.edge_lo + 60.0, self.edge_hi - 60.0),
                 vx: 0.0,
                 vy: 0.0,
                 r: 34.0,
@@ -940,9 +971,14 @@ impl World {
         h.dead = true;
         let paid = h.paid;
         self.escort_done = true;
-        self.rep_delta.bank += crate::career::REP_ESCORT_DONE_BANK;
+        // A finished escort counts for every pilot (owner's rule, 2026-11-10).
+        for pl in &mut self.pilots {
+            pl.rep_delta.bank += crate::career::REP_ESCORT_DONE_BANK;
+            if paid {
+                pl.banked += ESCORT_BONUS;
+            }
+        }
         if paid {
-            self.banked += ESCORT_BONUS;
             let text = format!("ESCORT +{} CR", crate::world::fmt_credits(ESCORT_BONUS));
             self.popup(BAY_X, BAY_Y - 60.0, text, Tint::Hazard);
         }
@@ -992,8 +1028,8 @@ impl World {
         self.wrecks[w].contents = LOCKED_CONTENTS.to_vec();
         let wb = self.wrecks[w].b;
         for _ in 0..60 {
-            let x = self.rng.range(250.0, WORLD_W - 250.0);
-            let y = self.rng.range(250.0, WORLD_H - 250.0);
+            let x = self.rng.range(self.edge_lo + 250.0, self.edge_hi - 250.0);
+            let y = self.rng.range(self.edge_lo + 250.0, self.edge_hi - 250.0);
             let near_hold = js::dist(x, y, wb.x, wb.y) < KEYCARD_MIN_DIST;
             if near_hold || js::dist(x, y, CARRIER_X, CARRIER_Y) < 800.0 {
                 continue;
@@ -1035,10 +1071,12 @@ impl World {
         self.radio(Radio::HoldSealed, false, true);
     }
 
-    /// A rogue core on the line rolls once a second to zap the tug.
+    /// A rogue core on a line rolls once a second to zap the tug towing it.
     fn update_cores(&mut self, dt: f64) {
-        let ids = self.chain.clone();
-        for id in ids {
+        let lines: Vec<(usize, u32)> = (0..self.pilots.len())
+            .flat_map(|p| self.pilots[p].chain.iter().map(move |&id| (p, id)))
+            .collect();
+        for (p, id) in lines {
             let Some(i) = self.item_index(id) else {
                 continue;
             };
@@ -1055,17 +1093,17 @@ impl World {
             if self.rng.next() >= CORE_ZAP_CHANCE {
                 continue;
             }
-            self.damage_ship(CORE_ZAP_DAMAGE);
+            self.damage_ship(p, CORE_ZAP_DAMAGE);
             self.burst(x, y, 6, Tint::Danger, 120.0);
             self.sfx(Sfx::BeamZap);
             self.radio(Radio::CoreZap, false, true);
         }
     }
 
-    /// A core reached the bay: stored for the shop, not sold here.
-    pub(crate) fn store_core(&mut self, i: usize) {
-        self.cores_banked += 1;
-        self.stats.items += 1;
+    /// A core reached the bay: stored in pilot `p`'s hold for the shop, not sold here.
+    pub(crate) fn store_core(&mut self, p: usize, i: usize) {
+        self.pilots[p].cores_banked += 1;
+        self.pilots[p].stats.items += 1;
         let (x, y) = (self.items[i].b.x, self.items[i].b.y);
         self.popup(x, y - 20.0, "CORE STORED".to_owned(), Tint::Danger);
         self.burst(x, y, 20, Tint::Danger, 180.0);

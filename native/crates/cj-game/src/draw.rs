@@ -276,9 +276,10 @@ impl Stars {
 
 /* ------------------------------ The field ------------------------------ */
 
-fn draw_boundary(t: f32) {
-    let (w, h) = (WORLD_W as f32, WORLD_H as f32);
-    let pts = [vec2(0.0, 0.0), vec2(w, 0.0), vec2(w, h), vec2(0.0, h)];
+/// The field's dashed edge, from `lo` to `hi` on both axes.
+fn draw_boundary(t: f32, lo: f64, hi: f64) {
+    let (lo, hi) = (lo as f32, hi as f32);
+    let pts = [vec2(lo, lo), vec2(hi, lo), vec2(hi, hi), vec2(lo, hi)];
     dashed(
         &pts,
         true,
@@ -858,18 +859,19 @@ fn draw_shots(look: &Look, w: &World) {
     });
 }
 
-/// The tow line. A taut link is straight and brightens with tension; a
-/// slack link sags into a curve so the rope reads as rope.
-fn draw_cable(w: &World) {
-    let s = &w.ship;
-    if !s.alive || w.chain.is_empty() {
+/// Pilot `p`'s tow line, from its tug's stern down its chain. A taut link
+/// is straight and brightens with tension; a slack link sags into a curve
+/// so the rope reads as rope.
+fn draw_cable(w: &World, p: usize) {
+    let s = &w.pilots[p].ship;
+    if !s.alive || w.pilots[p].chain.is_empty() {
         return;
     }
     let mut a = {
         let (x, y) = s.stern();
         v(x, y)
     };
-    for (i, id) in w.chain.iter().enumerate() {
+    for (i, id) in w.pilots[p].chain.iter().enumerate() {
         let Some(it) = w.items.iter().find(|it| it.id == *id) else {
             continue;
         };
@@ -891,7 +893,7 @@ fn draw_cable(w: &World) {
             vec![a, b]
         };
         let tns = it.tension as f32;
-        // (Drawn only for your own chain; rivals draw their line in draw_jumper.)
+        // (Every pilot's chain; rivals draw their line in draw_jumper.)
         glow_stroke(
             &pts,
             false,
@@ -903,9 +905,9 @@ fn draw_cable(w: &World) {
     }
 }
 
-/// The stock Mk I tug (drawTug with the cannon mounted and no other parts).
-fn draw_ship(look: &Look, w: &World, t: f32, rng: &mut Rng, paint: Option<(u32, u32)>) {
-    let s = &w.ship;
+/// Pilot `p`'s tug (drawTug with its mounted parts) and shield.
+fn draw_ship(look: &Look, w: &World, p: usize, t: f32, rng: &mut Rng, paint: Option<(u32, u32)>) {
+    let s = &w.pilots[p].ship;
     if !s.alive || (s.invuln > 0.0 && ((t * 12.0).floor() as i64) % 2 == 1) {
         return; // respawn flicker
     }
@@ -922,12 +924,12 @@ fn draw_ship(look: &Look, w: &World, t: f32, rng: &mut Rng, paint: Option<(u32, 
         missiles: Some(s.missiles),
         paint,
     };
-    tug::draw_tug(look, &f, &w.mods, &st, rng);
+    tug::draw_tug(look, &f, &w.pilots[p].mods, &st, rng);
     tug::draw_shield(
         s.b.x as f32,
         s.b.y as f32,
         s.shield,
-        w.mods.shield_max,
+        w.pilots[p].mods.shield_max,
         s.shield_flash,
         s.shield_delay_t,
         t,
@@ -970,11 +972,11 @@ fn draw_hook_target(
     settings: &Settings,
     scale: f32,
 ) {
-    let Some(i) = w.find_hook_target() else {
+    let Some(i) = w.find_hook_target(0) else {
         return;
     };
     let it = &w.items[i];
-    let too_heavy = w.tow_mass() + it.b.mass > w.mods.winch_cap;
+    let too_heavy = w.tow_mass(0) + it.b.mass > w.me().mods.winch_cap;
     let c = if too_heavy { col::DANGER } else { col::CABLE };
     let p = v(it.b.x, it.b.y);
     let r = it.b.r as f32;
@@ -995,7 +997,7 @@ fn draw_hook_target(
     let line1 = if too_heavy {
         "TOO HEAVY".to_owned()
     } else {
-        format!("{key} · {}", it.label.to_uppercase())
+        format!("{key} · {}", it.label().to_uppercase())
     };
     text_centered(
         &line1,
@@ -1218,7 +1220,7 @@ pub fn render(sc: Scene) {
     let (cx, cy) = (w.cam.x, w.cam.y);
     let visible = |x: f64, y: f64, r: f64| (x - cx).abs() < hw + r && (y - cy).abs() < hh + r;
 
-    draw_boundary(t);
+    draw_boundary(t, w.edge_lo, w.edge_hi);
     draw_carrier(sc.look, t, scale);
     // The refinery's pull field can be larger than the screen.
     if let Some(r) = &w.refinery {
@@ -1242,7 +1244,9 @@ pub fn render(sc: Scene) {
         }
     }
     if sc.show_tug {
-        draw_cable(w);
+        for p in 0..w.pilots.len() {
+            draw_cable(w, p);
+        }
     }
     for it in &w.items {
         if visible(it.b.x, it.b.y, it.b.r) {
@@ -1299,7 +1303,16 @@ pub fn render(sc: Scene) {
         }
     }
     if sc.show_tug {
-        draw_ship(sc.look, w, t, sc.rng, sc.paint);
+        // Every pilot's tug: yours in your paint job, each other pilot in
+        // its slot's colour.
+        for p in 0..w.pilots.len() {
+            let paint = if p == w.view_pilot {
+                sc.paint
+            } else {
+                Some(crate::online::slot_paint(p))
+            };
+            draw_ship(sc.look, w, p, t, sc.rng, paint);
+        }
         draw_partner(sc.look, w, t, sc.rng, scale);
         crate::foes::net_on_ship(sc.look, w, t, sc.device, sc.settings, scale);
         crate::foes::cuff_meter(sc.look, w, t, scale);
@@ -1361,13 +1374,13 @@ pub fn render(sc: Scene) {
         }
     }
     // Under attack: a red edge pulses around the screen while the warning holds.
-    if w.under_attack_t > 0.0 && sc.playing && !w.shift_over {
+    if w.me().under_attack_t > 0.0 && sc.playing && !w.shift_over {
         let pulse = if crate::look::reduce_motion() {
             0.18
         } else {
             0.3 * (0.5 + 0.5 * (t * 10.0).sin())
         };
-        let a = pulse * (w.under_attack_t as f32).min(1.0);
+        let a = pulse * (w.me().under_attack_t as f32).min(1.0);
         draw_rectangle_lines(
             0.0,
             0.0,
@@ -1378,7 +1391,7 @@ pub fn render(sc: Scene) {
         );
     }
     // A red wash for a moment after the hull takes a hit.
-    if w.ship.flash > 0.0 && sc.playing && !w.shift_over {
+    if w.me().ship.flash > 0.0 && sc.playing && !w.shift_over {
         draw_rectangle(
             0.0,
             0.0,
@@ -1397,8 +1410,8 @@ fn draw_night(w: &World, view: (f32, f32)) {
     use cj_sim::field::{NIGHT_FADE, NIGHT_LIGHT};
     let (vw, vh) = view;
     let z = w.cam.zoom as f32;
-    let (sx, sy) = if w.ship.alive {
-        (w.ship.b.x, w.ship.b.y)
+    let (sx, sy) = if w.me().ship.alive {
+        (w.me().ship.b.x, w.me().ship.b.y)
     } else {
         (BAY_X, BAY_Y)
     };
@@ -1441,6 +1454,7 @@ fn draw_partner(look: &Look, w: &World, t: f32, rng: &mut Rng, scale: f32) {
     use cj_sim::parts::{Levels, Part};
     let Some(p) = &w.p2 else { return };
     let tail = w
+        .me()
         .chain
         .last()
         .and_then(|id| w.items.iter().find(|it| it.id == *id));

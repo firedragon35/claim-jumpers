@@ -14,6 +14,7 @@ use crate::entities::{make_crab, make_rock, Body, Bullet, CrabState};
 use crate::events::{Event, Radio, Sfx, Tint};
 use crate::items::ItemType;
 use crate::js;
+use crate::world::Blame;
 use crate::world::{fmt_credits, World};
 use std::f64::consts::TAU;
 
@@ -35,12 +36,15 @@ impl World {
             if b.life <= 0.0 {
                 continue;
             }
-            if b.laser {
-                self.fire_laser(b);
-            } else if self.bullet_hit(b) {
-                b.life = 0.0;
-                self.emit(Event::Hit { x: b.x, y: b.y });
-            }
+            // A round answers to whoever fired it.
+            self.with_blame(b.blame, |w| {
+                if b.laser {
+                    w.fire_laser(b);
+                } else if w.bullet_hit(b) {
+                    b.life = 0.0;
+                    w.emit(Event::Hit { x: b.x, y: b.y });
+                }
+            });
         }
         bullets.retain(|b| b.life > 0.0);
         // Nothing fires the cannon during this pass, but keep any that did.
@@ -52,18 +56,24 @@ impl World {
             b.x += b.vx * dt;
             b.y += b.vy * dt;
             b.life -= dt;
-            let s = &self.ship;
-            if s.alive && b.life > 0.0 && js::dist(b.x, b.y, s.b.x, s.b.y) < s.b.r + 3.0 {
-                let open = s.invuln <= 0.0;
+            // The first tug in its path takes the bolt, whoever it was aimed
+            // at: rival and law fire both hit bystanders in the crossfire
+            // (owner's rule, 2026-11-11).
+            let struck = (0..self.pilots.len()).find(|&p| {
+                let s = &self.pilots[p].ship;
+                s.alive && b.life > 0.0 && js::dist(b.x, b.y, s.b.x, s.b.y) < s.b.r + 3.0
+            });
+            if let Some(p) = struck {
+                let open = self.pilots[p].ship.invuln <= 0.0;
                 if open {
                     self.sfx(Sfx::ZapHit);
-                    self.under_attack();
+                    self.under_attack(p);
                 }
                 // Sheriff stun bolts hit softer but leave the tug sluggish.
                 if b.stun && open {
-                    self.ship.stun_t = crate::opposition::STUN_TIME;
+                    self.pilots[p].ship.stun_t = crate::opposition::STUN_TIME;
                 }
-                self.damage_ship(b.dmg);
+                self.damage_ship(p, b.dmg);
                 b.life = 0.0;
                 let tint = if b.swat || b.rogue {
                     Tint::Danger
@@ -127,8 +137,8 @@ impl World {
                     b.life = 0.0;
                     self.burst(b.x, b.y, 5, Tint::Danger, 100.0);
                     if self.item_hit(i, 1.0) {
-                        // Enemy fire, so the blast isn't the player's.
-                        self.prime_reactor_as(i, true);
+                        // Enemy fire, so the blast isn't a player's.
+                        self.prime_reactor_by(i, Blame::Nobody);
                     }
                     break;
                 }
@@ -169,6 +179,21 @@ impl World {
 
     fn bullet_hit(&mut self, b: &Bullet) -> bool {
         let dmg = b.dmg;
+        // Another player's tug stops the round. Whether it also hurts is the
+        // permission rule's call, and until PvP it never does (owner,
+        // 2026-11-11). Alone in the field there is no other tug to stop it.
+        if let Some(by) = self.blamed() {
+            let tug = (0..self.pilots.len()).find(|&p| {
+                let s = &self.pilots[p].ship;
+                p != by && s.alive && hits(b.x, b.y, &s.b, 3.0)
+            });
+            if let Some(p) = tug {
+                if self.can_hurt_pilot(Some(by), p) {
+                    self.damage_ship(p, dmg);
+                }
+                return true;
+            }
+        }
         if let Some(i) = (0..self.rocks.len())
             .find(|&i| !self.rocks[i].dead && hits(b.x, b.y, &self.rocks[i].b, 0.0))
         {
@@ -185,8 +210,9 @@ impl World {
             .find(|&i| !self.jumpers[i].dead && hits(b.x, b.y, &self.jumpers[i].b, 4.0))
         {
             self.hurt_jumper(i, dmg, None);
-            if self.jumpers[i].dead && !b.sentry {
-                self.habit_kills.cannon += 1.0;
+            let cannon_kill = self.jumpers[i].dead && !b.sentry;
+            if let Some(by) = self.blamed().filter(|_| cannon_kill) {
+                self.pilots[by].habit_kills.cannon += 1.0;
             }
             return true;
         }
@@ -408,6 +434,8 @@ impl World {
         let smash_braced =
             by_item.is_some() && self.rival_counter == Some(crate::career::Habit::Smash);
         let n = if smash_braced { n * HABIT_SMASH_MUL } else { n };
+        // Whoever answers for this hit takes the credit if it kills.
+        let by = self.blamed();
         let jm = &mut self.jumpers[j];
         if jm.dead {
             return;
@@ -419,8 +447,8 @@ impl World {
         }
         jm.dead = true;
         let (x, y, vx, vy) = (jm.b.x, jm.b.y, jm.b.vx, jm.b.vy);
-        if by_item.is_some() && !self.no_blame {
-            self.habit_kills.smash += 1.0;
+        if let Some(by) = by.filter(|_| by_item.is_some()) {
+            self.pilots[by].habit_kills.smash += 1.0;
         }
         let variant = jm.variant;
         let hook = jm.hook.take();
@@ -430,16 +458,16 @@ impl World {
         let before = self.rival_stage();
         // A rogue sentry's kill isn't yours: no tally, grudge, standing or
         // bounty.
-        if !self.no_blame {
-            self.stats.jumpers += 1;
-            self.rep_delta.rivals += crate::career::REP_RIVAL_KILL;
+        if let Some(by) = by {
+            self.pilots[by].stats.jumpers += 1;
+            self.pilots[by].rep_delta.rivals += crate::career::REP_RIVAL_KILL;
             // The fixer smooths things over: half the grudge per kill.
-            self.grudge += if self.crew == Some(crate::field::Crew::Fixer) {
+            self.grudge += if self.pilots[by].crew == Some(crate::field::Crew::Fixer) {
                 0.5
             } else {
                 1.0
             };
-            let k = &mut self.kills;
+            let k = &mut self.pilots[by].kills;
             match variant {
                 _ if boss.is_some() => {}
                 Variant::Skiff => k.skiff += 1,
@@ -455,8 +483,8 @@ impl World {
                 variant.def().bounty
             };
             if bounty > 0.0 {
-                self.banked += bounty;
-                self.bounties += bounty;
+                self.pilots[by].banked += bounty;
+                self.pilots[by].bounties += bounty;
                 self.popup(
                     x,
                     y - 60.0,
@@ -488,10 +516,10 @@ impl World {
         // Smashing one with cargo scares off its wingmates for a moment.
         // A boss crew pays its bounty straight into this shift's earnings,
         // and its fall scares the other crews back a stage.
-        if let Some(b) = boss.as_ref().filter(|_| !self.no_blame) {
-            self.banked += b.bounty;
-            self.bounties += b.bounty;
-            self.kills.boss += 1;
+        if let (Some(b), Some(by)) = (boss.as_ref(), by) {
+            self.pilots[by].banked += b.bounty;
+            self.pilots[by].bounties += b.bounty;
+            self.pilots[by].kills.boss += 1;
             self.popup(
                 x,
                 y - 60.0,
@@ -500,9 +528,9 @@ impl World {
             );
             self.sfx(Sfx::Jackpot);
             self.grudge = crate::field::grudge_one_stage_down(self.grudge);
-            self.rep_delta.rivals += crate::career::REP_BOSS_KILL_RIVALS;
+            self.pilots[by].rep_delta.rivals += crate::career::REP_BOSS_KILL_RIVALS;
             self.boss_down = Some(b.name);
-            self.emit(Event::Unlock("boss"));
+            self.emit(Event::Unlock(crate::events::Achievement::Boss));
             self.emit(Event::HitStop(crate::consts::HITSTOP_BOSS));
             self.emit(Event::SlowMo(crate::consts::SLOWMO_BOSS));
             self.emit(Event::Highlight {
@@ -516,7 +544,7 @@ impl World {
             );
             self.radio_text(Radio::BossDown, true, false, text);
         }
-        if smashed && !self.no_blame {
+        if smashed && by.is_some() {
             self.scatter_rivals(j);
         }
         // Their wreckage is salvage too: tow it home.
@@ -537,8 +565,8 @@ impl World {
         if smashed {
             self.popup(x, y - 24.0, "SMASHED".to_owned(), Tint::Cable);
             self.radio(Radio::Smash, true, false);
-            if !self.no_blame {
-                self.emit(Event::Unlock("smash"));
+            if by.is_some() {
+                self.emit(Event::Unlock(crate::events::Achievement::Smash));
                 self.emit(Event::HitStop(crate::consts::HITSTOP_SMASH));
                 self.emit(Event::Highlight {
                     score: 700.0,
@@ -553,16 +581,16 @@ impl World {
     /// Reactors blow on a short fuse so chain reactions ripple instead of
     /// recursing.
     pub fn prime_reactor(&mut self, i: usize) {
-        let no_blame = self.no_blame;
-        self.prime_reactor_as(i, no_blame);
+        let blame = self.blame;
+        self.prime_reactor_by(i, blame);
     }
 
-    /// Prime reactor `i`; `no_blame` marks a blast the player didn't set off.
-    pub fn prime_reactor_as(&mut self, i: usize, no_blame: bool) {
+    /// Prime reactor `i`; `by` answers for its blast.
+    pub fn prime_reactor_by(&mut self, i: usize, by: Blame) {
         let it = &mut self.items[i];
         if !it.dead && it.fuse <= 0.0 {
             it.fuse = REACTOR_FUSE;
-            it.no_blame = no_blame;
+            it.primed_by = by;
         }
     }
 
@@ -572,13 +600,11 @@ impl World {
             return;
         }
         let (x, y) = (self.items[i].b.x, self.items[i].b.y);
-        let no_blame = self.items[i].no_blame;
+        let by = self.items[i].primed_by;
         self.remove_item(i);
-        if no_blame {
-            self.without_blame(|w| w.explode(x, y, REACTOR_BLAST_RADIUS, REACTOR_BLAST_DAMAGE));
-        } else {
-            self.explode(x, y, REACTOR_BLAST_RADIUS, REACTOR_BLAST_DAMAGE);
-        }
+        self.with_blame(by, |w| {
+            w.explode(x, y, REACTOR_BLAST_RADIUS, REACTOR_BLAST_DAMAGE)
+        });
         // Never over the bay, or a blast could shut down repairs for 25 s.
         if js::dist(x, y, BAY_X, BAY_Y) > BAY_REPAIR_RANGE + RAD_CLOUD_RADIUS {
             self.clouds.push(crate::entities::RadCloud {
@@ -728,11 +754,17 @@ impl World {
             }
             i += 1;
         }
-        if self.ship.alive {
-            let f = falloff(&self.ship.b);
+        // Every tug in range is shoved and hurt, unless the blast is another
+        // player's doing.
+        let by = self.blamed();
+        for p in 0..self.pilots.len() {
+            if !self.pilots[p].ship.alive || !self.can_hurt_pilot(by, p) {
+                continue;
+            }
+            let f = falloff(&self.pilots[p].ship.b);
             if f > 0.0 {
-                shove(&mut self.ship.b, f);
-                self.damage_ship(ship_damage * f);
+                shove(&mut self.pilots[p].ship.b, f);
+                self.damage_ship(p, ship_damage * f);
             }
         }
         self.explosion_fx(x, y, radius, Tint::Reactor);
@@ -742,5 +774,42 @@ impl World {
             strength: 1.0,
             ms: 400.0,
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::entities::Bullet;
+    use crate::rng::Rng;
+    use crate::world::{Blame, Pilot, World};
+
+    /// One player's round stops at another player's tug and leaves its
+    /// shield and hull alone (no damage between players until PvP).
+    #[test]
+    fn a_players_round_stops_at_another_tug_without_hurting_it() {
+        let mut w = World::empty(Rng::Constant(0.5), (1280.0, 720.0));
+        w.pilots.push(Pilot::new(w.pilots[0].mods.clone()));
+        let (x, y) = (w.pilots[0].ship.b.x, w.pilots[0].ship.b.y);
+        w.pilots[1].ship.b.x = x + 60.0;
+        w.pilots[1].ship.b.y = y;
+        w.pilots[1].ship.invuln = 0.0;
+        let before = (w.pilots[1].ship.hp, w.pilots[1].ship.shield);
+        w.bullets.push(Bullet {
+            x: x + 40.0,
+            y,
+            vx: 600.0,
+            life: 1.0,
+            dmg: 5.0,
+            blame: Blame::Pilot(0),
+            ..Bullet::default()
+        });
+        for _ in 0..6 {
+            w.update_bullets(1.0 / 60.0);
+        }
+        assert!(
+            w.bullets.is_empty(),
+            "the round landed instead of flying on"
+        );
+        assert_eq!((w.pilots[1].ship.hp, w.pilots[1].ship.shield), before);
     }
 }
