@@ -397,6 +397,77 @@ fn each_career_is_settled_saved_and_kept_across_a_restart() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// Regression: a saved career was loaded by player id alone, so after a
+/// restart (or once the server had forgotten a player who left) any secret
+/// claimed it. Now only the secret that first claimed it may.
+#[test]
+fn a_saved_career_refuses_the_wrong_secret_after_a_restart() {
+    let dir = std::env::temp_dir().join(format!("cj-session-secret-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let config = |seed| Config {
+        careers: Some(dir.clone()),
+        seed,
+        ..config_for(4)
+    };
+    let mut s = Server::new(config(42));
+    let mut a = Bot::join(&mut s, 1, 1);
+    a.hello(VERSION, 7);
+    steps(&mut s, &mut [&mut a], 3);
+    s.world.pilots[0].banked = 1500.0;
+    end_shift(&mut s);
+    steps(&mut s, &mut [&mut a], 3);
+    let saved = cj_sim::career::Career::from_json(&a.settled[0].career).expect("a career");
+
+    drop(s);
+    let mut again = Server::new(config(43));
+    let mut thief = Bot::join(&mut again, 1, 1);
+    thief.hello(VERSION, 8);
+    steps(&mut again, &mut [&mut thief], 3);
+    assert_eq!(thief.rejected, Some(Reject::WrongSecret));
+    assert!(thief.pilot.is_none() && !thief.waiting);
+    assert!(
+        again.world.pilots[0].career.is_none(),
+        "nobody got the career"
+    );
+
+    let mut owner = Bot::join(&mut again, 2, 1);
+    owner.hello(VERSION, 7);
+    steps(&mut again, &mut [&mut owner], 3);
+    assert_eq!(owner.pilot, Some(0));
+    let kept = again.world.pilots[0].career.as_ref().expect("a career");
+    assert_eq!((kept.shift, kept.wallet), (saved.shift, saved.wallet));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Regression: a player who reconnected during the break got their pilot
+/// back but not their career, so their shop and belt vote stayed shut until
+/// another shift had been flown.
+#[test]
+fn a_player_back_during_the_break_gets_their_career_to_shop_with() {
+    let mut s = server(4);
+    let mut a = Bot::join(&mut s, 1, 1);
+    a.hello(VERSION, 7);
+    let mut b = Bot::join(&mut s, 2, 2);
+    b.hello(VERSION, 7);
+    steps(&mut s, &mut [&mut a, &mut b], 3);
+    end_shift(&mut s);
+    steps(&mut s, &mut [&mut a, &mut b], 3);
+    assert!(s.in_break());
+    s.renet.disconnect_local_client(2, &mut b.client);
+    steps(&mut s, &mut [&mut a], 3);
+    let mut back = Bot::join(&mut s, 3, 2);
+    back.hello(VERSION, 7);
+    steps(&mut s, &mut [&mut a, &mut back], 3);
+    assert_eq!(back.pilot, Some(1), "the same pilot as before");
+    let reply = back.shop.last().expect("their career, unasked");
+    assert!(reply.ok);
+    let career = cj_sim::career::Career::from_json(&reply.career).expect("a career");
+    assert!(
+        career.conditions.is_some(),
+        "the break's conditions are set"
+    );
+}
+
 /// The shop opens only in the break and checks each request against the
 /// player's career; belt votes pick the next shift's belt among those
 /// everyone's tug can fly, with its conditions rolled for the break.

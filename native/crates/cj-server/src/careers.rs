@@ -9,11 +9,19 @@
 //! repairs what it can. A file that can't be loaded is copied aside as
 //! `<player>.bad.json` before the fresh career replaces it.
 //!
+//! Beside each career, `<player>.key` holds a SHA-256 fingerprint of the
+//! secret that first claimed it, so only that player can load it again,
+//! even after the server restarts or has forgotten them. Only the
+//! fingerprint is kept: each install uses one secret on every server it
+//! joins, so a host who stored the secret itself could pass as that player
+//! elsewhere.
+//!
 //! With no folder (tests, or one that can't be created) careers last as
 //! long as the server runs.
 
 use cj_net::PlayerId;
 use cj_sim::career::Career;
+use sha2::{Digest, Sha256};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
@@ -88,6 +96,50 @@ impl CareerStore {
             .and_then(|()| std::fs::rename(&tmp, dir.join(format!("{stem}.json"))))
             .map_err(|e| format!("couldn't save career {stem}: {e}"))
     }
+
+    /// Whether `secret` may load player `id`'s career, and a line for the
+    /// log when something went wrong.
+    ///
+    /// The first secret to claim an id is bound to it: a new player, or a
+    /// career saved before fingerprints were kept (1.4.2 and earlier), whose
+    /// owner is the first to come back. A fingerprint that can't be written
+    /// still lets the player in, unprotected until it can be. One that is
+    /// there but can't be read refuses them, so a disk fault never opens a
+    /// career to anyone.
+    pub fn claim(&self, id: &PlayerId, secret: &[u8; 16]) -> (bool, Option<String>) {
+        let Some(dir) = &self.dir else {
+            // In memory nothing outlives the player's own connection.
+            return (true, None);
+        };
+        let stem = file_stem(id);
+        let path = dir.join(format!("{stem}.key"));
+        let print = fingerprint(secret);
+        match std::fs::read_to_string(&path) {
+            Ok(saved) => (saved.trim() == print, None),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                let tmp = dir.join(format!("{stem}.key.tmp"));
+                let kept = write_flushed(&tmp, &print).and_then(|()| std::fs::rename(&tmp, &path));
+                let why = kept
+                    .err()
+                    .map(|e| format!("couldn't save the key for career {stem}: {e}"));
+                (true, why)
+            }
+            Err(e) => (
+                false,
+                Some(format!("couldn't read the key for career {stem}: {e}")),
+            ),
+        }
+    }
+}
+
+/// A secret's SHA-256 as 64 hex digits. The secret is 16 random bytes, not
+/// something a person chose, so a plain hash can't be guessed backwards and
+/// a slow password hash would add nothing.
+fn fingerprint(secret: &[u8; 16]) -> String {
+    Sha256::digest(secret)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 #[cfg(test)]
@@ -141,5 +193,58 @@ mod tests {
         let (store, _) = CareerStore::open(None);
         assert!(store.save(&[1; 16], &Career::new(Mode::Standard)).is_ok());
         assert!(store.load(&[1; 16]).0.is_none());
+        assert!(store.claim(&[1; 16], &[9; 16]).0);
+    }
+
+    /// The first secret to claim a career is the only one that may load it
+    /// after that; the file holds its fingerprint, never the secret.
+    #[test]
+    fn a_career_belongs_to_the_secret_that_first_claimed_it() {
+        let d = folder("claim");
+        let (store, _) = CareerStore::open(Some(d.clone()));
+        let (ok, why) = store.claim(&[1; 16], &[7; 16]);
+        assert!(ok && why.is_none(), "a new player binds their secret");
+        assert!(store.claim(&[1; 16], &[7; 16]).0, "and comes back with it");
+        assert!(
+            !store.claim(&[1; 16], &[8; 16]).0,
+            "another secret is refused"
+        );
+        assert!(
+            store.claim(&[2; 16], &[8; 16]).0,
+            "other players are their own"
+        );
+        let saved =
+            std::fs::read_to_string(d.join(format!("{}.key", file_stem(&[1; 16])))).expect("kept");
+        assert_eq!(saved, fingerprint(&[7; 16]));
+        assert_ne!(saved, file_stem(&[7; 16]), "not the secret itself");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// A career saved before keys were kept goes to whoever claims it first,
+    /// and is theirs from then on.
+    #[test]
+    fn an_older_career_is_bound_by_its_first_claim() {
+        let d = folder("old");
+        let (store, _) = CareerStore::open(Some(d.clone()));
+        store
+            .save(&[4; 16], &Career::new(Mode::Standard))
+            .expect("saved");
+        assert!(store.claim(&[4; 16], &[5; 16]).0);
+        assert!(!store.claim(&[4; 16], &[6; 16]).0);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// A key that is there but can't be read refuses the player rather than
+    /// letting anyone in.
+    #[test]
+    fn an_unreadable_key_refuses_the_claim() {
+        let d = folder("unreadable");
+        let (store, _) = CareerStore::open(Some(d.clone()));
+        // A folder where the key should be: it exists but can't be read.
+        std::fs::create_dir_all(d.join(format!("{}.key", file_stem(&[3; 16])))).expect("made");
+        let (ok, why) = store.claim(&[3; 16], &[3; 16]);
+        assert!(!ok);
+        assert!(why.is_some_and(|w| w.contains("couldn't read")));
+        let _ = std::fs::remove_dir_all(&d);
     }
 }

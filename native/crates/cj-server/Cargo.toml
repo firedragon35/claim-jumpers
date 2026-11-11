@@ -2,7 +2,7 @@
 name = "cj-server"
 # Kept equal to cj-game's version (check.sh verifies it): a client and a
 # server must run the same game version to play together.
-version = "1.4.2"
+version = "1.4.3"
 description = "Claim Jumpers authoritative multiplayer server: the session library and a headless binary."
 edition.workspace = true
 rust-version.workspace = true
@@ -20,3 +20,6 @@ serde = { version = "1.0.229", features = ["derive"] }
 # The UDP transport for the headless binary (the game's host uses renet's
 # in-memory local client instead).
 renet_netcode = "2.0.1"
+# Fingerprints of player secrets, kept beside their careers (owner approved
+# 2026-11-11). 0.10 shares its building blocks with renet_netcode's crypto.
+sha2 = "0.10.9"

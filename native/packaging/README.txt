@@ -71,7 +71,8 @@ Your career, records, settings and leaderboard are saved automatically in:
     %APPDATA%\ClaimJumpers
 
 (paste that into the File Explorer address bar to open it). mp_id.txt in
-that folder is how servers recognise you when you come back. When you host,
+that folder is how servers recognise you when you come back, and only it
+can load your career on a server, so keep it to yourself. When you host,
 the players' careers on your server are kept in its servers\hosted folder.
 To back up or move your progress, copy that folder. To play from a
 different folder, set the CLAIM_JUMPERS_DATA environment variable to it.

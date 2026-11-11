@@ -942,7 +942,19 @@ impl Server {
             };
             return self.reject(id, why);
         }
-        let slot = match self.players.iter().position(|p| p.id == player) {
+        let known = self.players.iter().position(|p| p.id == player);
+        // A player the server isn't holding (new, back after a shift away,
+        // or back after a restart) must hold the secret their saved career
+        // was claimed with. Checked only once there is room, so a full
+        // server writes nothing for strangers.
+        if known.is_none() && !self.full() {
+            let (ok, why) = self.careers.claim(&player, &secret);
+            self.log.extend(why);
+            if !ok {
+                return self.reject(id, Reject::WrongSecret);
+            }
+        }
+        let slot = match known {
             Some(s) if self.players[s].secret != secret => {
                 return self.reject(id, Reject::WrongSecret)
             }
@@ -1022,6 +1034,17 @@ impl Server {
             from_tick: self.shift_start,
         };
         self.send(id, channel::RELIABLE, &msg);
+        // Back during the break, the career sent when it began went to the
+        // old connection, and the client opens its shop (and belt vote)
+        // only once it has one. The break already prepared its offers.
+        if self.in_break() {
+            let shop = ServerMsg::Shop(cj_net::ShopReply {
+                ok: true,
+                msg: String::new(),
+                career: self.players[slot].career.to_json(),
+            });
+            self.send(id, channel::RELIABLE, &shop);
+        }
     }
 
     /// The pilot client `id` flies, if it has been welcomed.

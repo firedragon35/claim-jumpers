@@ -7,6 +7,28 @@ and the port uses [Semantic Versioning](https://semver.org/) as defined in
 
 ## [Unreleased]
 
+## [1.4.3] - 2026-11-11
+
+More online fixes from the independent audit.
+
+### Fixed
+
+- A server loaded a saved career by the player's id alone, so once it
+  had restarted, or had forgotten a player who left, anyone using that id
+  with any secret could take over the career. Each career on a server now
+  belongs to the secret that first claimed it, and any other is refused.
+  The server keeps only a SHA-256 fingerprint of the secret
+  (`<player>.key` beside the career), never the secret itself. Careers
+  saved by 1.4.2 and earlier keep working: the first player back claims
+  them.
+- Online, a player who reconnected during the break between shifts got
+  their tug back but couldn't shop or vote for the next belt until they
+  had flown another shift. They now get their career as they return.
+
+### Changed
+
+- The server uses the `sha2` crate (RustCrypto) for those fingerprints.
+
 ## [1.4.2] - 2026-11-11
 
 Online fixes from an independent audit: one player's shift no longer
