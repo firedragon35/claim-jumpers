@@ -5,6 +5,22 @@ format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the port uses [Semantic Versioning](https://semver.org/) as defined in
 [CLAUDE.md](CLAUDE.md#versioning).
 
+## [Unreleased]
+
+Ships with 1.4.0 (owner decision 2026-11-11).
+
+### Added
+
+- A copyright notice: "Copyright © 2026, 2027 Neil Bruggeman. All rights
+  reserved." on the opening screen, in the player README and on the
+  exe's Details tab.
+- Play-test builds stop working on 1 June 2027. From then on the game
+  shows only a screen saying the build has expired, and asks the player
+  to get a newer one; saves are left untouched. `--smoke` fails past
+  that date. The date comes from network time (`time.google.com`), so
+  setting the PC's clock back doesn't help; offline, the PC's clock is
+  used.
+
 ## [1.3.0] - 2026-11-11
 
 Online co-op: up to 20 pilots share one shift.

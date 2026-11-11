@@ -4,6 +4,14 @@ CLAIM JUMPERS {VERSION} for Windows
 Tow salvage, fight rival crews, and pay off the loan on your tug before the
 bank repossesses it. Five-minute shifts, one career.
 
+Copyright (c) 2026, 2027 Neil Bruggeman. All rights reserved.
+
+This is a play-test build. It stops working on 1 June 2027; ask for a newer
+build to keep playing. Your career and settings are kept for it. To check
+the date, the game asks Google's time server (time.google.com) for the time
+when it starts; nothing about you or your game is sent. Offline, it uses
+your PC's clock.
+
 
 REQUIREMENTS
 ------------

@@ -3,13 +3,23 @@
 //! Windows SDK's rc.exe (installed with the MSVC build tools) and linked
 //! in as a .res file, so no extra crate is needed. Without rc.exe the game
 //! still builds, just without the file icon (a warning says so).
+//!
+//! It also hands the copyright notice to the game as `CJ_COPYRIGHT`, so the
+//! game's screens and the Details tab show the same text.
 
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+/// The copyright notice, shown on the game's opening screen and as the
+/// exe's LegalCopyright (owner decision 2026-11-11).
+const COPYRIGHT: &str = "Copyright \u{a9} 2026, 2027 Neil Bruggeman. All rights reserved.";
+
 fn main() {
+    // Set before the Windows-only part below, so every build of the game
+    // has the notice, with or without rc.exe.
+    println!("cargo:rustc-env=CJ_COPYRIGHT={COPYRIGHT}");
     let manifest = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("set by cargo"));
     let icon = manifest.join("../../assets/icon/claim-jumpers.ico");
     println!("cargo:rerun-if-changed=build.rs");
@@ -27,7 +37,9 @@ fn main() {
     let (rc_file, res) = (out.join("claim-jumpers.rc"), out.join("claim-jumpers.res"));
     fs::write(&rc_file, resource_script(&icon)).expect("write the .rc file");
     let status = Command::new(&rc)
-        .args(["/nologo", "/fo"])
+        // The script is written as UTF-8 (the notice has a "©"); without
+        // /c65001, rc.exe reads it in the PC's ANSI code page.
+        .args(["/nologo", "/c65001", "/fo"])
         .arg(&res)
         .arg(&rc_file)
         .status()
@@ -63,6 +75,7 @@ BEGIN
       VALUE "ProductVersion", "{v}"
       VALUE "OriginalFilename", "claim-jumpers.exe"
       VALUE "InternalName", "claim-jumpers"
+      VALUE "LegalCopyright", "{COPYRIGHT}"
     END
   END
   BLOCK "VarFileInfo"

@@ -387,7 +387,25 @@ milestones".
   Marge's voice.
 - **Windows 10: not yet verified.**
 
+## Play-test cut-off
+
+Builds stop running on 1 June 2027 at 00:00 UTC, because they go to play testers. Past that date
+the game shows only a screen saying the build has expired (no sound, no saves read or written),
+and `--smoke` fails with exit code 1. To move the date, change `CUT_OFF_UNIX` and `CUT_OFF_TEXT`
+in `crates/cj-game/src/expiry.rs` and the date its test checks.
+
+The date is judged by network time: at start the game sends one SNTP request (UDP port 123) to
+`time.google.com`, so setting the PC's clock back doesn't help. When no answer comes within 1.5 s
+(offline, a LAN-only party, port 123 blocked), it uses the PC's clock instead, so offline play
+keeps working; that is the one way past the cut-off. It is a reminder to update, not copy
+protection. `cargo test -p cj-game -- --ignored network` asks the real server. The headless
+`cj-server` has no cut-off.
+
 ## License
+
+Copyright © 2026, 2027 Neil Bruggeman. All rights reserved. The notice is set once in
+`crates/cj-game/build.rs`, which shows it on the game's opening screen and in the exe's
+Details tab.
 
 No license file is present and no license is granted for the code in this repository. It is a
 private repository. The bundled fonts keep their own SIL Open Font License terms (see

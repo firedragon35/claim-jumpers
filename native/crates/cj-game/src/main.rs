@@ -21,6 +21,7 @@
 mod audio;
 mod controls;
 mod draw;
+mod expiry;
 mod foes;
 mod fx;
 mod host;
@@ -1051,6 +1052,27 @@ fn shop_request(a: Act) -> Option<cj_net::ShopReq> {
     })
 }
 
+/// Shows the expired screen until the player quits (the Quit button, Enter
+/// or Escape, or closing the window). Keyboard and mouse only: the pad
+/// reader isn't started, and closing the window always works.
+async fn expired_screen(look: &look::Look) {
+    let mut u = ui::Ui::new();
+    loop {
+        let menu = ui::MenuInput {
+            activate: is_key_pressed(KeyCode::Enter) || is_key_pressed(KeyCode::KpEnter),
+            back: is_key_pressed(KeyCode::Escape),
+            ..Default::default()
+        };
+        let v = view();
+        clear_background(BLACK);
+        ui::splash(look, v, screen_dpi_scale());
+        if screens::expired(look, &mut u, &menu, v, screen_dpi_scale()) || menu.back {
+            return;
+        }
+        next_frame().await;
+    }
+}
+
 #[macroquad::main(window_conf)]
 async fn main() {
     let smoke = std::env::args().any(|a| a == "--smoke");
@@ -1068,6 +1090,22 @@ async fn main() {
         }
     };
     let look = look::Look::new();
+    // Past the play-test cut-off nothing else starts: no sound, no saves
+    // read or written, no server. The date comes from network time when
+    // it answers (up to 1.5 s offline), otherwise the PC's clock.
+    if expiry::expired(expiry::now()) {
+        if smoke {
+            // The check fails, so a build past its date can't pass for a
+            // working release.
+            eprintln!(
+                "smoke: FAIL, this build stopped working on {}",
+                expiry::CUT_OFF_TEXT
+            );
+            std::process::exit(1);
+        }
+        expired_screen(&look).await;
+        return;
+    }
     let mut audio = audio::Audio::start();
     if let Some(e) = &audio.error {
         eprintln!("sound is off: {e}");
