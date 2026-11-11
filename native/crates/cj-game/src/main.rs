@@ -957,79 +957,47 @@ impl App {
             }
             Act::ToMenu => self.go_to_title(),
             Act::StartShift => self.start_shift(audio),
-            Act::Pay(limit) => {
-                let c = self.career.as_mut().expect("a career");
-                match c.pay_extra(limit) {
-                    Ok((msg, None)) => {
-                        audio.sfx(Sfx::Bank);
-                        self.store.save_career(c);
-                        self.shop_msg = msg;
-                    }
-                    Ok((_, Some(outcome))) => {
-                        audio.sfx(Sfx::Bank);
-                        self.paid_off_in_shop(outcome, audio);
-                    }
-                    Err(msg) => self.shop_msg = msg,
+            // Listed one by one (not `_`) so a new Act must be placed here
+            // or above on purpose.
+            Act::Pay(_)
+            | Act::Buy(_)
+            | Act::Mount(_)
+            | Act::Unmount(_)
+            | Act::BuySentry
+            | Act::Level(_)
+            | Act::Offer(_)
+            | Act::Crew(_)
+            | Act::Belt(_)
+            | Act::Truce
+            | Act::SellCore
+            | Act::ReprogramCore => {
+                if let Some(req) = shop_request(a) {
+                    self.shop_locally(req, audio);
                 }
-            }
-            Act::Buy(p) | Act::Mount(p) | Act::Unmount(p) => {
-                let c = self.career.as_mut().expect("a career");
-                let (res, sound) = match a {
-                    Act::Buy(_) => (c.buy_part(p), Sfx::Bank),
-                    Act::Mount(_) => (c.mount(p), Sfx::Hook),
-                    _ => (c.unmount(p), Sfx::Drop),
-                };
-                self.finish_shop(res, sound, audio);
-            }
-            Act::BuySentry => {
-                let c = self.career.as_mut().expect("a career");
-                let res = c.buy_sentry();
-                self.finish_shop(res, Sfx::Bank, audio);
-            }
-            Act::Level(s) => {
-                let c = self.career.as_mut().expect("a career");
-                let res = c.buy_level(s);
-                self.finish_shop(res, Sfx::Bank, audio);
-            }
-            Act::Offer(i) => {
-                let c = self.career.as_mut().expect("a career");
-                let res = Ok(c.toggle_offer(i));
-                self.finish_shop(res, Sfx::Hook, audio);
-            }
-            Act::Crew(m) => {
-                let c = self.career.as_mut().expect("a career");
-                let res = Ok(c.toggle_crew(m));
-                self.finish_shop(res, Sfx::Hook, audio);
-            }
-            Act::Belt(b) => {
-                let c = self.career.as_mut().expect("a career");
-                let res = c.pick_belt(b);
-                self.finish_shop(res, Sfx::Hook, audio);
-            }
-            Act::Truce => {
-                let c = self.career.as_mut().expect("a career");
-                let res = c.buy_truce();
-                self.finish_shop(res, Sfx::Bank, audio);
-            }
-            Act::SellCore => {
-                let c = self.career.as_mut().expect("a career");
-                let res = c.sell_core();
-                self.finish_shop(res, Sfx::Bank, audio);
-            }
-            Act::ReprogramCore => {
-                let c = self.career.as_mut().expect("a career");
-                let res = c.reprogram_core();
-                self.finish_shop(res, Sfx::Bank, audio);
             }
         }
     }
 
-    fn finish_shop(&mut self, res: Result<String, String>, sound: Sfx, audio: &mut audio::Audio) {
-        match res {
-            Ok(msg) => {
-                audio.sfx(sound);
-                self.store
-                    .save_career(self.career.as_ref().expect("a career"));
+    /// A shop button in single player: the same rules the server applies
+    /// online (`ShopReq::apply`), then the sound, the save and the shop's
+    /// sentence. A payment that clears the loan opens the trade-up (or
+    /// won-career) report instead.
+    fn shop_locally(&mut self, req: cj_net::ShopReq, audio: &mut audio::Audio) {
+        use cj_net::ShopReq as R;
+        let c = self.career.as_mut().expect("a career");
+        match req.apply(c) {
+            Ok((_, Some(outcome))) => {
+                audio.sfx(Sfx::Bank);
+                self.paid_off_in_shop(outcome, audio);
+            }
+            Ok((msg, None)) => {
+                // Spending money rings the till; handling gear clanks.
+                audio.sfx(match req {
+                    R::Mount(_) | R::Offer(_) | R::Crew(_) | R::Vote(_) => Sfx::Hook,
+                    R::Unmount(_) => Sfx::Drop,
+                    _ => Sfx::Bank,
+                });
+                self.store.save_career(c);
                 self.shop_msg = msg;
             }
             Err(msg) => self.shop_msg = msg,
@@ -1037,7 +1005,8 @@ impl App {
     }
 }
 
-/// The server request a shop button stands for online, if it is one.
+/// The shop request a shop button stands for, if it is one: sent to the
+/// server online, applied to the local career in single player.
 fn shop_request(a: Act) -> Option<cj_net::ShopReq> {
     use cj_net::ShopReq as R;
     Some(match a {

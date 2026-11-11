@@ -672,6 +672,12 @@ impl Server {
                         // A tug whose player left waits out of the field,
                         // with nothing held when it returns.
                         p.queue.clear();
+                        // Message numbers belong to the connection: a
+                        // returning game opens a new one and counts from 1
+                        // again, so the old numbers would drop all of it.
+                        p.input_seq = 0;
+                        p.queued_seq = 0;
+                        p.action_seq = 0;
                         if p.input != Input::default() {
                             p.input = Input::default();
                             self.record(Entry::Input {
@@ -858,34 +864,20 @@ impl Server {
             Err("The shop opens between shifts.".to_owned())
         } else {
             let c = &mut p.career;
-            match req {
-                R::Pay { all } => match c.pay_extra(if all { f64::INFINITY } else { 1000.0 }) {
-                    Ok((_, Some(Outcome::FleetPaid))) => {
-                        *c = Career::new(mode);
-                        c.conditions = Some((c.shift, self.conditions));
-                        c.ensure_offers(&mut self.rng);
-                        Ok("The fleet is paid off. A fresh career starts next shift.".to_owned())
-                    }
-                    Ok((msg, _)) => Ok(msg),
-                    Err(e) => Err(e),
-                },
-                R::Buy(part) => c.buy_part(part),
-                R::Mount(part) => c.mount(part),
-                R::Unmount(part) => c.unmount(part),
-                R::Sentry => c.buy_sentry(),
-                R::Level(s) => c.buy_level(s),
-                R::Offer(n) if usize::from(n) < c.offers.len() => {
-                    Ok(c.toggle_offer(usize::from(n)))
+            match (req, req.apply(c)) {
+                // A won career starts again fresh, ready for the next shift.
+                (_, Ok((_, Some(Outcome::FleetPaid)))) => {
+                    *c = Career::new(mode);
+                    c.conditions = Some((c.shift, self.conditions));
+                    c.ensure_offers(&mut self.rng);
+                    Ok("The fleet is paid off. A fresh career starts next shift.".to_owned())
                 }
-                R::Offer(_) => Err("There's no such contract.".to_owned()),
-                R::Crew(crew) => Ok(c.toggle_crew(crew)),
-                R::Truce => c.buy_truce(),
-                R::SellCore => c.sell_core(),
-                R::ReprogramCore => c.reprogram_core(),
-                R::Vote(b) => c.pick_belt(b).map(|_| {
+                // A vote the player's tug can fly counts toward the next belt.
+                (R::Vote(b), Ok(_)) => {
                     p.vote = Some(b);
-                    format!("Your vote: {}.", b.def().name)
-                }),
+                    Ok(format!("Your vote: {}.", b.def().name))
+                }
+                (_, res) => res.map(|(msg, _)| msg),
             }
         };
         let (ok, msg) = match res {
@@ -1239,8 +1231,14 @@ pub fn bind_udp(
     )
 }
 
+/// How far behind its schedule the run loop may fall and still catch up by
+/// running the missed steps back to back (15 steps at 60 Hz). Further
+/// behind, the missed time is skipped instead.
+pub const MAX_CATCH_UP: Duration = Duration::from_millis(250);
+
 /// Runs `server` over `transport` at 60 Hz, sleeping to absolute deadlines
-/// so timing errors don't add up. After every step `each` sees the server
+/// so timing errors don't add up. A short delay is caught up; a stall
+/// longer than [`MAX_CATCH_UP`] is skipped. After every step `each` sees the server
 /// (to drain its log, say) and returns whether to go on. When it says stop,
 /// every client is told the server is closing.
 ///
@@ -1254,7 +1252,9 @@ pub fn run(
 ) -> Result<(), String> {
     use std::panic::{catch_unwind, AssertUnwindSafe};
     let step = Duration::from_secs_f64(STEP);
-    let start = Instant::now();
+    // The schedule: step `n` is due at `start + step * n`. Both are reset
+    // when the loop falls too far behind (see MAX_CATCH_UP).
+    let mut start = Instant::now();
     let mut n: u32 = 0;
     let outcome = loop {
         let stepped = catch_unwind(AssertUnwindSafe(|| {
@@ -1284,6 +1284,17 @@ pub fn run(
         let deadline = start + step * n;
         match deadline.checked_duration_since(Instant::now()) {
             Some(wait) => std::thread::sleep(wait),
+            // After a long stall (the machine slept, the VM was paused) the
+            // lost time is dropped: running every missed step back to back
+            // would jump the shift clock and fly the tugs on stale controls.
+            None if Instant::now() - deadline > MAX_CATCH_UP => {
+                server.log.push(format!(
+                    "fell {:?} behind; skipping ahead",
+                    Instant::now() - deadline
+                ));
+                start = Instant::now();
+                n = 0;
+            }
             None if Instant::now() - deadline > step * 3 => {
                 server.log.push(format!(
                     "step {n} overran by {:?}",

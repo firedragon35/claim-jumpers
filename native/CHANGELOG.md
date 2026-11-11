@@ -7,6 +7,35 @@ and the port uses [Semantic Versioning](https://semver.org/) as defined in
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-11-11
+
+Fixes from the repository audit.
+
+### Fixed
+
+- Online, a player who lost the connection and came back in the same
+  shift could not steer, hook, drop, cut or switch PvP for about as long
+  as they had already flown: the server kept the old connection's message
+  numbers and dropped the new connection's as repeats.
+- Online, paying off the loan in the break traded the tug up without a
+  word (the shop kept showing its last sentence). It now says
+  "Loan paid off. Traded up: …" with the new tug and loan.
+- Pilot names keep only letters the game's fonts can draw (ASCII and
+  Latin), as chat lines already did. Other scripts showed as blanks on
+  every player's screen, and Cyrillic or Greek lookalikes let one player
+  pass as another. A saved name or local leaderboard entry in another
+  script loses those letters when it is loaded.
+- A server that falls more than 0.25 s behind (the PC slept, a VM was
+  paused) skips the lost time instead of running every missed step at
+  once, which jumped the shift clock and flew the tugs on stale controls.
+
+### Changed
+
+- Single player and the server apply shop requests through one function
+  (`cj_net::ShopReq::apply`), so the two shops can't drift apart. An offer
+  number past the offers is refused there instead of being used as an
+  index.
+
 ## [1.4.0] - 2026-11-11
 
 Opt-in PvP on servers whose host allows it, and a play-test cut-off.

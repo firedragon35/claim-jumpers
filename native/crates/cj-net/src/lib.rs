@@ -12,6 +12,7 @@ pub mod snapshot;
 
 pub use snapshot::{Blip, BlipKind, Known, Look, Snapshot};
 
+use cj_sim::career::{Career, Outcome};
 use cj_sim::events::Emitted;
 use cj_sim::{Action, Input};
 use serde::{Deserialize, Serialize};
@@ -105,6 +106,59 @@ pub enum ShopReq {
     ReprogramCore,
     /// This player's vote for the next shift's belt.
     Vote(cj_sim::field::Belt),
+}
+
+impl ShopReq {
+    /// Applies the request to `c` with the shop's rules, the one place they
+    /// are dispatched: the server runs it for a player's request, and single
+    /// player runs it for a shop button. `Ok` holds the shop's sentence and,
+    /// for a payment that cleared the loan, the outcome (a trade-up, already
+    /// applied, or a paid-off fleet, which the caller ends the career for).
+    /// `Err` holds the shop's refusal. A belt vote only picks the belt here;
+    /// counting votes is the server's job.
+    pub fn apply(self, c: &mut Career) -> Result<(String, Option<Outcome>), String> {
+        // Everything but a payment is a plain sentence with no outcome.
+        let plain = |r: cj_sim::career::ShopResult| r.map(|msg| (msg, None));
+        match self {
+            ShopReq::Pay { all } => {
+                let limit = if all { f64::INFINITY } else { 1000.0 };
+                match c.pay_extra(limit)? {
+                    // pay_extra leaves the sentence empty when the loan is
+                    // cleared, so a trade-up is named here (online it is the
+                    // only word the player gets; single player shows a report).
+                    (_, Some(o @ Outcome::TradedUp { .. })) => {
+                        let next = c.tug();
+                        Ok((
+                            format!(
+                                "Loan paid off. Traded up: {} \"{}\". New loan: {} cr.",
+                                next.mk,
+                                next.name,
+                                cj_sim::world::fmt_credits(c.loan)
+                            ),
+                            Some(o),
+                        ))
+                    }
+                    paid => Ok(paid),
+                }
+            }
+            ShopReq::Buy(p) => plain(c.buy_part(p)),
+            ShopReq::Mount(p) => plain(c.mount(p)),
+            ShopReq::Unmount(p) => plain(c.unmount(p)),
+            ShopReq::Sentry => plain(c.buy_sentry()),
+            ShopReq::Level(s) => plain(c.buy_level(s)),
+            // The offer number comes from the network: check it before
+            // toggle_offer indexes the offers with it.
+            ShopReq::Offer(n) if usize::from(n) < c.offers.len() => {
+                Ok((c.toggle_offer(usize::from(n)), None))
+            }
+            ShopReq::Offer(_) => Err("There's no such contract.".to_owned()),
+            ShopReq::Crew(crew) => Ok((c.toggle_crew(crew), None)),
+            ShopReq::Truce => plain(c.buy_truce()),
+            ShopReq::SellCore => plain(c.sell_core()),
+            ShopReq::ReprogramCore => plain(c.reprogram_core()),
+            ShopReq::Vote(b) => plain(c.pick_belt(b)),
+        }
+    }
 }
 
 /// What the server sends.
@@ -341,10 +395,18 @@ pub fn clean_chat(raw: &str) -> String {
 /// cleanName: letters, numbers, space, _ - . and '; spaces collapsed; at
 /// most [`NAME_MAX`] characters. The game's name entry and the server use
 /// the same rule.
+///
+/// Letters and numbers stop where chat lines do (ASCII and Latin, below
+/// U+0250): the game's fonts draw nothing else, so other scripts would show
+/// as blanks on everyone's screen, and Cyrillic or Greek lookalikes would
+/// let one player pass as another ("Аce" for "Ace").
 pub fn clean_name(raw: &str) -> String {
     let kept: String = raw
         .chars()
-        .filter(|c| c.is_alphanumeric() || matches!(c, ' ' | '_' | '-' | '.' | '\''))
+        .filter(|&c| {
+            (c.is_alphanumeric() && u32::from(c) < 0x250)
+                || matches!(c, ' ' | '_' | '-' | '.' | '\'')
+        })
         .collect();
     let collapsed = kept.split_whitespace().collect::<Vec<_>>().join(" ");
     collapsed
@@ -429,6 +491,26 @@ mod tests {
         assert_eq!(clean_input(inf), None);
     }
 
+    /// Paying off the whole loan trades up and says so: the sentence is all
+    /// an online player hears about it.
+    #[test]
+    fn paying_off_the_loan_names_the_trade_up() {
+        let mut c = Career::new(cj_sim::career::Mode::Standard);
+        c.wallet = c.loan + 500.0;
+        let (msg, outcome) = ShopReq::Pay { all: true }.apply(&mut c).expect("paid");
+        assert!(matches!(outcome, Some(Outcome::TradedUp { from: 0, .. })));
+        assert!(msg.contains("Traded up: Mk II"), "{msg}");
+        assert_eq!(c.tug_class, 1);
+        assert_eq!(c.wallet, 500.0, "only the loan was paid");
+    }
+
+    /// An offer number past the offers is refused, not used as an index.
+    #[test]
+    fn a_missing_offer_is_refused() {
+        let mut c = Career::new(cj_sim::career::Mode::Standard);
+        assert!(ShopReq::Offer(200).apply(&mut c).is_err());
+    }
+
     /// A claimed window is clamped to a real screen's size.
     #[test]
     fn views_are_clamped() {
@@ -442,5 +524,10 @@ mod tests {
         assert_eq!(clean_name("  Ace   <b>Pilot</b>!!  "), "Ace bPilotb");
         assert_eq!(clean_name("abcdefghijklmnopqrstuvwxyz"), "abcdefghijklmnop");
         assert_eq!(clean_name("O'Neil-2.0_x"), "O'Neil-2.0_x");
+        // Latin accents stay; scripts the fonts can't draw go.
+        assert_eq!(clean_name("Zoë Ångström"), "Zoë Ångström");
+        assert_eq!(clean_name("\u{410}ce"), "ce", "a Cyrillic А");
+        assert_eq!(clean_name("Пётр"), "");
+        assert_eq!(clean_name("鷹 Hawk"), "Hawk");
     }
 }

@@ -423,6 +423,44 @@ fn the_break_shop_checks_requests_and_votes_pick_the_belt() {
     assert_eq!(s.world.cond, rolled[1], "Hollis's condition as rolled");
 }
 
+/// Online the server is the only check on what a career buys: a part the
+/// wallet can't cover, and a chain-reward part (priced at 0 because it is
+/// never sold), are both refused whatever the client sends.
+#[test]
+fn the_break_shop_refuses_what_the_career_cannot_buy() {
+    use cj_net::ShopReq;
+    use cj_sim::parts::Part;
+    let mut s = server(4);
+    let mut a = Bot::join(&mut s, 1, 1);
+    a.hello(VERSION, 7);
+    steps(&mut s, &mut [&mut a], 3);
+    // A haul that leaves 1,000 cr after the first installment: enough for a
+    // free part, so only the chain-reward rule can refuse it, but not armor.
+    let due = cj_sim::career::Career::new(cj_sim::career::Mode::Standard).due(0);
+    s.world.pilots[0].banked = due + 1000.0;
+    end_shift(&mut s);
+    steps(&mut s, &mut [&mut a], 3);
+    assert!(s.in_break());
+    let settled = cj_sim::career::Career::from_json(&a.settled[0].career).expect("a career");
+    assert_eq!(settled.wallet, 1000.0);
+    assert_eq!(
+        Part::HullSeal.def().price,
+        0.0,
+        "the wallet alone can't refuse it"
+    );
+    for req in [ShopReq::Buy(Part::Armor), ShopReq::Buy(Part::HullSeal)] {
+        a.send(channel::RELIABLE, &ClientMsg::Shop(req));
+    }
+    steps(&mut s, &mut [&mut a], 3);
+    assert_eq!(a.shop.len(), 2);
+    for reply in &a.shop {
+        assert!(!reply.ok, "should be refused, got: {}", reply.msg);
+        let after = cj_sim::career::Career::from_json(&reply.career).expect("a career");
+        assert_eq!(after.wallet, settled.wallet, "nothing was charged");
+        assert!(!after.owns(Part::Armor) && !after.owns(Part::HullSeal));
+    }
+}
+
 /// The break ends after 90 s even if nobody says they are ready, and a
 /// player who left before it gives up their slot.
 #[test]
@@ -619,13 +657,33 @@ fn a_returning_player_reclaims_their_pilot() {
     b.hello(VERSION, 7);
     steps(&mut s, &mut [&mut a, &mut b], 3);
     assert_eq!(b.pilot, Some(1));
+    // Two seconds of flying numbers b's controls up to 120.
+    for _ in 0..120 {
+        b.input(Input::default());
+        steps(&mut s, &mut [&mut a, &mut b], 1);
+    }
     s.renet.disconnect_local_client(2, &mut b.client);
     steps(&mut s, &mut [&mut a], 3);
+    // The returning game is a new connection, numbering from 1 again.
     let mut back = Bot::join(&mut s, 3, 2);
     back.hello(VERSION, 7);
     steps(&mut s, &mut [&mut a, &mut back], 3);
     assert_eq!(back.pilot, Some(1), "the same pilot as before");
     assert_eq!(s.world.pilots.len(), 2, "no new tug");
+    let thrust = Input {
+        thrust: 1.0,
+        ..Input::default()
+    };
+    for _ in 0..30 {
+        back.input(thrust);
+        steps(&mut s, &mut [&mut a, &mut back], 1);
+    }
+    let ack = back.last.as_ref().expect("a snapshot").ack;
+    assert!(
+        (25..=30).contains(&ack),
+        "the new connection's controls are applied, not dropped as old (ack {ack})"
+    );
+    assert!(s.world.pilots[1].ship.throttle > 0.0, "the tug answers");
 }
 
 /// Garbage gets a client disconnected; non-finite controls are refused.
