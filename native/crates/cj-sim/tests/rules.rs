@@ -856,3 +856,80 @@ fn predicted_contacts_deal_no_damage() {
     assert_eq!(w.pilots[0].ship.hp, hp);
     assert!(w.pilots[0].ship.b.vx < 600.0, "the rock pushed back");
 }
+
+/// Puts pilot `p`'s tug in a collector's net, already dragged past the
+/// field's left edge, so the next step impounds it.
+fn netted_past_the_edge(w: &mut World, p: usize) {
+    w.spawn_collector(p);
+    let c = w.collectors.len() - 1;
+    let id = w.collectors[c].id;
+    w.collectors[c].state = cj_sim::opposition::CollectorState::Tow;
+    w.collectors[c].exit = (-1.0, 0.0);
+    w.pilots[p].ship.net = Some(cj_sim::opposition::NetHold { by: id, hp: 100.0 });
+    w.pilots[p].ship.b.x = w.edge_lo - 100.0;
+    // The collector tows from just ahead, so the tether doesn't pull the
+    // tug back in.
+    w.collectors[c].b.x = w.edge_lo - 200.0;
+    w.collectors[c].b.y = w.pilots[p].ship.b.y;
+    w.collectors[c].tether = 100.0;
+}
+
+/// Alone in the field, an impounded tug ends the shift.
+#[test]
+fn an_impound_ends_a_single_player_shift() {
+    let mut w = field();
+    netted_past_the_edge(&mut w, 0);
+    w.step(&Input::default(), STEP);
+    assert!(w.pilots[0].impounded);
+    assert!(w.shift_over);
+}
+
+/// Regression: one pilot's impound ended the shift for everyone. Now that
+/// tug sits out the rest of the shift (no respawn) while the others fly on,
+/// and the shift ends early only once every tug is impounded.
+#[test]
+fn an_impound_takes_out_only_that_pilots_tug() {
+    let mut w = two_pilot_field();
+    let inputs = [Input::default(), Input::default()];
+    netted_past_the_edge(&mut w, 0);
+    let left = w.time_left;
+    w.step_all(&inputs, STEP);
+    assert!(w.pilots[0].impounded);
+    assert!(!w.shift_over, "the other pilot's shift goes on");
+    for _ in 0..(RESPAWN_TIME / STEP) as usize + 60 {
+        w.step_all(&inputs, STEP);
+    }
+    assert!(!w.pilots[0].ship.alive, "an impounded tug never respawns");
+    assert!(w.pilots[1].ship.alive);
+    assert!(w.time_left < left - RESPAWN_TIME, "the clock runs on");
+
+    netted_past_the_edge(&mut w, 1);
+    w.step_all(&inputs, STEP);
+    assert!(w.shift_over, "nobody is left flying");
+}
+
+/// Regression: arresting one pilot sent home every unit in the field,
+/// including those chasing a different wanted pilot.
+#[test]
+fn an_arrest_stands_down_only_that_pilots_pursuers() {
+    use cj_sim::opposition::SheriffState;
+    let mut w = two_pilot_field();
+    for p in 0..2 {
+        let (x, y) = (w.pilots[p].ship.b.x, w.pilots[p].ship.b.y);
+        w.add_wanted(p, 2, x, y);
+        w.spawn_sheriff(p, true);
+    }
+    for sh in &mut w.sheriffs {
+        sh.state = SheriffState::Pursuit;
+    }
+    assert_eq!((w.sheriffs[0].target, w.sheriffs[1].target), (0, 1));
+    w.arrest(1);
+    assert_eq!(w.pilots[1].wanted, 0);
+    assert_eq!(w.pilots[0].wanted, 2, "still wanted");
+    assert_eq!(
+        w.sheriffs[0].state,
+        SheriffState::Pursuit,
+        "pilot 0 is still chased"
+    );
+    assert_eq!(w.sheriffs[1].state, SheriffState::Leave);
+}

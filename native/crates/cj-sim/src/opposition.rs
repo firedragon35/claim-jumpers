@@ -1639,7 +1639,10 @@ impl World {
         self.radio_text(Radio::Confiscated, true, false, text);
     }
 
-    /// The collector got the tug off the field: impound fee, shift over.
+    /// The collector got the tug off the field: impound fee, and the tug is
+    /// out for the rest of the shift. The shift itself ends only once every
+    /// pilot in it is impounded (at once in single player), so one player's
+    /// impound never cuts short anyone else's shift.
     fn impound(&mut self, c: usize) {
         let p = self.collectors[c].target;
         self.sfx(Sfx::SadTrombone);
@@ -1652,7 +1655,18 @@ impl World {
         self.pilots[p].impound_fee = fee;
         self.collectors[c].dead = true;
         self.pilots[p].ship.net = None;
-        self.shift_over = true;
+        if self.pilots.iter().all(|pl| pl.impounded) {
+            self.shift_over = true;
+        } else {
+            // Others fly on: the towed tug leaves the field (never to
+            // respawn, see `update_ship`) and its load floats free where it
+            // went over the edge. Its sentries hold station, as they do over
+            // a wreck, and still go back in the bay if they survive. As with
+            // a wreck, the record is wiped and its pursuers leave.
+            self.sever_at(p, 0);
+            self.pilots[p].ship.alive = false;
+            self.clear_record(p);
+        }
     }
 
     /* -------------------------------- The law ------------------------------- */
@@ -2078,8 +2092,9 @@ impl World {
     /// and the tug goes back to the bay. The shift goes on.
     pub fn arrest(&mut self, k: usize) {
         let p = self.sheriffs[k].target;
-        // Every unit stands down once someone has you.
-        for u in &mut self.sheriffs {
+        // Every unit after you stands down once someone has you; units
+        // chasing another pilot keep at it.
+        for u in self.sheriffs.iter_mut().filter(|u| u.target == p) {
             u.state = SheriffState::Leave;
             u.cuff = 0.0;
         }
@@ -3066,15 +3081,23 @@ impl World {
         self.net_tear = d.net_tear;
         // Sentries launch from each pilot's drone bay at the start of the shift.
         for p in 0..self.pilots.len() {
-            let n = self.pilots[p]
-                .career
-                .as_ref()
-                .map_or(0, |c| c.sentries as usize);
-            if self.pilots[p].mods.drone_bay {
-                for i in 0..n {
-                    let s = self.make_sentry(p, i, n);
-                    self.sentries.push(s);
-                }
+            self.launch_sentries(p);
+        }
+    }
+
+    /// Launches the sentries pilot `p`'s career keeps in its drone bay. Runs
+    /// once per pilot per shift: for everyone at the start, and for a pilot
+    /// who joins a shift already under way when they arrive (without it,
+    /// settlement would find none and save the bay empty).
+    pub fn launch_sentries(&mut self, p: usize) {
+        let n = self.pilots[p]
+            .career
+            .as_ref()
+            .map_or(0, |c| c.sentries as usize);
+        if self.pilots[p].mods.drone_bay {
+            for i in 0..n {
+                let s = self.make_sentry(p, i, n);
+                self.sentries.push(s);
             }
         }
     }

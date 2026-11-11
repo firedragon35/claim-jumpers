@@ -341,7 +341,7 @@ pub fn replay(rec: &Recording, steps: u32) -> World {
             debug_assert_eq!(*at, tick);
             match e {
                 Entry::Join { career } => {
-                    w.add_career_pilot(&career_of(career));
+                    w.join_career_pilot(&career_of(career));
                     inputs.push(Input::default());
                 }
                 Entry::Input { pilot, input } => inputs[*pilot] = *input,
@@ -969,15 +969,32 @@ impl Server {
                 }
                 p.view = cj_net::clean_view(view);
                 p.conn = Some(id);
+                // Arriving during a break, they missed the career the lobby
+                // was sent when it began, and the client opens its shop only
+                // once it has one: prepare and send theirs now, as the break
+                // does for everyone already waiting.
+                let shop = self.in_break().then(|| {
+                    p.career.conditions = Some((p.career.shift, self.conditions));
+                    p.career.ensure_offers(&mut self.rng);
+                    ServerMsg::Shop(cj_net::ShopReply {
+                        ok: true,
+                        msg: String::new(),
+                        career: p.career.to_json(),
+                    })
+                });
                 self.log
                     .push(format!("{} is waiting for the next shift", p.name));
                 self.waiting.push(p);
                 self.conns.get_mut(&id).expect("connected").state = ConnState::Waiting;
-                return self.send(id, channel::RELIABLE, &ServerMsg::Waiting);
+                self.send(id, channel::RELIABLE, &ServerMsg::Waiting);
+                if let Some(msg) = shop {
+                    self.send(id, channel::RELIABLE, &msg);
+                }
+                return;
             }
             None => {
                 let career = self.career_for(&player);
-                let slot = self.world.add_career_pilot(&career);
+                let slot = self.world.join_career_pilot(&career);
                 debug_assert_eq!(slot, self.players.len(), "a pilot per player");
                 self.record(Entry::Join {
                     career: career.to_json(),

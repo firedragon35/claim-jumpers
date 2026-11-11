@@ -663,9 +663,14 @@ impl Career {
             .as_ref()
             .is_some_and(|k| w.contract_progress(p, k) >= k.n);
         // Sentries that survived go back in the bay; destroyed or rogue
-        // ones are gone for good.
+        // ones are gone for good. Only this pilot's own drones count: an
+        // online field holds every pilot's.
         if w.pilots[p].mods.drone_bay {
-            self.sentries = w.sentries.iter().filter(|d| !d.dead && !d.rogue).count() as u32;
+            self.sentries = w
+                .sentries
+                .iter()
+                .filter(|d| d.pilot == p && !d.dead && !d.rogue)
+                .count() as u32;
         }
         // Unspent money stays in the wallet. The installment is always
         // taken; a negative wallet is an overdraft, allowed down to a third

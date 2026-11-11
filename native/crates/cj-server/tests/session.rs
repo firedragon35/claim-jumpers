@@ -319,6 +319,31 @@ fn a_late_newcomer_waits_in_the_lobby_for_the_next_shift() {
     assert_eq!(late.last.as_ref().expect("a snapshot").you, 1);
 }
 
+/// Regression: a newcomer who arrived during a break was told to wait but
+/// sent no career, so their shop stayed shut until another shift had been
+/// flown. They get it on arrival, with the break's offers ready.
+#[test]
+fn a_newcomer_during_a_break_gets_their_career_to_shop_with() {
+    let mut s = server(4);
+    let mut a = Bot::join(&mut s, 1, 1);
+    a.hello(VERSION, 7);
+    steps(&mut s, &mut [&mut a], 3);
+    end_shift(&mut s);
+    steps(&mut s, &mut [&mut a], 3);
+    assert!(s.in_break());
+    let mut late = Bot::join(&mut s, 2, 2);
+    late.hello(VERSION, 7);
+    steps(&mut s, &mut [&mut a, &mut late], 3);
+    assert!(late.waiting && late.pilot.is_none(), "in the lobby");
+    let reply = late.shop.last().expect("their career, unasked");
+    assert!(reply.ok);
+    let career = cj_sim::career::Career::from_json(&reply.career).expect("a career");
+    assert!(
+        career.conditions.is_some(),
+        "the break's conditions are set"
+    );
+}
+
 /// At the end of a shift each player's own haul is settled into their own
 /// career and sent to them, and the career is saved: a server started
 /// again on the same folder gives the returning player the same career.

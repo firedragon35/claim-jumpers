@@ -522,6 +522,16 @@ impl World {
         p
     }
 
+    /// A pilot flying career `c` joins a shift already under way (see
+    /// [`World::add_career_pilot`]); returns its index. Their sentries launch
+    /// now, since the shift's own launch ran before they arrived. The server
+    /// and its replays both join through here, so they stay in step.
+    pub fn join_career_pilot(&mut self, c: &Career) -> usize {
+        let p = self.add_career_pilot(c);
+        self.launch_sentries(p);
+        p
+    }
+
     /// The next shift of a career (newGame): its loadout, difficulty, shift
     /// number, carried-over rival grudge, and the field the career has picked.
     pub fn for_career(rng: Rng, view: (f64, f64), c: &Career) -> World {
@@ -942,8 +952,9 @@ impl World {
     /// Pilot `p`'s tug flight: rotation and thrust, both blunted by the
     /// weight on the winch.
     pub(crate) fn update_ship(&mut self, p: usize, input: &Input, dt: f64) {
-        // An away tug is frozen out of the field: no flight, no respawn.
-        if self.pilots[p].away.is_some() {
+        // An away tug is frozen out of the field: no flight, no respawn. An
+        // impounded one is gone for the rest of the shift.
+        if self.pilots[p].away.is_some() || self.pilots[p].impounded {
             return;
         }
         let s = &mut self.pilots[p].ship;

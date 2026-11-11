@@ -7,6 +7,32 @@ and the port uses [Semantic Versioning](https://semver.org/) as defined in
 
 ## [Unreleased]
 
+## [1.4.2] - 2026-11-11
+
+Online fixes from an independent audit: one player's shift no longer
+changes another's.
+
+### Fixed
+
+- Online, the end of a shift gave each pilot with a drone bay every
+  pilot's surviving sentries, so drones multiplied from shift to shift
+  past the bay's limit. Each career now gets back only its own.
+- Online, a pilot who joined a shift already under way (including the
+  first player into a freshly started server) flew without their sentries,
+  and the end of the shift then saved their bay empty. They now launch on
+  arrival.
+- Online, a debt collector impounding one tug ended the shift for
+  everyone. Now only that tug leaves the field, for the rest of the shift
+  (its load floats free and its stars are cleared, as for a wreck); the
+  others fly on, and the shift ends early only once every tug in it is
+  impounded. The impounded player's HUD says "IMPOUNDED · BACK NEXT SHIFT".
+  Single player is unchanged.
+- Online, a player who arrived during the break between shifts could not
+  open the shop until they had flown a shift. They now get their career,
+  with the break's offers, as they arrive.
+- Online, arresting one pilot called off the law units chasing other
+  wanted pilots. Only the arrested pilot's pursuers stand down now.
+
 ## [1.4.1] - 2026-11-11
 
 Fixes from the repository audit.

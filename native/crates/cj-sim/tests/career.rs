@@ -627,3 +627,75 @@ fn a_shared_field_flies_each_career_and_settles_each_apart() {
     assert!(s2.earned > 0.0, "the second pilot's haul is theirs");
     assert_eq!((one.shift, two.shift), (rich.shift + 1, fresh.shift + 1));
 }
+
+/// A career with a mounted drone bay holding `n` sentries.
+fn with_sentries(n: u32) -> Career {
+    let mut c = Career::new(Mode::Standard);
+    c.wallet = 1e5;
+    c.buy_part(Part::DroneBay).expect("affordable");
+    for _ in 0..n {
+        c.buy_sentry().expect("room in the bay");
+    }
+    c
+}
+
+/// A shared server shift on the given terms.
+fn shared_shift() -> cj_sim::world::SharedShift {
+    cj_sim::world::SharedShift {
+        belt: Belt::Hollis,
+        cond: Condition::Normal,
+        mode: Mode::Standard,
+        shift_no: 2,
+        grudge: 0.0,
+        pvp: false,
+    }
+}
+
+/// Regression: settling an online shift put every pilot's surviving drones
+/// in each pilot's bay, so two careers with one and three drones came out
+/// with four each.
+#[test]
+fn each_career_gets_back_only_its_own_sentries() {
+    let careers = [with_sentries(1), with_sentries(3)];
+    let w = World::for_careers(
+        Rng::seeded(3),
+        (1280.0, 720.0),
+        4,
+        &shared_shift(),
+        &careers,
+    );
+    assert_eq!(w.sentries.len(), 4, "both bays launched");
+    let (mut one, mut three) = (careers[0].clone(), careers[1].clone());
+    one.settle(&w, 0);
+    three.settle(&w, 1);
+    assert_eq!((one.sentries, three.sentries), (1, 3));
+}
+
+/// Regression: a pilot joining a shift already under way flew without their
+/// sentries, and settlement then saved the bay empty. That includes the
+/// first player into a freshly started server, whose world began with no
+/// careers at all.
+#[test]
+fn a_pilot_joining_mid_shift_launches_and_keeps_their_sentries() {
+    let mut w = World::for_careers(Rng::seeded(4), (1280.0, 720.0), 4, &shared_shift(), &[]);
+    assert!(w.sentries.is_empty());
+    let first = with_sentries(2);
+    let a = w.join_career_pilot(&first);
+    let late = with_sentries(1);
+    let b = w.join_career_pilot(&late);
+    let owned = |p: usize| w.sentries.iter().filter(|d| d.pilot == p).count();
+    assert_eq!((a, b), (0, 1));
+    assert_eq!(
+        (owned(a), owned(b)),
+        (2, 1),
+        "launched once each, on arrival"
+    );
+    let (mut c1, mut c2) = (first.clone(), late.clone());
+    c1.settle(&w, a);
+    c2.settle(&w, b);
+    assert_eq!(
+        (c1.sentries, c2.sentries),
+        (2, 1),
+        "nothing lost at settlement"
+    );
+}

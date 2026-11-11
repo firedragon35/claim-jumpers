@@ -210,6 +210,22 @@ pub fn draw(look: &Look, w: &World, career: Option<&Career>, view: (f32, f32), d
         text_left(&note, x, cy, 13.0, font, color);
         cy += 17.0;
     }
+    // Online, an impounded tug sits out the rest of the shift while the
+    // others fly on; say so, since the field shows no tug and no respawn.
+    if w.me().impounded && !w.shift_over {
+        let line = "IMPOUNDED · BACK NEXT SHIFT";
+        let font = &look.fonts.mono;
+        let color = crate::look::hex(col::DANGER);
+        text_left(
+            line,
+            (vw - text_width(line, 13.0, font)) / 2.0,
+            cy,
+            13.0,
+            font,
+            color,
+        );
+        cy += 17.0;
+    }
     // PvP: arming, on (with any combat lock), or attacked by a PvP pilot
     // you may fire back at. Nothing while Protected and left alone.
     if let Some(line) = pvp_line(w.me()) {
