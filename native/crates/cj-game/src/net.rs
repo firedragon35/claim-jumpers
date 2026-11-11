@@ -304,6 +304,7 @@ mod tests {
             record: false,
             mode: cj_sim::career::Mode::Standard,
             careers: None,
+            pvp: false,
         });
         let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let flag = stop.clone();

@@ -7,9 +7,28 @@ and the port uses [Semantic Versioning](https://semver.org/) as defined in
 
 ## [Unreleased]
 
-Ships with 1.4.0 (owner decision 2026-11-11).
+## [1.4.0] - 2026-11-11
+
+Opt-in PvP on servers whose host allows it, and a play-test cut-off.
 
 ### Added
+
+- PvP, off unless the host allows it (Launch screen: "PvP: On"; headless
+  server: `--pvp`). Everyone starts each shift Protected. B (D-pad up)
+  in the bay starts 10 seconds of arming; then the tug is PvP, shown to
+  every pilot by a red ring and a PVP tag, and to its own pilot on the
+  HUD. A PvP pilot can hurt any tug; whoever they hurt may fire back for
+  30 seconds after each attack. Ramming hurts only between two PvP tugs.
+  The PvP key can be changed under Settings; if an earlier version's
+  settings already put another action on B, that action keeps it and PvP
+  moves to a free key.
+- A combat lock: attacking, or being hit while PvP, holds a pilot in PvP
+  for 30 seconds. PvP can't be switched off (in the bay) during it, and a
+  player who leaves mid-fight leaves the tug in the field until it ends.
+- On belts with law, the first hit in a fight earns the attacker a wanted
+  star and a PvP wreck two more; firing back earns none. A PvP wreck's
+  cargo is held for 20 seconds for its owner and PvP pilots, PvP wrecks
+  pay no bounty, and the Tab list counts them as kills.
 
 - A copyright notice: "Copyright © 2026, 2027 Neil Bruggeman. All rights
   reserved." on the opening screen, in the player README and on the

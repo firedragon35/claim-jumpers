@@ -90,7 +90,7 @@ impl World {
         let mut best = None;
         let mut best_d = f64::INFINITY;
         for (i, it) in self.items.iter().enumerate() {
-            if it.towed || it.dead {
+            if it.towed || it.dead || !self.may_hook(p, it) {
                 continue;
             }
             let d = it.b.dist_to(&s.b) - it.b.r;

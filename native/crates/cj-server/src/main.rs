@@ -3,8 +3,11 @@
 //!
 //! ```text
 //! cj-server [--port N] [--players N] [--seed N] [--mode M] [--careers DIR]
-//!           [--record FILE] [--loopback]
+//!           [--pvp] [--record FILE] [--loopback]
 //! ```
+//!
+//! `--pvp` lets players switch PvP on in the bay; without it the server is
+//! co-op only.
 //!
 //! `--mode` is the difficulty of every career on the server (relaxed,
 //! standard or hard). Players' careers are kept in `--careers DIR`, by
@@ -21,7 +24,7 @@ use std::net::Ipv4Addr;
 use std::time::SystemTime;
 
 /// Usage, shown for --help or a bad flag.
-const USAGE: &str = "usage: cj-server [--port N] [--players N] [--seed N] [--mode relaxed|standard|hard] [--careers DIR] [--record FILE] [--loopback]";
+const USAGE: &str = "usage: cj-server [--port N] [--players N] [--seed N] [--mode relaxed|standard|hard] [--careers DIR] [--pvp] [--record FILE] [--loopback]";
 
 /// The command line, parsed.
 #[derive(Debug)]
@@ -35,6 +38,8 @@ struct Args {
     loopback: bool,
     mode: cj_sim::career::Mode,
     careers: std::path::PathBuf,
+    /// Allow PvP (off unless asked for).
+    pvp: bool,
 }
 
 /// Parses the command line; Err holds the message to print.
@@ -49,6 +54,7 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
         loopback: false,
         mode: cj_sim::career::Mode::Standard,
         careers: "careers".into(),
+        pvp: false,
     };
     while let Some(flag) = args.next() {
         let mut value = |name: &str| {
@@ -84,6 +90,7 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
             }
             "--careers" => a.careers = value("--careers")?.into(),
             "--loopback" => a.loopback = true,
+            "--pvp" => a.pvp = true,
             "--help" | "-h" => return Err(USAGE.to_owned()),
             other => return Err(format!("unknown flag {other}\n{USAGE}")),
         }
@@ -118,6 +125,7 @@ fn main() {
         record: args.record.is_some(),
         mode: args.mode,
         careers: Some(args.careers.clone()),
+        pvp: args.pvp,
     });
     println!(
         "Claim Jumpers server {} on UDP port {} for up to {} pilots (seed {})",
@@ -178,6 +186,8 @@ mod tests {
         assert_eq!(m.mode, cj_sim::career::Mode::Hard);
         assert_eq!(m.careers, std::path::PathBuf::from("here"));
         assert!(args("--mode silly").is_err());
+        assert!(args("--pvp").expect("valid").pvp);
+        assert!(!args("").expect("defaults").pvp);
         assert!(args("--port").is_err());
         assert!(args("--bogus").unwrap_err().contains("usage"));
     }

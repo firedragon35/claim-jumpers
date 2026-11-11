@@ -58,11 +58,13 @@ pub enum Bind {
     Drop,
     Cut,
     Grind,
+    /// Switch PvP on or off, in the bay of a server that allows it.
+    Pvp,
 }
 
 /// [action, save id, label, default codes]: the first code is the one a
 /// rebind replaces; any second is a fixed alternate (arrows, J, K).
-pub const KEY_ACTIONS: [(Bind, &str, &str, &[&str]); 11] = [
+pub const KEY_ACTIONS: [(Bind, &str, &str, &[&str]); 12] = [
     (Bind::Thrust, "thrust", "Thrust", &["KeyW", "ArrowUp"]),
     (Bind::Brake, "brake", "Brake", &["KeyS", "ArrowDown"]),
     (Bind::Left, "left", "Turn left", &["KeyA", "ArrowLeft"]),
@@ -74,6 +76,8 @@ pub const KEY_ACTIONS: [(Bind, &str, &str, &[&str]); 11] = [
     (Bind::Drop, "drop", "Drop last", &["KeyQ"]),
     (Bind::Cut, "cut", "Cut all", &["KeyX"]),
     (Bind::Grind, "grind", "Grind", &["KeyG"]),
+    // B: V (Marge's voice) is reserved, and B is free in every default.
+    (Bind::Pvp, "pvp", "PvP on/off", &["KeyB"]),
 ];
 
 /// Fixed keys that can't be rebound (pause, mute, voice, music, skip
@@ -253,7 +257,32 @@ impl Settings {
                 }
             }
         }
+        s.free_new_defaults();
         s
+    }
+
+    /// A key the player saved before an action existed wins over that
+    /// action's new default (B was free to rebind before PvP took it), so
+    /// the newer action moves to the first free letter rather than share
+    /// one key between two actions.
+    fn free_new_defaults(&mut self) {
+        for (b, _, _, d) in KEY_ACTIONS {
+            let taken = |s: &Settings, code: &str| {
+                KEY_ACTIONS
+                    .iter()
+                    .any(|a| a.0 != b && s.codes_for(a.0).iter().any(|c| c == code))
+            };
+            if self.keys.iter().any(|k| k.0 == b) || !taken(self, d[0]) {
+                continue;
+            }
+            let free = CODES
+                .iter()
+                .map(|c| c.1)
+                .find(|c| c.starts_with("Key") && !RESERVED.contains(c) && !taken(self, c));
+            if let Some(code) = free {
+                self.keys.push((b, code.to_owned()));
+            }
+        }
     }
 
     pub fn to_json(&self) -> String {
@@ -359,6 +388,22 @@ mod tests {
         assert_eq!(s.codes_for(Bind::Cut), vec!["Numpad0"]);
         assert_eq!(Settings::from_json(Some(&s.to_json())), s);
         assert_eq!(Settings::from_json(Some("[1]")), Settings::default());
+    }
+
+    /// A 1.3.0 save that put Fire on B keeps it; PvP, new in 1.4.0 with B
+    /// as its default, moves to a free key instead of sharing B.
+    #[test]
+    fn a_key_saved_before_pvp_keeps_b_and_pvp_moves() {
+        let s = Settings::from_json(Some(r#"{"keys":{"fire":"KeyB"}}"#));
+        assert_eq!(s.codes_for(Bind::Fire)[0], "KeyB");
+        let pvp = s.codes_for(Bind::Pvp)[0].clone();
+        assert_ne!(pvp, "KeyB");
+        for (b, ..) in KEY_ACTIONS.iter().filter(|a| a.0 != Bind::Pvp) {
+            assert!(!s.codes_for(*b).contains(&pvp), "{pvp} is free");
+        }
+        assert_eq!(Settings::from_json(Some(&s.to_json())), s, "and it sticks");
+        let fresh = Settings::from_json(Some("{}"));
+        assert_eq!(fresh.codes_for(Bind::Pvp), vec!["KeyB"], "B by default");
     }
 
     #[test]

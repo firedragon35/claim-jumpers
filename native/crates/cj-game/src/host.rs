@@ -23,13 +23,15 @@ pub struct Hosted {
 impl Hosted {
     /// Starts a server for game version `version` and up to `limit` pilots
     /// (which also sizes the field) on port 47820, its careers in `mode`
-    /// and kept in `careers` (in memory only if `None`). Fails (with a
+    /// and kept in `careers` (in memory only if `None`), allowing PvP if
+    /// `pvp`. Fails (with a
     /// sentence for the player) if the port is taken, for example by
     /// another server already running on this machine.
     pub fn start(
         version: &str,
         limit: usize,
         mode: cj_sim::career::Mode,
+        pvp: bool,
         careers: Option<std::path::PathBuf>,
     ) -> Result<Hosted, String> {
         let port = cj_net::DEFAULT_PORT;
@@ -48,6 +50,7 @@ impl Hosted {
             record: false,
             mode,
             careers,
+            pvp,
         });
         let stop = Arc::new(AtomicBool::new(false));
         let flag = stop.clone();

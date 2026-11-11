@@ -71,12 +71,14 @@ pub struct Blip {
     pub y: i32,
 }
 
-/// Another pilot's tug in sight: its slot, the tug and its cable.
+/// Another pilot's tug in sight: its slot, the tug, its cable, and
+/// whether it is PvP Enabled (so it can be marked; arming isn't shown).
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct OtherTug {
     pub slot: u8,
     pub ship: cj_sim::entities::Ship,
     pub chain: Vec<u32>,
+    pub pvp: bool,
 }
 
 /// The world as pilot `you` may see it at server tick `tick`.
@@ -273,6 +275,7 @@ impl Snapshot {
                 slot: q as u8,
                 ship: pl.ship.clone(),
                 chain: pl.chain.clone(),
+                pvp: pl.pvp == cj_sim::perm::Pvp::Enabled,
             })
             .collect();
         let snapshot = Snapshot {

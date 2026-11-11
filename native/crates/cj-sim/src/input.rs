@@ -28,4 +28,7 @@ pub enum Action {
     Cut,
     /// Grind the last piece into slugs (needs the salvage grinder).
     Grind,
+    /// Switch PvP on or off, in the bay on a server that allows it (see
+    /// [`crate::perm`]). Not a cable command, but sent the same way.
+    TogglePvp,
 }

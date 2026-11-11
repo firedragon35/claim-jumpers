@@ -393,17 +393,25 @@ impl World {
                 if matches!(other, Handle::Hull(_)) || rel < SHIP_IMPACT_SAFE {
                     return;
                 }
-                // Tugs push each other but do no damage: by the owner's rule
-                // (2026-11-10) tug collisions hurt only between two PvP
-                // Enabled players, and PvP does not exist yet (CJN-21).
-                if matches!(other, Handle::Ship(_)) {
-                    return;
+                // Tugs always push each other, but by the owner's contact
+                // rule (2026-11-10) they hurt only between two PvP Enabled
+                // pilots; then each answers for the damage to the other.
+                if let Handle::Ship(q) = other {
+                    let enabled = |k: usize| self.pilots[k].pvp == crate::perm::Pvp::Enabled;
+                    if !(enabled(p) && enabled(q)) {
+                        return;
+                    }
+                    self.record_pvp_hit(q, p);
                 }
-                // Another pilot's towed or thrown cargo can't hurt this tug.
+                // Another pilot's towed or thrown cargo hurts this tug only
+                // when the permission rule allows it (PvP, see perm.rs).
                 if let Handle::Item(i) = other {
                     let by = self.cargo_blame(i).and_then(|b| self.resolve_blame(b));
                     if !self.can_hurt_pilot(by, p) {
                         return;
+                    }
+                    if let Some(a) = by {
+                        self.record_pvp_hit(a, p);
                     }
                 }
                 let ob = self.body(other);

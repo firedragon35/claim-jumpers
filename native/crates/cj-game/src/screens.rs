@@ -65,6 +65,8 @@ pub enum Act {
     CycleLimit,
     /// Step the hosted server's career difficulty mode.
     CycleHostMode,
+    /// Switch PvP on or off for a server this player hosts.
+    ToggleHostPvp,
     OpenJoin,
     /// Look up the server at the address typed on the Join screen, or,
     /// once it has answered, join it.
@@ -462,6 +464,9 @@ fn guide(look: &Look, u: &Ui, tab: usize, x: f32, y: f32, w: f32) {
 
 /// Draws the pause menu and returns the action the player picked, if any. `voice_on` is Marge's voice setting and `armed_menu` is whether the main-menu button is waiting for a second press to end the shift.
 /// The first screen: play alone, host a server for others, or join one.
+/// `limit`, `mode` and `pvp` are the options for a server this player hosts.
+// The screen's inputs plus the three host options, like the other screens'.
+#[allow(clippy::too_many_arguments)]
 pub fn launch(
     look: &Look,
     u: &mut Ui,
@@ -470,6 +475,7 @@ pub fn launch(
     dpi: f32,
     limit: usize,
     mode: Mode,
+    pvp: bool,
 ) -> Option<Act> {
     let (w, h) = (900.0, 350.0);
     u.begin(input, (w, h), view, dpi);
@@ -552,7 +558,7 @@ pub fn launch(
     }
     // Every career on a hosted server plays at the host's chosen mode.
     let m = format!("Careers: {}", mode.def().label);
-    if u.button_at(
+    let (p, mr) = u.button_at(
         look,
         "mode",
         lr.x + lr.w + 12.0,
@@ -560,10 +566,24 @@ pub fn launch(
         Style::Ghost,
         &m,
         true,
+    );
+    if p {
+        act = Some(Act::CycleHostMode);
+    }
+    // Off by default: a hosted server is co-op unless the host opts in.
+    let pv = if pvp { "PvP: On" } else { "PvP: Off" };
+    if u.button_at(
+        look,
+        "pvp",
+        mr.x + mr.w + 12.0,
+        by + 50.0,
+        Style::Ghost,
+        pv,
+        true,
     )
     .0
     {
-        act = Some(Act::CycleHostMode);
+        act = Some(Act::ToggleHostPvp);
     }
     act
 }

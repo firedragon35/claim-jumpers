@@ -87,6 +87,9 @@ pub struct Config {
     /// The folder the players' careers are kept in, or `None` to keep them
     /// only while the server runs (see [`careers`]).
     pub careers: Option<std::path::PathBuf>,
+    /// The host allows PvP: players may switch it on in the bay (off by
+    /// default, owner decision 2026-11-11).
+    pub pvp: bool,
 }
 
 /// One entry of a [`Recording`].
@@ -250,14 +253,16 @@ fn new_world(seed: u32, limit: usize, shared: &SharedShift, careers: &[Career]) 
     World::for_careers(Rng::seeded(seed), SERVER_VIEW, limit, shared, careers)
 }
 
-/// A server's first shift: the first belt in normal conditions.
-fn first_shift(mode: Mode) -> SharedShift {
+/// A server's first shift: the first belt in normal conditions, with the
+/// host's PvP setting (kept for every later shift).
+fn first_shift(mode: Mode, pvp: bool) -> SharedShift {
     SharedShift {
         belt: Belt::Quiet,
         cond: Condition::Normal,
         mode,
         shift_no: 1,
         grudge: 0.0,
+        pvp,
     }
 }
 
@@ -324,7 +329,9 @@ fn winning_belt(players: &[Player], current: Belt) -> Belt {
 /// Replays `rec` for `steps` steps on a fresh world, applying each entry
 /// before the step it was recorded at, exactly as the server did.
 pub fn replay(rec: &Recording, steps: u32) -> World {
-    let shared = rec.shared.unwrap_or_else(|| first_shift(Mode::Standard));
+    let shared = rec
+        .shared
+        .unwrap_or_else(|| first_shift(Mode::Standard, false));
     let start: Vec<Career> = rec.start.iter().map(|c| career_of(c)).collect();
     let mut w = new_world(rec.seed, rec.limit, &shared, &start);
     let mut inputs: Vec<Input> = vec![Input::default(); start.len()];
@@ -356,7 +363,7 @@ impl Server {
     /// A server for a new shift.
     pub fn new(config: Config) -> Server {
         let limit = config.max_players.clamp(1, MAX_PLAYERS);
-        let shared = first_shift(config.mode);
+        let shared = first_shift(config.mode, config.pvp);
         let (careers, warning) = careers::CareerStore::open(config.careers.clone());
         Server {
             renet: RenetServer::new(ConnectionConfig::default()),
@@ -787,6 +794,7 @@ impl Server {
             connected: connected as u8,
             max: self.config.max_players as u8,
             full: self.full(),
+            pvp: self.config.pvp,
         };
         self.send(id, channel::RELIABLE, &ServerMsg::Info(info));
     }
@@ -1132,7 +1140,7 @@ impl Server {
                 name: p.name.clone(),
                 slot: slot.map(|s| s as u8),
                 banked: pilot.map_or(0, |pl| cj_sim::js::round(pl.banked) as i64),
-                kills: pilot.map_or(0, |pl| pl.stats.jumpers),
+                kills: pilot.map_or(0, |pl| pl.stats.jumpers + pl.stats.pvp_kills),
                 deaths: pilot.map_or(0, |pl| pl.stats.deaths),
                 away: p.conn.is_none(),
                 ready: p.ready,

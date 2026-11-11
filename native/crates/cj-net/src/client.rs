@@ -490,6 +490,11 @@ fn fill(
         if let Some(pl) = w.pilots.get_mut(usize::from(o.slot)) {
             pl.ship = o.ship.clone();
             pl.chain = o.chain.clone();
+            pl.pvp = if o.pvp {
+                cj_sim::perm::Pvp::Enabled
+            } else {
+                cj_sim::perm::Pvp::Protected
+            };
         }
     }
     w.items = s.items.clone();

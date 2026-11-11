@@ -1,13 +1,14 @@
 //! The server end to end over renet's in-memory local clients (the same
 //! route the game's host takes): handshakes and refusals, hostile and
 //! flooding clients, reconnecting, late joins, two and three pilots in one
-//! shift, the per-pilot view, shared sounds, and exact replay from a
-//! recording.
+//! shift, the per-pilot view, shared sounds, PvP between three players,
+//! and exact replay from a recording.
 
 use cj_net::{channel, ClientMsg, Reject, ServerMsg, Snapshot};
 use cj_server::{replay, Config, Server};
 use cj_sim::consts::STEP;
 use cj_sim::events::{Emitted, Event, Sfx};
+use cj_sim::perm::Pvp;
 use cj_sim::{Action, Input};
 use renet::{ClientId, RenetClient};
 use std::time::Duration;
@@ -15,14 +16,21 @@ use std::time::Duration;
 const VERSION: &str = "9.9.9";
 
 fn server(max_players: usize) -> Server {
-    Server::new(Config {
+    Server::new(config_for(max_players))
+}
+
+/// The test server's settings: recorded, Standard mode, no saved careers,
+/// co-op only.
+fn config_for(max_players: usize) -> Config {
+    Config {
         version: VERSION.to_owned(),
         max_players,
         seed: 42,
         record: true,
         mode: cj_sim::career::Mode::Standard,
         careers: None,
-    })
+        pvp: false,
+    }
 }
 
 /// A scripted client.
@@ -76,6 +84,16 @@ impl Bot {
             secret: [secret; 16],
             pilot: format!("Bot {}", self.id),
             view: (1280, 720),
+        };
+        self.send(channel::RELIABLE, &msg);
+    }
+
+    /// Sends a one-shot action, such as switching PvP.
+    fn act(&mut self, action: Action) {
+        self.seq += 1;
+        let msg = ClientMsg::Action {
+            seq: self.seq,
+            action,
         };
         self.send(channel::RELIABLE, &msg);
     }
@@ -315,6 +333,7 @@ fn each_career_is_settled_saved_and_kept_across_a_restart() {
         record: false,
         mode: cj_sim::career::Mode::Hard,
         careers: Some(dir.clone()),
+        pvp: false,
     };
     let mut s = Server::new(config(42));
     let mut a = Bot::join(&mut s, 1, 1);
@@ -826,6 +845,7 @@ fn a_twenty_pilot_server_sizes_its_field_and_reports_far_corners() {
         record: false,
         mode: cj_sim::career::Mode::Standard,
         careers: None,
+        pvp: false,
     });
     let w = &s.world;
     let width = w.edge_hi - w.edge_lo;
@@ -852,4 +872,165 @@ fn a_twenty_pilot_server_sizes_its_field_and_reports_far_corners() {
             .any(|d| (d.x - cx).abs() <= 1 && (d.y - cy).abs() <= 1),
         "the far corner's piece is on the radar"
     );
+}
+
+/// A host's PvP choice reaches every shift's field and the Join screen's
+/// answer; without it a server is co-op only.
+#[test]
+fn the_hosts_pvp_choice_holds_for_every_shift() {
+    let mut s = Server::new(Config {
+        pvp: true,
+        ..config_for(4)
+    });
+    let mut a = Bot::join(&mut s, 1, 1);
+    a.hello(VERSION, 7);
+    steps(&mut s, &mut [&mut a], 3);
+    assert!(s.world.pvp_allowed);
+    let mut q = Bot::join(&mut s, 2, 2);
+    q.send(channel::RELIABLE, &ClientMsg::Query);
+    steps(&mut s, &mut [&mut a, &mut q], 3);
+    assert!(q.info.as_ref().expect("an answer").pvp);
+    end_shift(&mut s);
+    steps(&mut s, &mut [&mut a, &mut q], cj_server::BREAK_STEPS + 20);
+    assert!(!s.in_break(), "the next shift is on");
+    assert!(s.world.pvp_allowed, "still allowed after the break");
+    assert!(!server(4).world.pvp_allowed, "off by default");
+}
+
+/// Steps for `secs` seconds of shift time, plus a few to settle.
+fn seconds(s: &mut Server, bots: &mut [&mut Bot], secs: f64) {
+    steps(s, bots, (secs / STEP).ceil() as u32 + 5);
+}
+
+/// Three players on a PvP server, each tug out in the open with no shield
+/// or spawn cover, a lane apart so stray rounds can't cross.
+fn pvp_trio() -> (Server, Bot, Bot, Bot) {
+    let mut s = Server::new(Config {
+        pvp: true,
+        ..config_for(4)
+    });
+    let mut a = Bot::join(&mut s, 1, 1);
+    let mut b = Bot::join(&mut s, 2, 2);
+    let mut c = Bot::join(&mut s, 3, 3);
+    for bot in [&mut a, &mut b, &mut c] {
+        bot.hello(VERSION, 7);
+    }
+    steps(&mut s, &mut [&mut a, &mut b, &mut c], 3);
+    assert_eq!((a.pilot, b.pilot, c.pilot), (Some(0), Some(1), Some(2)));
+    (s, a, b, c)
+}
+
+/// Pilot 0 asks to go PvP from the bay (where every tug starts) and waits
+/// out the arming time.
+fn arm_first(s: &mut Server, a: &mut Bot, b: &mut Bot, c: &mut Bot) {
+    a.act(Action::TogglePvp);
+    steps(s, &mut [&mut *a, &mut *b, &mut *c], 2);
+    assert!(matches!(s.world.pilots[0].pvp, Pvp::Arming { .. }));
+    seconds(s, &mut [a, b, c], cj_sim::perm::PVP_ARM_TIME);
+    assert_eq!(s.world.pilots[0].pvp, Pvp::Enabled);
+}
+
+/// Moves every tug out of the bay into its own lane, uncovered.
+fn spread_out(s: &mut Server) {
+    for p in 0..s.world.pilots.len() {
+        let sh = &mut s.world.pilots[p].ship;
+        sh.b.x = cj_sim::consts::BAY_X + 1500.0;
+        sh.b.y = cj_sim::consts::BAY_Y + 300.0 * p as f64;
+        (sh.b.vx, sh.b.vy) = (0.0, 0.0);
+        (sh.invuln, sh.shield) = (0.0, 0.0);
+    }
+}
+
+/// Fires one cutter round for pilot `by` from just beside pilot `at`'s tug,
+/// steps until it lands, and returns the shield and hull `at` lost (the
+/// shield regrows, so it may take the whole round).
+fn shoot(s: &mut Server, bots: &mut [&mut Bot], by: usize, at: usize) -> f64 {
+    let (x, y) = (s.world.pilots[at].ship.b.x, s.world.pilots[at].ship.b.y);
+    let cover = |s: &Server| s.world.pilots[at].ship.hp + s.world.pilots[at].ship.shield;
+    let before = cover(s);
+    s.world.bullets.push(cj_sim::entities::Bullet {
+        x: x - 40.0,
+        y,
+        vx: 600.0,
+        life: 1.0,
+        dmg: 5.0,
+        blame: cj_sim::world::Blame::Pilot(by),
+        ..cj_sim::entities::Bullet::default()
+    });
+    steps(s, bots, 8);
+    assert!(s.world.bullets.is_empty(), "the round landed");
+    before - cover(s)
+}
+
+/// Over the network: a player arms PvP from the bay and every client sees
+/// the mark; the PvP tug can hurt a Protected one, which may fire back for
+/// a while without a star, while a bystander can hurt neither.
+#[test]
+fn pvp_rules_hold_across_three_players() {
+    let (mut s, mut a, mut b, mut c) = pvp_trio();
+    arm_first(&mut s, &mut a, &mut b, &mut c);
+    let mark = |bot: &Bot, slot: u8| {
+        let snap = bot.last.as_ref().expect("a snapshot");
+        snap.others.iter().find(|o| o.slot == slot).map(|o| o.pvp)
+    };
+    assert_eq!(mark(&b, 0), Some(true), "B sees A's mark");
+    assert_eq!(mark(&c, 0), Some(true), "and so does C");
+    assert_eq!(mark(&a, 1), Some(false), "B is Protected");
+    let me = |bot: &Bot| bot.last.as_ref().expect("a snapshot").me.clone();
+    assert_eq!(me(&a).pvp, Pvp::Enabled, "A's own HUD knows");
+
+    spread_out(&mut s);
+    let mut bots = [&mut a, &mut b, &mut c];
+    assert!(shoot(&mut s, &mut bots, 2, 0) <= 0.0, "C can't start on A");
+    assert!(shoot(&mut s, &mut bots, 0, 1) > 0.0, "A hurts B");
+    assert_eq!(s.world.pilots[0].wanted, 1, "a star for the attack");
+    assert!(s.world.pilots[0].combat_t > 0.0, "A is locked in");
+    assert!(!me(bots[1]).payback.is_empty(), "B's HUD offers payback");
+    assert!(shoot(&mut s, &mut bots, 1, 0) > 0.0, "B fires back");
+    assert_eq!(s.world.pilots[1].wanted, 0, "self-defence earns none");
+    assert!(
+        shoot(&mut s, &mut bots, 2, 1) <= 0.0,
+        "C still can't hurt B"
+    );
+
+    // The payback window closes 30 s after A's last attack.
+    seconds(&mut s, &mut bots, cj_sim::perm::PVP_COMBAT_LOCK);
+    assert!(shoot(&mut s, &mut bots, 1, 0) <= 0.0, "B's window closed");
+}
+
+/// A PvP player who drops out mid-fight leaves the tug in the field until
+/// the combat lock runs out, coming back inside the lock changes nothing,
+/// and only after the lock does the tug leave the field.
+#[test]
+fn a_tug_in_a_combat_lock_stays_in_the_field_when_its_player_leaves() {
+    let (mut s, mut a, mut b, mut c) = pvp_trio();
+    arm_first(&mut s, &mut a, &mut b, &mut c);
+    spread_out(&mut s);
+    assert!(shoot(&mut s, &mut [&mut a, &mut b, &mut c], 0, 1) > 0.0);
+
+    s.renet.disconnect_local_client(1, &mut a.client);
+    seconds(&mut s, &mut [&mut b, &mut c], 5.0);
+    assert!(s.world.pilots[0].ship.alive, "still out there, locked");
+    assert!(
+        shoot(&mut s, &mut [&mut b, &mut c], 1, 0) > 0.0,
+        "B can hit it"
+    );
+
+    let mut back = Bot::join(&mut s, 4, 1);
+    back.hello(VERSION, 7);
+    steps(&mut s, &mut [&mut back, &mut b, &mut c], 3);
+    assert_eq!(back.pilot, Some(0));
+    assert_eq!(
+        s.world.pilots[0].pvp,
+        Pvp::Enabled,
+        "returning isn't a reset"
+    );
+    assert!(
+        s.world.pilots[0].combat_t > 0.0,
+        "nor does it lift the lock"
+    );
+
+    s.renet.disconnect_local_client(4, &mut back.client);
+    seconds(&mut s, &mut [&mut b, &mut c], cj_sim::perm::PVP_COMBAT_LOCK);
+    assert!(!s.world.pilots[0].ship.alive, "gone once the lock ran out");
 }

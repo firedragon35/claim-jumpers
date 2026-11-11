@@ -182,6 +182,8 @@ pub struct Info {
     pub max: u8,
     /// Every slot is taken, so a new player would be refused.
     pub full: bool,
+    /// The host allows PvP on it.
+    pub pvp: bool,
 }
 
 /// Where a server is between shifts and shifts.
@@ -202,7 +204,7 @@ pub struct LobbyPlayer {
     pub slot: Option<u8>,
     /// Credits banked this shift.
     pub banked: i64,
-    /// Rivals scrapped this shift.
+    /// Rivals scrapped and other players' tugs wrecked (PvP) this shift.
     pub kills: u32,
     pub deaths: u32,
     /// Disconnected, with their tug out of the field until they return.

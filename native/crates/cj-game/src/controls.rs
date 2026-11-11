@@ -67,12 +67,14 @@ pub struct Controls {
 }
 
 /// Button → one-shot, as PAD_TAPS: Y hook, B drop last, LB cut all,
-/// X grind, Start pause, Back mute.
-const PAD_TAPS: [(Button, Tap); 6] = [
+/// X grind, D-pad up PvP on/off, Start pause, Back mute.
+const PAD_TAPS: [(Button, Tap); 7] = [
     (Button::North, Tap::Act(Action::Hook)),
     (Button::East, Tap::Act(Action::Drop)),
     (Button::LeftTrigger, Tap::Act(Action::Cut)),
     (Button::West, Tap::Act(Action::Grind)),
+    // D-pad up: down is the brake, and left and right turn.
+    (Button::DPadUp, Tap::Act(Action::TogglePvp)),
     (Button::Start, Tap::Pause),
     (Button::Select, Tap::Mute),
 ];
@@ -226,6 +228,7 @@ impl Controls {
             (Bind::Drop, Action::Drop),
             (Bind::Cut, Action::Cut),
             (Bind::Grind, Action::Grind),
+            (Bind::Pvp, Action::TogglePvp),
         ] {
             if tapped(b) {
                 out.actions.push(a);

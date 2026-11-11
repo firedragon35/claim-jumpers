@@ -50,6 +50,7 @@ Grind (grinder)         G                   X
 Afterburner             Shift               LT + RT together
 Pause                   P or Esc            Start
 Mute                    M                   Back
+PvP on/off (online)     B                   D-pad up
 Marge's voice on/off    V
 Music on/off            N
 Skip training           T
@@ -82,8 +83,9 @@ Up to 20 pilots can share one shift. Everyone needs the same version of the
 game.
 
 Hosting: choose Host server. Before you do, you can pick how many pilots
-the server is for (the field grows with it) and the difficulty of every
-career on it. Your game runs the server, so the session ends when you
+the server is for (the field grows with it), the difficulty of every
+career on it, and whether PvP is allowed (off unless you switch it on; see
+PVP below). Your game runs the server, so the session ends when you
 leave. The first time, Windows Firewall may ask whether to allow Claim
 Jumpers: allow it on private networks, or nobody else can get in.
 
@@ -109,8 +111,22 @@ starts when everyone is ready, or after 90 seconds. A player joining in a
 shift's last minute waits in the lobby for the next one.
 
 Each server keeps its own career for you, separate from your single-player
-career, so you start fresh on every server. Other players' shots stop at
-your tug but never hurt it.
+career, so you start fresh on every server. Unless you go PvP, other
+players' shots and rams stop at your tug but never hurt it.
+
+PvP (player versus player) is only on servers whose host allows it, and
+everyone starts each shift Protected. To fight, fly into the bay and press
+B (D-pad up on a gamepad); after 10 seconds of arming you are PvP, shown to
+everyone by a red ring and a PVP tag on your tug. A PvP pilot can hurt any
+tug, and anyone they hurt may fire back at them for 30 seconds after each
+attack. Ramming hurts only when both tugs are PvP.
+
+Attacking, or being hit while PvP, locks you in combat for 30 seconds: you
+can't switch PvP off (in the bay again) until the lock ends, and if you
+leave the game your tug stays in the field until it does. On belts with
+law, the first hit in a fight earns the attacker a wanted star and wrecking
+the tug two more; firing back earns none. For 20 seconds only its owner and
+PvP pilots can pick up a wrecked tug's cargo, and PvP wrecks pay no bounty.
 
 The connection is not encrypted: don't share anything private in the chat.
 

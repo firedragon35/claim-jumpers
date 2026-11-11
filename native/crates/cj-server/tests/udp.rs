@@ -30,6 +30,7 @@ fn serve(
         record: false,
         mode: cj_sim::career::Mode::Standard,
         careers: None,
+        pvp: false,
     });
     let thread = std::thread::spawn(move || {
         run(&mut transport, &mut server, |_| {

@@ -1312,6 +1312,7 @@ pub fn render(sc: Scene) {
                 Some(crate::online::slot_paint(p))
             };
             draw_ship(sc.look, w, p, t, sc.rng, paint);
+            draw_pvp_mark(sc.look, w, p, scale);
         }
         draw_partner(sc.look, w, t, sc.rng, scale);
         crate::foes::net_on_ship(sc.look, w, t, sc.device, sc.settings, scale);
@@ -1500,6 +1501,19 @@ fn draw_partner(look: &Look, w: &World, t: f32, rng: &mut Rng, scale: f32) {
         col::CABLE,
         scale,
     );
+}
+
+/// A red ring and a "PVP" tag on pilot `p`'s tug while it is PvP Enabled,
+/// so everyone can see who may open fire (your own tug included).
+fn draw_pvp_mark(look: &crate::look::Look, w: &World, p: usize, scale: f32) {
+    let pl = &w.pilots[p];
+    if pl.pvp != cj_sim::perm::Pvp::Enabled || !pl.ship.alive {
+        return;
+    }
+    let b = pl.ship.b;
+    let (x, y, r) = (b.x as f32, b.y as f32, b.r as f32 + 10.0);
+    draw_circle_lines(x, y, r, 2.0 / scale, crate::look::rgba(col::DANGER, 0.8));
+    crate::foes::tag(look, x, y + r + 14.0, "PVP", col::DANGER, scale);
 }
 
 #[cfg(test)]

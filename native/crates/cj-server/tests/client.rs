@@ -77,6 +77,7 @@ fn a_client_hooks_salvage_and_banks_it() {
         record: false,
         mode: cj_sim::career::Mode::Standard,
         careers: None,
+        pvp: false,
     });
     // Clear the shift's own salvage and rivals so the test is about this
     // one piece, out of the bay tractor's reach.
@@ -195,6 +196,7 @@ fn rough_pair(delay: u32, jitter: u32, loss: u32) -> (Server, Pilot, Lagged) {
         record: false,
         mode: cj_sim::career::Mode::Standard,
         careers: None,
+        pvp: false,
     });
     s.world.jumpers.clear();
     s.world.jumper_timer = f64::INFINITY;
@@ -333,6 +335,7 @@ fn a_client_follows_the_server_into_the_next_shift() {
         record: false,
         mode: cj_sim::career::Mode::Standard,
         careers: None,
+        pvp: false,
     });
     let mut me = Pilot {
         session: Session::new(),

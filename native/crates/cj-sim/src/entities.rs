@@ -208,6 +208,11 @@ pub struct Item {
     /// The pilot who last hooked this item onto their cable, if any: whose
     /// cargo it is while towed, and whose throw it is while `thrown_t` runs.
     pub owner: Option<usize>,
+    /// Cargo spilled by a PvP wreck: the wrecked pilot, and the shift time
+    /// until which only they and PvP players may hook it (see
+    /// [`crate::perm`]). Rivals aren't bound by it.
+    #[serde(default)]
+    pub claim: Option<(usize, f64)>,
     /// The rival (jumper id) dragging this item off, if any.
     pub hooked_by: Option<u32>,
     /// Seconds until a towed rogue core next tries to zap the tug.
@@ -315,6 +320,7 @@ pub fn make_item(
         fuse: 0.0,
         primed_by: crate::world::Blame::Unset,
         owner: None,
+        claim: None,
         hooked_by: None,
         zap_t: 1.0,
         shape,

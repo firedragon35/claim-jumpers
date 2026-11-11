@@ -594,6 +594,7 @@ fn a_shared_field_flies_each_career_and_settles_each_apart() {
         mode: Mode::Hard,
         shift_no: 3,
         grudge: 0.0,
+        pvp: false,
     };
     let careers = [rich.clone(), fresh.clone()];
     let mut w = World::for_careers(Rng::seeded(5), (1280.0, 720.0), 4, &shared, &careers);

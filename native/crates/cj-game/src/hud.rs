@@ -210,6 +210,21 @@ pub fn draw(look: &Look, w: &World, career: Option<&Career>, view: (f32, f32), d
         text_left(&note, x, cy, 13.0, font, color);
         cy += 17.0;
     }
+    // PvP: arming, on (with any combat lock), or attacked by a PvP pilot
+    // you may fire back at. Nothing while Protected and left alone.
+    if let Some(line) = pvp_line(w.me()) {
+        let font = &look.fonts.mono;
+        let color = crate::look::hex(col::DANGER);
+        text_left(
+            &line,
+            (vw - text_width(&line, 13.0, font)) / 2.0,
+            cy,
+            13.0,
+            font,
+            color,
+        );
+        cy += 17.0;
+    }
     let stage = w.rival_stage();
     if stage > 0 {
         let txt = format!("RIVALS · {}", RIVAL_STAGES[stage].name.to_uppercase());
@@ -350,5 +365,48 @@ pub fn draw(look: &Look, w: &World, career: Option<&Career>, view: (f32, f32), d
             &look.fonts.mono_light,
             crate::look::hex(col::MUTED),
         );
+    }
+}
+
+/// The HUD's PvP status for pilot `me`, if there is anything to say.
+/// Seconds are rounded up, so a countdown never shows 0 while running.
+fn pvp_line(me: &cj_sim::world::Pilot) -> Option<String> {
+    use cj_sim::perm::Pvp;
+    let secs = |t: f64| t.ceil() as u32;
+    match me.pvp {
+        Pvp::Arming { t } => Some(format!("PVP ARMING · {}", secs(t))),
+        Pvp::Enabled if me.combat_t > 0.0 => {
+            Some(format!("PVP ON · COMBAT LOCK {}", secs(me.combat_t)))
+        }
+        Pvp::Enabled => Some("PVP ON".to_owned()),
+        Pvp::Protected => me
+            .payback
+            .iter()
+            .map(|&(_, t)| t)
+            .reduce(f64::max)
+            .map(|t| format!("ATTACKED · FIRE BACK {}", secs(t))),
+    }
+}
+
+#[cfg(test)]
+mod pvp_tests {
+    use super::pvp_line;
+    use cj_sim::mods::Mods;
+    use cj_sim::perm::Pvp;
+    use cj_sim::world::Pilot;
+
+    /// Each PvP state has its line, and a quiet Protected pilot has none.
+    #[test]
+    fn the_pvp_line_follows_the_state() {
+        let mut p = Pilot::new(Mods::stock());
+        assert_eq!(pvp_line(&p), None);
+        p.payback.push((1, 12.2));
+        assert_eq!(pvp_line(&p).as_deref(), Some("ATTACKED · FIRE BACK 13"));
+        p.pvp = Pvp::Arming { t: 9.5 };
+        assert_eq!(pvp_line(&p).as_deref(), Some("PVP ARMING · 10"));
+        p.pvp = Pvp::Enabled;
+        assert_eq!(pvp_line(&p).as_deref(), Some("PVP ON"));
+        p.combat_t = 0.4;
+        assert_eq!(pvp_line(&p).as_deref(), Some("PVP ON · COMBAT LOCK 1"));
     }
 }

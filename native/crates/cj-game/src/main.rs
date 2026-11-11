@@ -186,6 +186,8 @@ struct App {
     host_limit: usize,
     /// The difficulty mode of careers on a server this player hosts.
     host_mode: Mode,
+    /// Whether a server this player hosts allows PvP (off by default).
+    host_pvp: bool,
     /// Online: this player's career on the server, as of the last report
     /// (never the single-player career, which stays in `career`).
     online_career: Option<Career>,
@@ -315,8 +317,11 @@ impl App {
             Some(i) => (
                 Some((
                     format!(
-                        "{} of {} pilots connected. There's room for you.",
-                        i.connected, i.max
+                        "{} of {} pilots connected. There's room for you.{}",
+                        i.connected,
+                        i.max,
+                        // So nobody joins a PvP server by surprise.
+                        if i.pvp { " PvP is on." } else { "" }
                     ),
                     look::col::ORE,
                 )),
@@ -338,6 +343,7 @@ impl App {
             env!("CARGO_PKG_VERSION"),
             self.host_limit,
             self.host_mode,
+            self.host_pvp,
             careers,
         ) {
             Ok(h) => h,
@@ -764,6 +770,7 @@ impl App {
                 let at = MODES.iter().position(|&m| m == self.host_mode).unwrap_or(0);
                 self.host_mode = MODES[(at + 1) % MODES.len()];
             }
+            Act::ToggleHostPvp => self.host_pvp = !self.host_pvp,
             Act::OpenJoin => {
                 // Keys typed elsewhere mustn't land in the address.
                 while get_char_pressed().is_some() {}
@@ -1178,6 +1185,7 @@ async fn main() {
         chat: online::Chat::default(),
         host_limit: 4,
         host_mode: Mode::Standard,
+        host_pvp: false,
         online_career: None,
         daily: None,
     };
@@ -1501,6 +1509,7 @@ async fn main() {
                     dpi,
                     app.host_limit,
                     app.host_mode,
+                    app.host_pvp,
                 )
             }
             Screen::Join => {
@@ -1662,7 +1671,8 @@ fn play_steps(
 ) {
     // One-shot cable commands land before the next step, as the browser's
     // key handlers run between frames.
-    for a in &presses.actions {
+    // PvP needs a server, so single player ignores its key.
+    for a in presses.actions.iter().filter(|a| **a != Action::TogglePvp) {
         app.world.action(*a);
     }
     if smoke {

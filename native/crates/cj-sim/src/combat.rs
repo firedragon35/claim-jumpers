@@ -180,8 +180,9 @@ impl World {
     fn bullet_hit(&mut self, b: &Bullet) -> bool {
         let dmg = b.dmg;
         // Another player's tug stops the round. Whether it also hurts is the
-        // permission rule's call, and until PvP it never does (owner,
-        // 2026-11-11). Alone in the field there is no other tug to stop it.
+        // permission rule's call (PvP, see perm.rs); a hit that does is
+        // recorded for the combat lock and payback. Alone in the field there
+        // is no other tug to stop it.
         if let Some(by) = self.blamed() {
             let tug = (0..self.pilots.len()).find(|&p| {
                 let s = &self.pilots[p].ship;
@@ -189,6 +190,7 @@ impl World {
             });
             if let Some(p) = tug {
                 if self.can_hurt_pilot(Some(by), p) {
+                    self.record_pvp_hit(by, p);
                     self.damage_ship(p, dmg);
                 }
                 return true;
@@ -763,6 +765,9 @@ impl World {
             }
             let f = falloff(&self.pilots[p].ship.b);
             if f > 0.0 {
+                if let Some(a) = by {
+                    self.record_pvp_hit(a, p);
+                }
                 shove(&mut self.pilots[p].ship.b, f);
                 self.damage_ship(p, ship_damage * f);
             }
@@ -780,20 +785,21 @@ impl World {
 #[cfg(test)]
 mod tests {
     use crate::entities::Bullet;
+    use crate::mods::Mods;
+    use crate::perm::Pvp;
     use crate::rng::Rng;
     use crate::world::{Blame, Pilot, World};
 
-    /// One player's round stops at another player's tug and leaves its
-    /// shield and hull alone (no damage between players until PvP).
-    #[test]
-    fn a_players_round_stops_at_another_tug_without_hurting_it() {
+    /// Two tugs side by side, and pilot 0's round fired at pilot 1 and run
+    /// until it lands.
+    fn shot_at_neighbour(attacker: Pvp) -> World {
         let mut w = World::empty(Rng::Constant(0.5), (1280.0, 720.0));
         w.pilots.push(Pilot::new(w.pilots[0].mods.clone()));
+        w.pilots[0].pvp = attacker;
         let (x, y) = (w.pilots[0].ship.b.x, w.pilots[0].ship.b.y);
         w.pilots[1].ship.b.x = x + 60.0;
         w.pilots[1].ship.b.y = y;
         w.pilots[1].ship.invuln = 0.0;
-        let before = (w.pilots[1].ship.hp, w.pilots[1].ship.shield);
         w.bullets.push(Bullet {
             x: x + 40.0,
             y,
@@ -810,6 +816,28 @@ mod tests {
             w.bullets.is_empty(),
             "the round landed instead of flying on"
         );
-        assert_eq!((w.pilots[1].ship.hp, w.pilots[1].ship.shield), before);
+        w
+    }
+
+    /// A Protected player's round stops at another player's tug and leaves
+    /// its shield and hull alone.
+    #[test]
+    fn a_players_round_stops_at_another_tug_without_hurting_it() {
+        let fresh = Pilot::new(Mods::stock());
+        let w = shot_at_neighbour(Pvp::Protected);
+        let s = &w.pilots[1].ship;
+        assert_eq!((s.hp, s.shield), (fresh.ship.hp, fresh.ship.shield));
+        assert!(w.pilots[1].payback.is_empty());
+    }
+
+    /// A PvP pilot's round hurts a Protected tug, locks the attacker and
+    /// gives the victim payback.
+    #[test]
+    fn a_pvp_pilots_round_hurts_a_protected_tug() {
+        let fresh = Pilot::new(Mods::stock());
+        let w = shot_at_neighbour(Pvp::Enabled);
+        assert!(w.pilots[1].ship.shield < fresh.ship.shield);
+        assert!(w.pilots[0].combat_t > 0.0);
+        assert!(w.can_hurt_pilot(Some(1), 0), "payback");
     }
 }

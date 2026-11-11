@@ -31,6 +31,10 @@ pub struct Stats {
     /// Rivals scrapped, and the value of cargo they escaped with.
     pub jumpers: u32,
     pub lost: f64,
+    /// Other players' tugs this pilot wrecked (PvP; no reward). Defaulted
+    /// so stats written before PvP still load.
+    #[serde(default)]
+    pub pvp_kills: u32,
 }
 
 /// This shift's credited kills by rival hull.
@@ -78,6 +82,10 @@ pub struct SharedShift {
     /// The rival grudge carried over from the last shift (the belt's floor
     /// applies on top).
     pub grudge: f64,
+    /// The host allows PvP on this server ([`World::pvp_allowed`]).
+    /// Defaulted so recordings made before PvP still load.
+    #[serde(default)]
+    pub pvp: bool,
 }
 
 /// One player's tug, the cable it tows, and everything the shift keeps for
@@ -146,6 +154,21 @@ pub struct Pilot {
     pub threw_cargo: bool,
     /// Standing changes earned this shift, applied when it ends.
     pub rep_delta: Rep,
+    /// PvP: whether this pilot is Protected, arming or Enabled (see
+    /// [`crate::perm`]); always Protected at the start of a shift.
+    pub pvp: crate::perm::Pvp,
+    /// Seconds left on the combat lock, during which PvP can't be turned off.
+    pub combat_t: f64,
+    /// PvP pilots who attacked this one and may be hurt back, each with the
+    /// seconds its payback has left (pilot indices).
+    pub payback: Vec<(usize, f64)>,
+    /// The latest hit another player dealt this tug, and the shift time it
+    /// landed: who to credit if the tug is wrecked in that step.
+    pub last_pvp_hit: Option<(usize, f64)>,
+    /// The player has left, but the tug stays until its combat lock runs
+    /// out (see [`World::set_away`]). Never sent to clients.
+    #[serde(skip)]
+    pub leaving: bool,
     /// Set while this pilot's player is disconnected: the tug is out of the
     /// field (see [`World::set_away`]). Never sent to clients.
     #[serde(skip)]
@@ -203,6 +226,11 @@ impl Pilot {
             cores_banked: 0,
             threw_cargo: false,
             rep_delta: Rep::default(),
+            pvp: crate::perm::Pvp::Protected,
+            combat_t: 0.0,
+            payback: Vec::new(),
+            last_pvp_hit: None,
+            leaving: false,
             away: None,
         }
     }
@@ -321,6 +349,9 @@ pub struct World {
     /// The pilot whose events are being raised right now, if any (see
     /// [`World::with_hearer`]).
     pub hearer: Option<usize>,
+    /// The host allows PvP on this server (see [`crate::perm`]). Off in
+    /// single player and by default; a server sets it on each new shift.
+    pub pvp_allowed: bool,
 }
 
 impl World {
@@ -404,6 +435,7 @@ impl World {
             shift_over: false,
             events: Vec::new(),
             hearer: None,
+            pvp_allowed: false,
         }
     }
 
@@ -445,6 +477,7 @@ impl World {
         w.belt_rivals = bd.rivals;
         w.cond = shared.cond;
         w.grudge = shared.grudge.max(bd.grudge_floor);
+        w.pvp_allowed = shared.pvp;
         for c in careers {
             w.add_career_pilot(c);
         }
@@ -742,6 +775,7 @@ impl World {
             Action::Drop => self.with_hearer(Some(p), |w| w.drop_last(p)),
             Action::Cut => self.with_hearer(Some(p), |w| w.cut_all(p)),
             Action::Grind => self.with_hearer(Some(p), |w| w.grind_last(p)),
+            Action::TogglePvp => self.with_hearer(Some(p), |w| w.toggle_pvp(p)),
         }
     }
 
@@ -767,6 +801,7 @@ impl World {
         for (p, input) in inputs.iter().enumerate() {
             self.with_hearer(Some(p), |w| w.update_ship(p, input, dt));
         }
+        self.update_pvp(dt);
         self.update_partner(dt);
         self.update_scoop(dt);
         for j in 0..self.jumpers.len() {
@@ -1305,10 +1340,19 @@ impl World {
     /// player is away, so nothing can hurt, rob or chase it; [`World::set_back`]
     /// puts both back where they were. The tug counts as not flying, which
     /// is what keeps it out of every system's reach.
+    ///
+    /// A tug under a PvP combat lock stays in the field, controls released,
+    /// until the lock runs out, so quitting can't end a fight (owner,
+    /// 2026-11-11); [`crate::perm`]'s clock takes it out then.
     pub fn set_away(&mut self, p: usize) {
         if self.pilots[p].away.is_some() {
             return;
         }
+        if self.pilots[p].combat_t > 0.0 {
+            self.pilots[p].leaving = true;
+            return;
+        }
+        self.pilots[p].leaving = false;
         let chain = std::mem::take(&mut self.pilots[p].chain);
         let mut cargo = Vec::with_capacity(chain.len());
         for &id in &chain {
@@ -1328,6 +1372,8 @@ impl World {
     /// Brings pilot `p`'s tug and cargo back into the field (see
     /// [`World::set_away`]).
     pub fn set_back(&mut self, p: usize) {
+        // Back before a locked tug had left: it simply stays.
+        self.pilots[p].leaving = false;
         let Some(away) = self.pilots[p].away.take() else {
             return;
         };
@@ -1413,6 +1459,7 @@ impl World {
         s.respawn_t = RESPAWN_TIME;
         let (x, y) = (s.b.x, s.b.y);
         self.pilots[p].stats.deaths += 1;
+        let pvp_wreck = self.credit_pvp_wreck(p);
         let deductible = js::round(DEDUCTIBLE * self.pilots[p].diff_fees * self.crew_fee_mul(p));
         self.pilots[p].banked = (self.pilots[p].banked - deductible).max(0.0);
         self.popup(
@@ -1421,6 +1468,9 @@ impl World {
             format!("-{deductible} deductible"),
             Tint::Danger,
         );
+        if pvp_wreck {
+            self.claim_spill(p);
+        }
         self.sever_at(p, 0);
         for c in 0..self.crabs.len() {
             if self.crabs[c].state == CrabState::Latched && self.crabs[c].on == p {
