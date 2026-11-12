@@ -297,8 +297,11 @@ pub enum Reject {
     AlreadyConnected,
     /// The server couldn't check or save what proves the career is this
     /// player's (a disk fault on the host), so it lets nobody in on it.
-    /// Kept last: postcard numbers variants in order.
     ServerError,
+    /// The server has taken as many players new to it as it takes in a
+    /// minute; players it already knows still get in. Kept last: postcard
+    /// numbers variants in order.
+    Busy,
 }
 
 impl Reject {
@@ -317,6 +320,10 @@ impl Reject {
             Reject::AlreadyConnected => "Your pilot is already flying on this server.".to_owned(),
             Reject::ServerError => {
                 "The server couldn't save your pilot, so it can't let you in right now. Ask the host to check its disk."
+                    .to_owned()
+            }
+            Reject::Busy => {
+                "The server is taking a lot of new pilots right now. Try again in a minute."
                     .to_owned()
             }
         }
@@ -457,6 +464,8 @@ mod tests {
         assert!(matches!(back, Ok(ServerMsg::Reject(r)) if r == reject));
         let back = decode::<ServerMsg>(&encode(&ServerMsg::Reject(Reject::ServerError)));
         assert!(matches!(back, Ok(ServerMsg::Reject(Reject::ServerError))));
+        let back = decode::<ServerMsg>(&encode(&ServerMsg::Reject(Reject::Busy)));
+        assert!(matches!(back, Ok(ServerMsg::Reject(Reject::Busy))));
     }
 
     /// Oversized and garbage messages are refused.

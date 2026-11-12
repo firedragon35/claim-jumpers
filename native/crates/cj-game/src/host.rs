@@ -42,7 +42,8 @@ impl Hosted {
             .map_or(1, |d| d.subsec_nanos());
         // The game has no console, so the server's log goes to a file in
         // its own folder (nothing secret is ever logged).
-        let mut log = careers.as_deref().and_then(open_log);
+        let log_dir = careers.clone();
+        let mut log = log_dir.as_deref().and_then(open_log);
         let mut server = cj_server::Server::new(cj_server::Config {
             version: version.to_owned(),
             max_players: limit,
@@ -60,10 +61,10 @@ impl Hosted {
             .name("cj-host-server".to_owned())
             .spawn(move || {
                 let ran = cj_server::run(&mut transport, &mut server, |s| {
-                    write_log(&mut log, &mut s.log);
+                    write_log(&mut log, log_dir.as_deref(), &mut s.log);
                     !flag.load(Ordering::Relaxed)
                 });
-                write_log(&mut log, &mut server.log);
+                write_log(&mut log, log_dir.as_deref(), &mut server.log);
                 if let (Err(why), Ok(mut f)) = (ran, failure.lock()) {
                     *f = Some(why);
                 }
@@ -98,7 +99,7 @@ impl Drop for Hosted {
 }
 
 /// Past this size the log starts again, keeping the last one as
-/// `server.old.log`.
+/// `server.old.log`: when hosting starts, and during a session too.
 const LOG_MAX: u64 = 1024 * 1024;
 
 /// The hosted server's log, `server.log` in its folder, opened to append.
@@ -118,8 +119,19 @@ fn open_log(dir: &std::path::Path) -> Option<std::fs::File> {
 
 /// Appends `lines` to the log, each stamped with the Unix time in seconds,
 /// and empties them. A failed write drops the log rather than the server.
-fn write_log(log: &mut Option<std::fs::File>, lines: &mut Vec<String>) {
+/// Once the log passes [`LOG_MAX`] it starts again in `dir`, the folder it
+/// was opened in, so a long session (or a flood of refused clients) can't
+/// grow it without limit.
+fn write_log(
+    log: &mut Option<std::fs::File>,
+    dir: Option<&std::path::Path>,
+    lines: &mut Vec<String>,
+) {
     use std::io::Write;
+    // Nearly every step logs nothing: skip the clock and the size check.
+    if lines.is_empty() {
+        return;
+    }
     let Some(f) = log.as_mut() else {
         lines.clear();
         return;
@@ -130,6 +142,12 @@ fn write_log(log: &mut Option<std::fs::File>, lines: &mut Vec<String>) {
     let ok = lines.drain(..).all(|l| writeln!(f, "{now} {l}").is_ok());
     if !ok {
         *log = None;
+        return;
+    }
+    if f.metadata().is_ok_and(|m| m.len() > LOG_MAX) {
+        // Closed before open_log renames it aside.
+        *log = None;
+        *log = dir.and_then(open_log);
     }
 }
 
@@ -158,7 +176,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         let mut log = open_log(&dir);
         let mut lines = vec!["Ann joined as pilot 1".to_owned()];
-        write_log(&mut log, &mut lines);
+        write_log(&mut log, Some(&dir), &mut lines);
         assert!(lines.is_empty());
         drop(log);
         let text = std::fs::read_to_string(dir.join("server.log")).expect("a log");
@@ -172,6 +190,28 @@ mod tests {
                 .ok(),
             Some(0)
         );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Regression: the log was only started again when hosting began, so a
+    /// long session, or a flood of refused clients, grew it without limit.
+    /// Past the limit mid-session it starts again, keeping the full one aside.
+    #[test]
+    fn the_hosted_log_starts_again_mid_session() {
+        let dir = std::env::temp_dir().join(format!("cj-host-log-mid-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut log = open_log(&dir);
+        let mut lines = vec!["x".repeat(LOG_MAX as usize + 1)];
+        write_log(&mut log, Some(&dir), &mut lines);
+        assert!(log.is_some(), "still logging");
+        let old = std::fs::metadata(dir.join("server.old.log")).map(|m| m.len());
+        assert!(old.is_ok_and(|n| n > LOG_MAX), "the full log is kept aside");
+        let mut lines = vec!["Ann joined as pilot 1".to_owned()];
+        write_log(&mut log, Some(&dir), &mut lines);
+        drop(log);
+        let text = std::fs::read_to_string(dir.join("server.log")).expect("a log");
+        assert!(text.trim_end().ends_with(" Ann joined as pilot 1"));
+        assert!(text.len() < 100, "a fresh log");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

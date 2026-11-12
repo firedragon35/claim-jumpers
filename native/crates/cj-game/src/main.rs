@@ -220,12 +220,15 @@ impl App {
         if s == Screen::Title {
             self.saved = self.store.load_career();
         }
-        // Online the server rolls the offers and conditions.
+        // Online the server rolls the offers and conditions. Offline the
+        // roll is saved at once: otherwise going back to the title and
+        // pressing Continue reloads the career without it and rolls again.
         if s == Screen::Shop && self.online.is_none() {
             let mut rng = self.rng();
             if let Some(c) = self.career.as_mut() {
                 c.ensure_offers(&mut rng);
                 c.ensure_conditions(&mut rng);
+                self.store.save_career(c);
             }
         }
     }

@@ -106,21 +106,30 @@ impl CareerStore {
     /// must never be saved without its key, or the next secret to arrive
     /// would bind it. The caller refuses before the career is created, so a
     /// refused claim leaves nothing behind.
-    pub fn claim(&self, id: &PlayerId, secret: &[u8; 16]) -> Result<(), Refusal> {
+    ///
+    /// `Ok(true)` means this claim bound a new key (a player new to this
+    /// folder); `Ok(false)` means the saved key matched, or there is no
+    /// folder. With `may_bind` false, an id with no key yet is refused as
+    /// [`Refusal::Busy`] and nothing is written; ids that already have a key
+    /// are checked as usual. The server uses it to cap how fast strangers
+    /// can add careers to the folder.
+    pub fn claim(&self, id: &PlayerId, secret: &[u8; 16], may_bind: bool) -> Result<bool, Refusal> {
         let Some(dir) = &self.dir else {
             // In memory nothing outlives the player's own connection.
-            return Ok(());
+            return Ok(false);
         };
         let stem = file_stem(id);
         let path = dir.join(format!("{stem}.key"));
         let print = fingerprint(secret);
         match std::fs::read_to_string(&path) {
-            Ok(saved) if saved.trim() == print => Ok(()),
+            Ok(saved) if saved.trim() == print => Ok(false),
             Ok(_) => Err(Refusal::WrongSecret),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound && !may_bind => Err(Refusal::Busy),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 let tmp = dir.join(format!("{stem}.key.tmp"));
                 write_flushed(&tmp, &print)
                     .and_then(|()| std::fs::rename(&tmp, &path))
+                    .map(|()| true)
                     .map_err(|e| {
                         // A half-written key is never read (only `.key` is),
                         // but leaving it would clutter the folder.
@@ -140,6 +149,9 @@ impl CareerStore {
 pub enum Refusal {
     /// The career is bound to another secret.
     WrongSecret,
+    /// The id has no key yet, and the caller said no new key may be bound
+    /// now (see [`CareerStore::claim`]). Nothing was written.
+    Busy,
     /// The key couldn't be read or saved, so nobody can be let in safely;
     /// holds a sentence for the log.
     Storage(String),
@@ -206,7 +218,7 @@ mod tests {
         let (store, _) = CareerStore::open(None);
         assert!(store.save(&[1; 16], &Career::new(Mode::Standard)).is_ok());
         assert!(store.load(&[1; 16]).0.is_none());
-        assert_eq!(store.claim(&[1; 16], &[9; 16]), Ok(()));
+        assert_eq!(store.claim(&[1; 16], &[9; 16], true), Ok(false));
     }
 
     /// The first secret to claim a career is the only one that may load it
@@ -215,15 +227,39 @@ mod tests {
     fn a_career_belongs_to_the_secret_that_first_claimed_it() {
         let d = folder("claim");
         let (store, _) = CareerStore::open(Some(d.clone()));
-        let claim = |id: u8, secret: u8| store.claim(&[id; 16], &[secret; 16]);
-        assert_eq!(claim(1, 7), Ok(()), "a new player binds their secret");
-        assert_eq!(claim(1, 7), Ok(()), "and comes back with it");
+        let claim = |id: u8, secret: u8| store.claim(&[id; 16], &[secret; 16], true);
+        assert_eq!(claim(1, 7), Ok(true), "a new player binds their secret");
+        assert_eq!(claim(1, 7), Ok(false), "and comes back with it");
         assert_eq!(claim(1, 8), Err(Refusal::WrongSecret), "another is refused");
-        assert_eq!(claim(2, 8), Ok(()), "other players are their own");
+        assert_eq!(claim(2, 8), Ok(true), "other players are their own");
         let saved =
             std::fs::read_to_string(d.join(format!("{}.key", file_stem(&[1; 16])))).expect("kept");
         assert_eq!(saved, fingerprint(&[7; 16]));
         assert_ne!(saved, file_stem(&[7; 16]), "not the secret itself");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// When no new key may be bound, a new id is refused as Busy and nothing
+    /// is written, while a player who already has a key still gets in.
+    #[test]
+    fn no_new_keys_are_bound_while_binding_is_refused() {
+        let d = folder("busy");
+        let (store, _) = CareerStore::open(Some(d.clone()));
+        assert_eq!(store.claim(&[1; 16], &[7; 16], true), Ok(true));
+        assert_eq!(store.claim(&[2; 16], &[7; 16], false), Err(Refusal::Busy));
+        assert!(
+            !d.join(format!("{}.key", file_stem(&[2; 16]))).exists(),
+            "no key for the refused id"
+        );
+        assert_eq!(
+            store.claim(&[1; 16], &[7; 16], false),
+            Ok(false),
+            "a known player is checked as usual"
+        );
+        assert_eq!(
+            store.claim(&[1; 16], &[8; 16], false),
+            Err(Refusal::WrongSecret)
+        );
         let _ = std::fs::remove_dir_all(&d);
     }
 
@@ -236,8 +272,11 @@ mod tests {
         store
             .save(&[4; 16], &Career::new(Mode::Standard))
             .expect("saved");
-        assert_eq!(store.claim(&[4; 16], &[5; 16]), Ok(()));
-        assert_eq!(store.claim(&[4; 16], &[6; 16]), Err(Refusal::WrongSecret));
+        assert_eq!(store.claim(&[4; 16], &[5; 16], true), Ok(true));
+        assert_eq!(
+            store.claim(&[4; 16], &[6; 16], true),
+            Err(Refusal::WrongSecret)
+        );
         let _ = std::fs::remove_dir_all(&d);
     }
 
@@ -249,7 +288,7 @@ mod tests {
         let (store, _) = CareerStore::open(Some(d.clone()));
         // A folder where the key should be: it exists but can't be read.
         std::fs::create_dir_all(d.join(format!("{}.key", file_stem(&[3; 16])))).expect("made");
-        let refused = store.claim(&[3; 16], &[3; 16]);
+        let refused = store.claim(&[3; 16], &[3; 16], true);
         assert!(matches!(refused, Err(Refusal::Storage(w)) if w.contains("couldn't read")));
         let _ = std::fs::remove_dir_all(&d);
     }
@@ -266,20 +305,26 @@ mod tests {
         // A folder where the key's temporary file goes: it can't be created.
         let tmp = d.join(format!("{stem}.key.tmp"));
         std::fs::create_dir_all(&tmp).expect("made");
-        let refused = store.claim(&[5; 16], &[5; 16]);
+        let refused = store.claim(&[5; 16], &[5; 16], true);
         assert!(matches!(refused, Err(Refusal::Storage(w)) if w.contains("couldn't save")));
         assert!(!d.join(format!("{stem}.key")).exists(), "no key was bound");
         assert!(
-            matches!(store.claim(&[5; 16], &[6; 16]), Err(Refusal::Storage(_))),
+            matches!(
+                store.claim(&[5; 16], &[6; 16], true),
+                Err(Refusal::Storage(_))
+            ),
             "nor can another secret claim it meanwhile"
         );
         std::fs::remove_dir(&tmp).expect("cleared");
         assert_eq!(
-            store.claim(&[5; 16], &[5; 16]),
-            Ok(()),
+            store.claim(&[5; 16], &[5; 16], true),
+            Ok(true),
             "bound once it can be saved"
         );
-        assert_eq!(store.claim(&[5; 16], &[6; 16]), Err(Refusal::WrongSecret));
+        assert_eq!(
+            store.claim(&[5; 16], &[6; 16], true),
+            Err(Refusal::WrongSecret)
+        );
         let _ = std::fs::remove_dir_all(&d);
     }
 }

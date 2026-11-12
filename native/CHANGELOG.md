@@ -7,6 +7,39 @@ and the port uses [Semantic Versioning](https://semver.org/) as defined in
 
 ## [Unreleased]
 
+## [1.4.5] - 2026-11-11
+
+Fixes from a second repository audit.
+
+### Fixed
+
+- The shop's contract offers and every belt's condition were only saved
+  once the player bought or picked something, so going back to the title
+  and pressing Continue rolled a fresh set, as often as the player liked.
+  Online, a player waiting in the lobby could do the same by leaving and
+  joining again during the break. The roll is now saved as soon as it is
+  made, offline and on servers.
+- A script that joined a server with a new player id and left the lobby,
+  over and over, wrote a key and a career to disk each time without end,
+  flushing each one on the server's step loop. A server now lets in at most
+  as many players new to it per minute as its player limit; past that a
+  new id is told the server is busy and to try again in a minute, and
+  nothing is written. Players the server already knows still get in.
+- A hosted server's `server.log` was only started again when hosting began,
+  so a long session could grow it without limit. It now starts again past
+  1 MB during a session too, keeping the full one as `server.old.log`.
+- A pilot whose name was only in scripts the game's fonts can't draw
+  became "Pilot N" when joining mid-shift but "New pilot" in the lobby, so
+  two such players in the lobby looked the same. Each now gets a
+  "Pilot N" nobody else on the server has.
+
+### Changed
+
+- The Join screen and the player guide now say that the game sends each
+  server you join your pilot's identity (`mp_id.txt`, the same for every
+  server), so a host could use it to play as you elsewhere: join only hosts
+  you trust.
+
 ## [1.4.4] - 2026-11-11
 
 A follow-up fix from the independent audit.

@@ -744,6 +744,18 @@ pub fn join(
     {
         act = Some(Act::Back);
     }
+    // Every server is sent the same identity (mp_id.txt), so a host could
+    // reuse it elsewhere: say so where the choice to join is made.
+    text(
+        look,
+        u,
+        "Your game sends the host your pilot's identity. Join only hosts you trust.",
+        x,
+        y + jr.h + 18.0,
+        15.0,
+        Which::Body,
+        c(col::MUTED),
+    );
     act
 }
 

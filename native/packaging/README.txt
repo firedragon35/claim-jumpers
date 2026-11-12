@@ -72,7 +72,9 @@ Your career, records, settings and leaderboard are saved automatically in:
 
 (paste that into the File Explorer address bar to open it). mp_id.txt in
 that folder is how servers recognise you when you come back, and only it
-can load your career on a server, so keep it to yourself. When you host,
+can load your career on a server, so keep it to yourself. Your game sends
+it to every server you join, though, so join only hosts you trust (see
+PLAYING ONLINE). When you host,
 the players' careers on your server are kept in its servers\hosted folder.
 To back up or move your progress, copy that folder. To play from a
 different folder, set the CLAIM_JUMPERS_DATA environment variable to it.
@@ -130,6 +132,11 @@ the tug two more; firing back earns none. For 20 seconds only its owner and
 PvP pilots can pick up a wrecked tug's cargo, and PvP wrecks pay no bounty.
 
 The connection is not encrypted: don't share anything private in the chat.
+
+Join only hosts you trust. To recognise you, your game sends every server
+you join the identity in mp_id.txt, the same one for every server. A host
+who runs a changed copy of the game could keep it and then play as you,
+with your careers, on any other server you play on.
 
 
 MARGE'S VOICE

@@ -57,6 +57,15 @@ const MAX_ACTIONS_PER_SECOND: u32 = 20;
 const INPUT_QUEUE_MAX: usize = 8;
 /// Chat lines a client may send per second; more are dropped.
 const MAX_CHATS_PER_SECOND: u32 = 2;
+/// The window, in steps (one minute), in which at most `max_players` players
+/// new to the careers folder are let in. Each newcomer writes a key and a
+/// career to disk, flushed on the step loop's thread, and one who waits in
+/// the lobby frees their slot by leaving, so without a cap a script could
+/// repeat that without end: filling the folder and stalling every shift.
+/// shortcut: a cap slows a flood but can't stop a patient one or the
+/// mid-shift squatting of slots (an away pilot keeps theirs until the
+/// break); stopping those needs authenticated clients, if hosts ever face it.
+const NEW_ID_WINDOW: u32 = 60 * 60;
 /// The longest break between shifts, in steps (90 s).
 pub const BREAK_STEPS: u32 = 90 * 60;
 /// Steps between lobby lists in a shift (1 s) and in the break (0.25 s).
@@ -235,6 +244,9 @@ pub struct Server {
     /// Every belt's conditions for the next shift, rolled at the break.
     conditions: [Condition; 5],
     careers: careers::CareerStore,
+    /// Players new to the careers folder let in during this
+    /// [`NEW_ID_WINDOW`], capped at `max_players`.
+    new_ids: usize,
     recording: Option<Recording>,
     /// Lines worth logging since the last drain (joins, leaves, rejects).
     /// Nothing secret is ever written here.
@@ -270,6 +282,24 @@ fn first_shift(mode: Mode, pvp: bool) -> SharedShift {
 /// wrote, so one that doesn't load is a broken recording.
 fn career_of(text: &str) -> Career {
     Career::from_json(text).expect("a recording holds careers the server saved")
+}
+
+/// The player behind connection `id`: flying (in `players`) or waiting in
+/// the lobby (in `waiting`). None for a connection that isn't a player yet
+/// (no Hello, or refused). It takes the lists rather than the whole server
+/// so a caller can still use the server's other fields (connections, dice,
+/// careers, log) while it holds the player.
+fn player_of<'a>(
+    conns: &HashMap<ClientId, Conn>,
+    players: &'a mut [Player],
+    waiting: &'a mut [Player],
+    id: ClientId,
+) -> Option<&'a mut Player> {
+    match conns.get(&id)?.state {
+        ConnState::Playing { pilot } => players.get_mut(pilot),
+        ConnState::Waiting => waiting.iter_mut().find(|p| p.conn == Some(id)),
+        ConnState::Joining | ConnState::Leaving { .. } => None,
+    }
 }
 
 /// The belt votes of the players still connected, most first (ties in
@@ -377,6 +407,7 @@ impl Server {
             }),
             shared,
             careers,
+            new_ids: 0,
             rng: Rng::seeded(config.seed ^ 0x5eed_5eed),
             conditions: [Condition::Normal; 5],
             log: warning.into_iter().collect(),
@@ -500,6 +531,9 @@ impl Server {
                 c.chats = 0;
             }
         }
+        if self.tick.is_multiple_of(NEW_ID_WINDOW) {
+            self.new_ids = 0;
+        }
     }
 
     /// The shift has ended: each pilot's shift is settled into their
@@ -536,11 +570,16 @@ impl Server {
                 out.push((id, msg));
             }
         }
-        // Players waiting in the lobby shop for their first shift too.
+        // Players waiting in the lobby shop for their first shift too. Their
+        // roll is saved at once: leaving the lobby drops the copy in memory,
+        // and a career reloaded without it would roll a fresh set.
         for p in &mut self.waiting {
             p.vote = None;
             p.career.conditions = Some((p.career.shift, self.conditions));
             p.career.ensure_offers(&mut self.rng);
+            if let Err(e) = self.careers.save(&p.id, &p.career) {
+                self.log.push(e);
+            }
             if let Some(id) = p.conn {
                 let msg = ServerMsg::Shop(cj_net::ShopReply {
                     ok: true,
@@ -809,16 +848,12 @@ impl Server {
     /// rate-limited, and passed on to everyone connected under the name the
     /// server knows them by.
     fn chat(&mut self, id: ClientId, text: &str) {
-        let (from, slot) = match self.conns.get(&id).map(|c| &c.state) {
-            Some(ConnState::Playing { pilot }) => {
-                (self.players[*pilot].name.clone(), Some(*pilot as u8))
-            }
-            Some(ConnState::Waiting) => match self.waiting.iter().find(|p| p.conn == Some(id)) {
-                Some(p) => (p.name.clone(), None),
-                None => return,
-            },
-            _ => return self.strike(id),
+        let Some(p) = player_of(&self.conns, &mut self.players, &mut self.waiting, id) else {
+            return self.strike(id);
         };
+        let from = p.name.clone();
+        // The sender's slot colours the line; the lobby has none.
+        let slot = self.pilot_of(id).map(|s| s as u8);
         let c = self.conns.get_mut(&id).expect("connected");
         c.chats += 1;
         let text = cj_net::clean_chat(text);
@@ -843,16 +878,8 @@ impl Server {
     /// shut; requests over the command rate limit are dropped.
     fn shop(&mut self, id: ClientId, req: cj_net::ShopReq) {
         use cj_net::ShopReq as R;
-        let state = self.conns.get(&id).map(|c| &c.state);
-        let p = match state {
-            Some(ConnState::Playing { pilot }) => &mut self.players[*pilot],
-            Some(ConnState::Waiting) => {
-                match self.waiting.iter_mut().find(|p| p.conn == Some(id)) {
-                    Some(p) => p,
-                    None => return,
-                }
-            }
-            _ => return self.strike(id),
+        let Some(p) = player_of(&self.conns, &mut self.players, &mut self.waiting, id) else {
+            return self.strike(id);
         };
         let c = self.conns.get_mut(&id).expect("connected");
         c.actions += 1;
@@ -903,17 +930,32 @@ impl Server {
         if !self.in_break() {
             return;
         }
-        let p = match self.conns.get(&id).map(|c| &c.state) {
-            Some(ConnState::Playing { pilot }) => &mut self.players[*pilot],
-            Some(ConnState::Waiting) => {
-                match self.waiting.iter_mut().find(|p| p.conn == Some(id)) {
-                    Some(p) => p,
-                    None => return,
-                }
-            }
-            _ => return self.strike(id),
+        match player_of(&self.conns, &mut self.players, &mut self.waiting, id) {
+            Some(p) => p.ready = true,
+            None => self.strike(id),
+        }
+    }
+
+    /// The name a pilot is shown by: the one they sent, cleaned, or, when
+    /// nothing is left of it (a name only in scripts the fonts can't draw),
+    /// the first "Pilot N" nobody on the server has, so two nameless players
+    /// can still be told apart in the lobby list and the chat. The caller
+    /// clears a returning player's old name first, so it doesn't count.
+    fn pilot_name(&self, raw: &str) -> String {
+        let name = cj_net::clean_name(raw);
+        if !name.is_empty() {
+            return name;
+        }
+        let taken = |d: &str| {
+            self.players
+                .iter()
+                .chain(&self.waiting)
+                .any(|p| p.name == d)
         };
-        p.ready = true;
+        (1..)
+            .map(|n| format!("Pilot {n}"))
+            .find(|d| !taken(d))
+            .expect("fewer players than numbers")
     }
 
     /// A client's Hello: check its version and identity, then give it a pilot.
@@ -948,9 +990,13 @@ impl Server {
         // was claimed with. Checked only once there is room, so a full
         // server writes nothing for strangers. This runs before the career
         // is loaded or created, so a refusal never leaves a career unbound.
+        // Past the minute's cap on newcomers (see NEW_ID_WINDOW), only
+        // players who already have a key here are let in.
         if known.is_none() && !self.full() {
-            match self.careers.claim(&player, &secret) {
-                Ok(()) => {}
+            let may_bind = self.new_ids < self.config.max_players;
+            match self.careers.claim(&player, &secret, may_bind) {
+                Ok(bound) => self.new_ids += usize::from(bound),
+                Err(careers::Refusal::Busy) => return self.reject(id, Reject::Busy),
                 Err(careers::Refusal::WrongSecret) => return self.reject(id, Reject::WrongSecret),
                 Err(careers::Refusal::Storage(why)) => {
                     self.log.push(why);
@@ -979,19 +1025,20 @@ impl Server {
             {
                 let career = self.career_for(&player);
                 let mut p = Player::new(player, secret, career);
-                p.name = cj_net::clean_name(name);
-                if p.name.is_empty() {
-                    p.name = "New pilot".to_owned();
-                }
+                p.name = self.pilot_name(name);
                 p.view = cj_net::clean_view(view);
                 p.conn = Some(id);
                 // Arriving during a break, they missed the career the lobby
                 // was sent when it began, and the client opens its shop only
                 // once it has one: prepare and send theirs now, as the break
-                // does for everyone already waiting.
+                // does for everyone already waiting (and saved, as it saves
+                // theirs, so coming back can't roll a fresh set).
                 let shop = self.in_break().then(|| {
                     p.career.conditions = Some((p.career.shift, self.conditions));
                     p.career.ensure_offers(&mut self.rng);
+                    if let Err(e) = self.careers.save(&p.id, &p.career) {
+                        self.log.push(e);
+                    }
                     ServerMsg::Shop(cj_net::ShopReply {
                         ok: true,
                         msg: String::new(),
@@ -1019,13 +1066,10 @@ impl Server {
                 slot
             }
         };
-        let cleaned = cj_net::clean_name(name);
+        self.players[slot].name.clear();
+        let shown = self.pilot_name(name);
         let p = &mut self.players[slot];
-        p.name = if cleaned.is_empty() {
-            format!("Pilot {}", slot + 1)
-        } else {
-            cleaned
-        };
+        p.name = shown;
         p.view = cj_net::clean_view(view);
         p.conn = Some(id);
         // A returning player has to be sent every outline again.

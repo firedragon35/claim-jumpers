@@ -467,6 +467,97 @@ fn a_key_that_cant_be_saved_turns_the_player_away() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// Regression: every newcomer wrote a key and a career to disk, and one who
+/// waited in the lobby freed the slot by leaving, so a script repeating that
+/// with fresh ids filled the careers folder without end. Now a server lets
+/// in at most `max_players` newcomers a minute: past that a new id is
+/// refused as Busy with nothing written, a known player still gets in, and
+/// newcomers are welcome again the next minute.
+#[test]
+fn newcomers_past_the_minutes_cap_are_refused_and_write_nothing() {
+    let dir = std::env::temp_dir().join(format!("cj-session-cap-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let mut s = Server::new(Config {
+        careers: Some(dir.clone()),
+        ..config_for(2)
+    });
+    // In the shift's last minute newcomers wait in the lobby, and leaving it
+    // frees the slot at once: the route a flood would take.
+    s.world.time_left = cj_server::LATE_JOIN_CUTOFF - 1.0;
+    let stem = |p: u8| -> String { [p; 16].iter().map(|b| format!("{b:02x}")).collect() };
+    for (conn, player) in [(1, 1), (2, 2)] {
+        let mut b = Bot::join(&mut s, conn, player);
+        b.hello(VERSION, 7);
+        steps(&mut s, &mut [&mut b], 3);
+        assert!(b.waiting, "newcomer {player} is let in");
+        s.renet.disconnect_local_client(conn, &mut b.client);
+        steps(&mut s, &mut [], 1);
+    }
+    assert_eq!(s.waiting_count(), 0, "the lobby is empty again");
+
+    let mut third = Bot::join(&mut s, 3, 3);
+    third.hello(VERSION, 7);
+    steps(&mut s, &mut [&mut third], 3);
+    assert_eq!(third.rejected, Some(Reject::Busy));
+    assert!(!dir.join(format!("{}.key", stem(3))).exists(), "no key");
+    assert!(!dir.join(format!("{}.json", stem(3))).exists(), "no career");
+
+    let mut back = Bot::join(&mut s, 4, 1);
+    back.hello(VERSION, 7);
+    steps(&mut s, &mut [&mut back], 3);
+    assert!(back.waiting, "a player with a key here still gets in");
+
+    // A minute later newcomers are welcome again.
+    steps(&mut s, &mut [&mut back], 60 * 60);
+    let mut later = Bot::join(&mut s, 5, 3);
+    later.hello(VERSION, 7);
+    steps(&mut s, &mut [&mut back, &mut later], 3);
+    assert!(later.waiting && later.rejected.is_none());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Regression: a nameless pilot (one whose name is only in scripts the
+/// fonts can't draw, so nothing is left once it's cleaned) became "Pilot N"
+/// when joining mid-shift but "New pilot" in the lobby, so two of them in
+/// the lobby looked the same in its list and the chat. Now each nameless
+/// player gets a "Pilot N" nobody else on the server has.
+#[test]
+fn nameless_pilots_get_names_nobody_else_has() {
+    let mut s = server(4);
+    let nameless_hello = |b: &mut Bot| {
+        let msg = ClientMsg::Hello {
+            game_version: VERSION.to_owned(),
+            player: b.player,
+            secret: [7; 16],
+            pilot: "Пётр".to_owned(),
+            view: (1280, 720),
+        };
+        b.send(channel::RELIABLE, &msg);
+    };
+    let mut a = Bot::join(&mut s, 1, 1);
+    nameless_hello(&mut a);
+    steps(&mut s, &mut [&mut a], 3);
+    assert_eq!(a.pilot, Some(0), "flying");
+    // The shift's last minute: the next two wait in the lobby.
+    s.world.time_left = cj_server::LATE_JOIN_CUTOFF - 1.0;
+    let mut b = Bot::join(&mut s, 2, 2);
+    nameless_hello(&mut b);
+    let mut c = Bot::join(&mut s, 3, 3);
+    nameless_hello(&mut c);
+    // A lobby list goes out every second.
+    steps(&mut s, &mut [&mut a, &mut b, &mut c], 61);
+    assert!(b.waiting && c.waiting);
+    let names: Vec<String> = a
+        .lobby
+        .as_ref()
+        .expect("the lobby list")
+        .players
+        .iter()
+        .map(|p| p.name.clone())
+        .collect();
+    assert_eq!(names, ["Pilot 1", "Pilot 2", "Pilot 3"]);
+}
+
 /// Regression: a player who reconnected during the break got their pilot
 /// back but not their career, so their shop and belt vote stayed shut until
 /// another shift had been flown.
@@ -494,6 +585,63 @@ fn a_player_back_during_the_break_gets_their_career_to_shop_with() {
         career.conditions.is_some(),
         "the break's conditions are set"
     );
+}
+
+/// Regression: a lobby player's offers were rolled at the break but not
+/// saved, so leaving and joining again reloaded the career without them and
+/// rolled a fresh set, as often as the player liked. Both lobby paths (waiting
+/// from the shift's last minute, and arriving during the break) now save the
+/// roll, and a player who comes back sees the same offers.
+#[test]
+fn lobby_offers_survive_leaving_and_coming_back_in_the_break() {
+    let dir = std::env::temp_dir().join(format!("cj-session-offers-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let mut s = Server::new(Config {
+        careers: Some(dir.clone()),
+        ..config_for(4)
+    });
+    let mut a = Bot::join(&mut s, 1, 1);
+    a.hello(VERSION, 7);
+    steps(&mut s, &mut [&mut a], 3);
+    // Waits from the shift's last minute: its offers are rolled at the break.
+    s.world.time_left = cj_server::LATE_JOIN_CUTOFF - 1.0;
+    let mut late = Bot::join(&mut s, 2, 2);
+    late.hello(VERSION, 7);
+    steps(&mut s, &mut [&mut a, &mut late], 3);
+    end_shift(&mut s);
+    steps(&mut s, &mut [&mut a, &mut late], 3);
+    assert!(s.in_break());
+    // Arrives during the break: its offers are rolled on arrival.
+    let mut early = Bot::join(&mut s, 3, 3);
+    early.hello(VERSION, 7);
+    steps(&mut s, &mut [&mut a, &mut late, &mut early], 3);
+
+    // The offers each lobby player was last sent, from their career.
+    let offers = |b: &Bot| {
+        let reply = b.shop.last().expect("their career, unasked");
+        cj_sim::career::Career::from_json(&reply.career)
+            .expect("a career")
+            .offers
+    };
+    let first = (offers(&late), offers(&early));
+    assert!(!first.0.is_empty() && !first.1.is_empty(), "offers rolled");
+
+    // Both leave the lobby and join again on new connections.
+    s.renet.disconnect_local_client(2, &mut late.client);
+    s.renet.disconnect_local_client(3, &mut early.client);
+    steps(&mut s, &mut [&mut a], 3);
+    assert_eq!(s.waiting_count(), 0, "the lobby is empty");
+    let mut late_again = Bot::join(&mut s, 4, 2);
+    late_again.hello(VERSION, 7);
+    let mut early_again = Bot::join(&mut s, 5, 3);
+    early_again.hello(VERSION, 7);
+    steps(&mut s, &mut [&mut a, &mut late_again, &mut early_again], 3);
+    assert_eq!(
+        (offers(&late_again), offers(&early_again)),
+        first,
+        "the same offers, not a new roll"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 /// The shop opens only in the break and checks each request against the
