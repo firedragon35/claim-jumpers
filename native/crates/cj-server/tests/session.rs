@@ -193,13 +193,25 @@ fn a_version_mismatch_is_refused_with_a_reason() {
     assert_eq!(s.player_count(), 0);
 }
 
-/// A full shift, a wrong secret and a second connection are each refused.
+/// A full shift and a wrong secret are each refused. The same player
+/// joining again with the right secret takes over their pilot: the server
+/// may still hold the connection of a game that crashed or lost its network,
+/// and the old connection is the one told to go.
+///
+/// Regression: the returning player was refused ("already flying") until
+/// the old connection timed out.
 #[test]
-fn full_shifts_wrong_secrets_and_doubles_are_refused() {
+fn full_shifts_and_wrong_secrets_are_refused_and_a_double_takes_over() {
     let mut s = server(1);
     let mut a = Bot::join(&mut s, 1, 1);
     a.hello(VERSION, 7);
     steps(&mut s, &mut [&mut a], 3);
+    // The first connection has sent controls, so its message numbers are
+    // ahead of a new connection's, which start again at 1.
+    for _ in 0..5 {
+        a.input(Input::default());
+        steps(&mut s, &mut [&mut a], 1);
+    }
     let mut full = Bot::join(&mut s, 2, 2);
     full.hello(VERSION, 7);
     let mut impostor = Bot::join(&mut s, 3, 1);
@@ -213,8 +225,130 @@ fn full_shifts_wrong_secrets_and_doubles_are_refused() {
     );
     assert_eq!(full.rejected, Some(Reject::Full));
     assert_eq!(impostor.rejected, Some(Reject::WrongSecret));
-    assert_eq!(double.rejected, Some(Reject::AlreadyConnected));
+    assert_eq!(double.rejected, None);
+    assert_eq!(
+        double.pilot,
+        Some(0),
+        "the same pilot, on the new connection"
+    );
+    assert_eq!(a.rejected, Some(Reject::AlreadyConnected));
     assert_eq!(s.player_count(), 1);
+    // The new connection flies the tug: its first controls (numbered 1,
+    // behind the old connection's) are applied, not taken for repeats.
+    double.input(Input {
+        thrust: 1.0,
+        ..Input::default()
+    });
+    steps(&mut s, &mut [&mut a, &mut double], 4);
+    assert_eq!(double.last.as_ref().map(|snap| snap.ack), Some(1));
+    assert!(s.world.pilots[0].ship.thrust_level > 0.0, "under thrust");
+    // The old connection is dropped once its reason has had time to arrive,
+    // and its going doesn't park the tug the new one is flying. (A second
+    // of steps, so a lobby list has been sent since.)
+    steps(&mut s, &mut [&mut a, &mut double], 60);
+    assert!(!s.renet.is_connected(1) && s.renet.is_connected(4));
+    assert!(s.world.pilots[0].ship.alive, "still in the field");
+    let list = double.lobby.as_ref().expect("a lobby list");
+    assert!(!list.players[0].away);
+}
+
+/// A lobby player who joins again on a new connection takes over their
+/// place too, and the connection they left behind is told to go.
+#[test]
+fn a_lobby_player_joining_again_takes_over_their_place() {
+    let mut s = server(4);
+    let mut a = Bot::join(&mut s, 1, 1);
+    a.hello(VERSION, 7);
+    steps(&mut s, &mut [&mut a], 3);
+    s.world.time_left = cj_server::LATE_JOIN_CUTOFF - 1.0;
+    let mut late = Bot::join(&mut s, 2, 2);
+    late.hello(VERSION, 7);
+    steps(&mut s, &mut [&mut a, &mut late], 3);
+    assert!(late.waiting);
+    // The wrong secret doesn't get the place.
+    let mut impostor = Bot::join(&mut s, 3, 2);
+    impostor.hello(VERSION, 8);
+    let mut again = Bot::join(&mut s, 4, 2);
+    again.hello(VERSION, 7);
+    steps(
+        &mut s,
+        &mut [&mut a, &mut late, &mut impostor, &mut again],
+        3,
+    );
+    assert_eq!(impostor.rejected, Some(Reject::WrongSecret));
+    assert_eq!(late.rejected, Some(Reject::AlreadyConnected));
+    assert!(again.waiting && again.rejected.is_none());
+    assert_eq!(s.waiting_count(), 1, "one place, not two");
+    // The old connection's going leaves the new one in the lobby.
+    steps(&mut s, &mut [&mut a, &mut late, &mut again], 40);
+    assert!(!s.renet.is_connected(2));
+    assert_eq!(s.waiting_count(), 1);
+}
+
+/// The shop marks a career when a request goes through, and the server
+/// saves marked careers once a second, and at once when a lobby player
+/// leaves (their copy in memory goes with them).
+///
+/// Regression: every request that went through was saved on the spot,
+/// waiting for the disk on the step loop's thread, so a client sending
+/// requests at the rate limit could stall the server for everyone.
+#[test]
+fn shop_changes_are_saved_once_a_second_and_when_a_lobby_player_leaves() {
+    use cj_net::ShopReq;
+    use cj_sim::field::Crew;
+    let dir = std::env::temp_dir().join(format!("cj-session-shop-saves-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let mut s = Server::new(Config {
+        careers: Some(dir.clone()),
+        ..config_for(4)
+    });
+    let mut a = Bot::join(&mut s, 1, 1);
+    a.hello(VERSION, 7);
+    steps(&mut s, &mut [&mut a], 3);
+    s.world.time_left = cj_server::LATE_JOIN_CUTOFF - 1.0;
+    let mut late = Bot::join(&mut s, 2, 2);
+    late.hello(VERSION, 7);
+    steps(&mut s, &mut [&mut a, &mut late], 3);
+    end_shift(&mut s);
+    steps(&mut s, &mut [&mut a, &mut late], 3);
+    assert!(s.in_break());
+    // The co-pilot in player `n`'s career file.
+    let saved_crew = |n: u8| {
+        let stem: String = [n; 16].iter().map(|b| format!("{b:02x}")).collect();
+        let text = std::fs::read_to_string(dir.join(format!("{stem}.json"))).expect("a file");
+        cj_sim::career::Career::from_json(&text)
+            .expect("a career")
+            .crew
+    };
+    let hire = ClientMsg::Shop(ShopReq::Crew(Crew::Fixer));
+    let hired = |bot: &Bot| bot.shop.last().is_some_and(|r| r.ok && !r.msg.is_empty());
+
+    // A flying player hires just after a second's save, so the next save
+    // is most of a second away: answered at once, written within a second.
+    while s.tick() % 60 != 1 {
+        steps(&mut s, &mut [&mut a, &mut late], 1);
+    }
+    a.send(channel::RELIABLE, &hire);
+    steps(&mut s, &mut [&mut a, &mut late], 2);
+    assert!(hired(&a));
+    assert_eq!(saved_crew(1), None, "hired, but not written on the spot");
+    steps(&mut s, &mut [&mut a, &mut late], 60);
+    assert_eq!(saved_crew(1), Some(Crew::Fixer), "within a second");
+
+    // A lobby player hires and leaves before the second is up: written as
+    // they go.
+    while s.tick() % 60 != 1 {
+        steps(&mut s, &mut [&mut a, &mut late], 1);
+    }
+    late.send(channel::RELIABLE, &hire);
+    steps(&mut s, &mut [&mut a, &mut late], 2);
+    assert!(hired(&late));
+    assert_eq!(saved_crew(2), None, "not written yet");
+    s.renet.disconnect_local_client(2, &mut late.client);
+    steps(&mut s, &mut [&mut a], 2);
+    assert_eq!(s.waiting_count(), 0, "gone from the lobby");
+    assert_eq!(saved_crew(2), Some(Crew::Fixer), "written as they left");
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 /// A player who leaves takes their tug and its cargo out of the field, so

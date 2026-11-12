@@ -4,7 +4,7 @@ A native Rust port of Claim Jumpers for Windows 10 and 11. This is the lead
 version of the game. The browser game (`claim-jumpers-game`) it was ported
 from is a frozen baseline at its 1.0.7, and new gameplay is built here first.
 
-**Status: release 1.4.5, online co-op and opt-in PvP for up to 20 pilots (all systems ported, packaged for Windows; history in [CHANGELOG.md](CHANGELOG.md)).** A career of
+**Status: release 1.4.6, online co-op and opt-in PvP for up to 20 pilots (all systems ported, packaged for Windows; history in [CHANGELOG.md](CHANGELOG.md)).** A career of
 five-minute shifts: fly the tug, tow and fight for salvage, and bank it at
 the carrier, against rival crews, debt collectors who net and tow the tug
 (or confiscate a fat load, or impound it), the law (wanted stars, patrols,
@@ -130,8 +130,13 @@ and exits; `cj_server::replay` reproduces it exactly. IPv4 only: renet's
 netcode transport takes one socket, and a socket that takes both IPv4 and
 IPv6 on Windows needs a new dependency.
 
+A host's upload carries every player's snapshots: about 0.55 Mbit/s per
+player with the pilots spread out, and up to 1.5 Mbit/s each with all of
+them at the bay (measured on a quiet field; see `docs/multiplayer-spike.md`).
+
 Testing several players on one PC: give each extra copy its own data folder,
-or the server sees one player twice:
+or the server sees one player twice, and the copy that joins second takes
+the pilot from the first (which is disconnected):
 
 ```powershell
 $env:CLAIM_JUMPERS_DATA = "$env:TEMP\cj-p2"; .\target\release\claim-jumpers.exe
@@ -148,8 +153,9 @@ From the `native` folder:
 powershell -ExecutionPolicy Bypass -File tools/package.ps1
 ```
 
-It builds the release exe, runs the `--smoke` check from an unrelated
-folder (stopping if it fails or hangs), and writes
+It stops if the working tree has uncommitted changes (a package must match
+a commit). Then it builds the release exe, runs the `--smoke` check from an
+unrelated folder (stopping if it fails or hangs), and writes
 `dist\ClaimJumpers-<version>-windows-x64.zip` with:
 
 - `claim-jumpers.exe`;

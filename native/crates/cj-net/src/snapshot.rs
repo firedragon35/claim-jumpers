@@ -468,6 +468,25 @@ mod tests {
         assert!(largest < 8 * 1024, "{largest} bytes");
     }
 
+    /// What one tug and one piece of salvage cost in every snapshot that
+    /// shows them. Their timers and levels rest at zero and travel as a byte
+    /// each (`cj_sim::wire`): 81 and 65 bytes, where plain f64 took about
+    /// 225 and 115. A host's upload carries them 20 times a second for every
+    /// player in sight, so a new field on either belongs in that packing
+    /// unless a client must show it exactly.
+    #[test]
+    fn a_resting_tug_and_a_loose_piece_are_small() {
+        let mut w = field();
+        let tug = crate::encode(&w.pilots[0].ship).len();
+        // As a snapshot carries it: the outline travels once, as a look.
+        let mut piece = w.new_item(ItemType::Scrap, 1100.0, 1000.0, 0.0, 0.0);
+        piece.shape.clear();
+        let piece = crate::encode(&piece).len();
+        println!("a tug: {tug} bytes, a piece of salvage: {piece} bytes");
+        assert!(tug < 110, "{tug} bytes");
+        assert!(piece < 80, "{piece} bytes");
+    }
+
     /// A rock's or item's outline is sent once, the first time it's seen;
     /// later snapshots carry it without.
     #[test]

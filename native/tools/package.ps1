@@ -13,7 +13,16 @@ Set-Location $native
 
 $version = (Select-String -Path 'crates\cj-game\Cargo.toml' -Pattern '^version = "(.+)"').Matches[0].Groups[1].Value
 $name = "ClaimJumpers-$version-windows-x64"
-Write-Host "Packaging $name"
+
+# The exe is built from the working tree, so a change that is in no commit
+# would ship in a package nothing can be traced back to. Stop instead.
+# (Ignored folders such as target, dist and stage don't count.)
+$uncommitted = git status --porcelain
+if ($LASTEXITCODE -ne 0) { throw 'git status failed; the package must be built from a git checkout' }
+if ($uncommitted) {
+    throw "uncommitted changes; commit or stash them first, so the package matches a commit:`n$($uncommitted -join "`n")"
+}
+Write-Host "Packaging $name from commit $(git rev-parse --short HEAD)"
 
 # --locked: ship exactly the dependency versions in Cargo.lock, or stop.
 cargo build --release --locked -p cj-game

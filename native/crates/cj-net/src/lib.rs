@@ -293,7 +293,8 @@ pub enum Reject {
     BadHello,
     /// The player id is known here, but the secret doesn't match it.
     WrongSecret,
-    /// This player is already connected from somewhere else.
+    /// This player has joined again on another connection, which now has
+    /// their pilot. Sent to the connection it replaced.
     AlreadyConnected,
     /// The server couldn't check or save what proves the career is this
     /// player's (a disk fault on the host), so it lets nobody in on it.
@@ -317,7 +318,10 @@ impl Reject {
                 "This server knows your pilot from another install, so it won't let this one in."
                     .to_owned()
             }
-            Reject::AlreadyConnected => "Your pilot is already flying on this server.".to_owned(),
+            Reject::AlreadyConnected => {
+                "Your pilot joined this server again from another game, so this one was disconnected."
+                    .to_owned()
+            }
             Reject::ServerError => {
                 "The server couldn't save your pilot, so it can't let you in right now. Ask the host to check its disk."
                     .to_owned()

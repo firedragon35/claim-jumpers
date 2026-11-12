@@ -276,7 +276,22 @@ impl Session {
             ServerMsg::Snapshot(s) => {
                 // Snapshots travel unreliably and may arrive out of order,
                 // or from the last shift after the new one's Welcome.
-                if s.tick >= self.from_tick && self.newer.as_ref().is_none_or(|n| s.tick > n.tick) {
+                //
+                // A new shift's snapshot can also arrive before its Welcome:
+                // the Welcome travels in its own (reliable) packet, and a
+                // lost one is resent 300 ms later. Until it lands this client
+                // still holds last shift's pilot number, which the new shift
+                // may have given to someone else or dropped (players who left
+                // give up their slot, so the rest move down). Flying that
+                // number in the new field would index a pilot that isn't
+                // there, so a snapshot made for another pilot is dropped; the
+                // next one after the Welcome is taken. The count check keeps
+                // a server that sends nonsense from doing the same.
+                let mine = self.pilot == Some(usize::from(s.you)) && s.you < s.pilot_count;
+                if mine
+                    && s.tick >= self.from_tick
+                    && self.newer.as_ref().is_none_or(|n| s.tick > n.tick)
+                {
                     self.older = self.newer.take();
                     self.newer = Some(*s);
                     self.fresh = true;
@@ -546,4 +561,73 @@ fn strikes(w: &World, b: &Bullet) -> bool {
         || w.miners.iter().any(|m| hit(&m.b, 4.0))
         || w.sheriffs.iter().any(|s| hit(&s.b, 4.0))
         || w.collectors.iter().any(|c| hit(&c.b, 4.0))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::snapshot::Known;
+    use cj_sim::career::{Career, Mode};
+
+    const VIEW: (f64, f64) = (1280.0, 720.0);
+
+    /// A field with `pilots` tugs at the bay and nothing else.
+    fn field(pilots: usize) -> World {
+        let mut w = World::empty(Rng::Constant(0.5), VIEW);
+        // The first career takes over the field's own waiting tug.
+        for _ in 0..pilots {
+            w.add_career_pilot(&Career::new(Mode::Standard));
+        }
+        w
+    }
+
+    /// The server's snapshot of `w` for pilot `you` at step `tick`, encoded.
+    fn snapshot(w: &World, you: usize, tick: u32) -> Vec<u8> {
+        let (s, _) = Snapshot::of(w, you, VIEW, tick, 0, &mut Known::default());
+        crate::encode(&ServerMsg::Snapshot(Box::new(s)))
+    }
+
+    fn welcome(pilot: u8, from_tick: u32) -> Vec<u8> {
+        crate::encode(&ServerMsg::Welcome { pilot, from_tick })
+    }
+
+    /// Regression: a new shift's snapshot that arrived before its Welcome
+    /// (lost and resent) was taken with last shift's pilot number. When a
+    /// player had left, the others had moved down a slot, so that number was
+    /// past the new shift's pilots and the next step crashed the game. Such
+    /// a snapshot is now dropped until the Welcome names this client's pilot.
+    #[test]
+    fn a_new_shifts_snapshot_before_its_welcome_is_dropped() {
+        let mut s = Session::new();
+        let mut seen = World::empty(Rng::Constant(0.5), VIEW);
+        // Last shift: three pilots, and this client flew the third.
+        s.receive(&welcome(2, 0)).expect("valid");
+        s.receive(&snapshot(&field(3), 2, 100)).expect("valid");
+        assert!(s.step(Input::default()).is_some(), "flying");
+        // The next shift has two pilots and this client is now the second,
+        // but its Welcome is late and a snapshot is here first.
+        s.receive(&snapshot(&field(2), 1, 200)).expect("valid");
+        assert!(s.step(Input::default()).is_some(), "still the old shift");
+        s.present(&mut seen, STEP);
+        assert_eq!(seen.pilots.len(), 3, "the early snapshot was dropped");
+        // The Welcome lands, and the snapshots after it are taken.
+        s.receive(&welcome(1, 150)).expect("valid");
+        s.receive(&snapshot(&field(2), 1, 203)).expect("valid");
+        assert!(s.step(Input::default()).is_some(), "flying the new shift");
+        s.present(&mut seen, STEP);
+        assert_eq!((seen.pilots.len(), seen.view_pilot), (2, 1));
+    }
+
+    /// A snapshot naming a pilot past its own pilot count (a broken or
+    /// hostile server) is dropped rather than flown.
+    #[test]
+    fn a_snapshot_for_a_pilot_it_doesnt_hold_is_dropped() {
+        let mut s = Session::new();
+        s.receive(&welcome(4, 0)).expect("valid");
+        let (mut snap, _) = Snapshot::of(&field(2), 1, VIEW, 10, 0, &mut Known::default());
+        snap.you = 4;
+        let bytes = crate::encode(&ServerMsg::Snapshot(Box::new(snap)));
+        s.receive(&bytes).expect("valid");
+        assert!(s.step(Input::default()).is_none(), "nothing to fly");
+    }
 }

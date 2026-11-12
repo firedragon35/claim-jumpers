@@ -92,6 +92,12 @@ PVP below). Your game runs the server, so the session ends when you
 leave. The first time, Windows Firewall may ask whether to allow Claim
 Jumpers: allow it on private networks, or nobody else can get in.
 
+Hosting over the internet uses the host's upload speed: about 0.6 Mbit/s
+for each pilot, and up to 1.5 Mbit/s each while everyone is in one place,
+such as the bay. That is about 3 Mbit/s for 4 pilots, 8 for 8 and 30 for
+20. If the shift stutters for everyone at once, host fewer pilots. On a
+home network this doesn't matter.
+
 Joining: choose Join remote host, type the host's IP address and press
 Find server. The game shows how many pilots are connected, or that the
 server is full; press Join. The port is always 47820 (UDP).

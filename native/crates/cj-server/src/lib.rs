@@ -160,6 +160,9 @@ struct Player {
     career: Career,
     /// Their vote for the next shift's belt, in the break.
     vote: Option<Belt>,
+    /// The shop has changed `career` since it was last saved (see
+    /// [`Server::save_changed`]).
+    unsaved: bool,
 }
 
 impl Player {
@@ -180,6 +183,7 @@ impl Player {
             known: Known::default(),
             pending: Vec::new(),
             ready: false,
+            unsaved: false,
         }
     }
 }
@@ -436,6 +440,32 @@ impl Server {
         })
     }
 
+    /// Saves every career the shop has changed since it was last saved.
+    ///
+    /// A save waits for the disk on the step loop's thread, so the shop
+    /// doesn't save on each request: a client sending requests as fast as
+    /// the rate limit allows (20 a second) would stall the server for
+    /// everyone. The shop marks the career instead, and this runs once a
+    /// second, when the next shift starts, when a lobby player leaves or is
+    /// replaced (their copy in memory goes with them), and when the server
+    /// stops. A server that dies without stopping can lose the last second
+    /// of shopping, and nothing else.
+    fn save_changed(&mut self) {
+        let changed = self
+            .players
+            .iter_mut()
+            .chain(&mut self.waiting)
+            .filter(|p| p.unsaved);
+        for p in changed {
+            // Cleared even if the save fails: the fault is logged once, not
+            // every second, and the next change or settlement tries again.
+            p.unsaved = false;
+            if let Err(e) = self.careers.save(&p.id, &p.career) {
+                self.log.push(e);
+            }
+        }
+    }
+
     /// Steps simulated so far.
     pub fn tick(&self) -> u32 {
         self.tick
@@ -525,6 +555,7 @@ impl Server {
         }
         self.tick += 1;
         if self.tick.is_multiple_of(60) {
+            self.save_changed();
             for c in self.conns.values_mut() {
                 c.inputs = 0;
                 c.actions = 0;
@@ -619,6 +650,9 @@ impl Server {
     /// keep flying in their order, then those from the lobby; players who
     /// are gone give up their slot. Each is welcomed to the new shift.
     fn start_shift(&mut self) {
+        // Before the players who are gone give up their slots: their careers
+        // in memory go with them.
+        self.save_changed();
         let seed = self
             .config
             .seed
@@ -700,6 +734,9 @@ impl Server {
                 ServerEvent::ClientDisconnected { client_id, reason } => {
                     let gone = self.conns.remove(&client_id).map(|c| c.state);
                     if let Some(ConnState::Waiting) = gone {
+                        // What they bought this second is saved before
+                        // their copy in memory is dropped.
+                        self.save_changed();
                         self.waiting.retain(|p| p.conn != Some(client_id));
                         self.log
                             .push(format!("client {client_id} left the lobby ({reason})"));
@@ -710,26 +747,34 @@ impl Server {
                         let name = p.name.clone();
                         // A tug whose player left waits out of the field,
                         // with nothing held when it returns.
-                        p.queue.clear();
-                        // Message numbers belong to the connection: a
-                        // returning game opens a new one and counts from 1
-                        // again, so the old numbers would drop all of it.
-                        p.input_seq = 0;
-                        p.queued_seq = 0;
-                        p.action_seq = 0;
-                        if p.input != Input::default() {
-                            p.input = Input::default();
-                            self.record(Entry::Input {
-                                pilot,
-                                input: Input::default(),
-                            });
-                        }
+                        self.release_controls(pilot);
                         self.world.set_away(pilot);
                         self.record(Entry::Away { pilot });
                         self.log.push(format!("{name} left ({reason})"));
                     }
                 }
             }
+        }
+    }
+
+    /// Lets go of everything pilot `pilot`'s connection was holding, when
+    /// that connection ends or is replaced: the controls queued and held,
+    /// and its message numbers.
+    fn release_controls(&mut self, pilot: usize) {
+        let p = &mut self.players[pilot];
+        p.queue.clear();
+        // Message numbers belong to the connection: a returning game opens
+        // a new one and counts from 1 again, so the old numbers would drop
+        // all of it.
+        p.input_seq = 0;
+        p.queued_seq = 0;
+        p.action_seq = 0;
+        if p.input != Input::default() {
+            p.input = Input::default();
+            self.record(Entry::Input {
+                pilot,
+                input: Input::default(),
+            });
         }
     }
 
@@ -873,9 +918,10 @@ impl Server {
     }
 
     /// A shop request or belt vote in the break, checked against the
-    /// player's career with the single-player shop rules, saved when it
-    /// goes through, and answered either way. Outside the break the shop is
-    /// shut; requests over the command rate limit are dropped.
+    /// player's career with the single-player shop rules, marked for saving
+    /// when it goes through ([`Server::save_changed`]), and answered either
+    /// way. Outside the break the shop is shut; requests over the command
+    /// rate limit are dropped.
     fn shop(&mut self, id: ClientId, req: cj_net::ShopReq) {
         use cj_net::ShopReq as R;
         let Some(p) = player_of(&self.conns, &mut self.players, &mut self.waiting, id) else {
@@ -911,11 +957,7 @@ impl Server {
             Ok(m) => (true, m),
             Err(m) => (false, m),
         };
-        if ok {
-            if let Err(e) = self.careers.save(&p.id, &p.career) {
-                self.log.push(e);
-            }
-        }
+        p.unsaved |= ok;
         let reply = ServerMsg::Shop(cj_net::ShopReply {
             ok,
             msg,
@@ -976,13 +1018,21 @@ impl Server {
             let server = self.config.version.clone();
             return self.reject(id, Reject::VersionMismatch { server });
         }
-        if let Some(w) = self.waiting.iter().find(|p| p.id == player) {
-            let why = if w.secret != secret {
-                Reject::WrongSecret
-            } else {
-                Reject::AlreadyConnected
-            };
-            return self.reject(id, why);
+        // The same player again, with the right secret, while the server
+        // still holds a connection for them: the new connection takes over.
+        // A game that crashed or lost its network leaves its old connection
+        // on the books until it times out, and turning the player away for
+        // that long helps nobody. The old connection is told why and let go.
+        if let Some(at) = self.waiting.iter().position(|p| p.id == player) {
+            if self.waiting[at].secret != secret {
+                return self.reject(id, Reject::WrongSecret);
+            }
+            // A lobby player is taken in afresh below, their career read
+            // back from where it is saved, so save it first.
+            self.save_changed();
+            if let Some(old) = self.waiting.remove(at).conn {
+                self.reject(old, Reject::AlreadyConnected);
+            }
         }
         let known = self.players.iter().position(|p| p.id == player);
         // A player the server isn't holding (new, back after a shift away,
@@ -1008,10 +1058,13 @@ impl Server {
             Some(s) if self.players[s].secret != secret => {
                 return self.reject(id, Reject::WrongSecret)
             }
-            Some(s) if self.players[s].conn.is_some() => {
-                return self.reject(id, Reject::AlreadyConnected)
-            }
             Some(s) => {
+                // Still connected (see above): the tug stays in the field
+                // and changes hands with nothing held.
+                if let Some(old) = self.players[s].conn.take() {
+                    self.release_controls(s);
+                    self.reject(old, Reject::AlreadyConnected);
+                }
                 self.world.set_back(s);
                 self.record(Entry::Back { pilot: s });
                 s
@@ -1392,8 +1445,10 @@ pub fn run(
             None => {}
         }
     };
-    // Even after a failed step, the connections can still be closed.
+    // Even after a failed step, the last second of shopping can still be
+    // saved and the connections closed.
     let _ = catch_unwind(AssertUnwindSafe(|| {
+        server.save_changed();
         server.renet.disconnect_all();
         transport.send_packets(&mut server.renet);
         transport.disconnect_all(&mut server.renet);

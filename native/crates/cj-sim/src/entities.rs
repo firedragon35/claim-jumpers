@@ -67,57 +67,84 @@ pub fn jagged_shape(rng: &mut Rng, count: i32, lo: f64, hi: f64) -> Vec<ShapePt>
 }
 
 /// The player's tug.
+///
+/// On the network its numbers are packed (see [`crate::wire`]): the heading
+/// and turn rate as f32, and the timers and levels, which mostly rest at
+/// zero, as one byte while they do. Hull and shield points stay f64, so a
+/// client shows exactly what the server holds.
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Ship {
     pub b: Body,
+    #[serde(with = "crate::wire::f32_wire")]
     pub angle: f64,
     /// Angular velocity, rad/s.
+    #[serde(with = "crate::wire::f32_wire")]
     pub av: f64,
     pub hp: f64,
     pub alive: bool,
+    #[serde(with = "crate::wire::f32_sparse")]
     pub respawn_t: f64,
     /// Seconds of invulnerability left (respawn grace).
+    #[serde(with = "crate::wire::f32_sparse")]
     pub invuln: f64,
     /// Current throttle magnitude, for the exhaust flame.
+    #[serde(with = "crate::wire::f32_sparse")]
     pub thrust_level: f64,
     /// Signed throttle this step: positive forward, negative reverse.
+    #[serde(with = "crate::wire::f32_sparse")]
     pub throttle: f64,
+    #[serde(with = "crate::wire::f32_sparse")]
     pub sputter_t: f64,
     pub sputtering: bool,
     /// How hard the tug has been spinning recently (crabs are thrown off by it).
+    #[serde(with = "crate::wire::f32_sparse")]
     pub spin_meter: f64,
     pub low_warned: bool,
     /// Red hull flash after a hit, seconds.
+    #[serde(with = "crate::wire::f32_sparse")]
     pub flash: f64,
     pub shield: f64,
+    #[serde(with = "crate::wire::f32_sparse")]
     pub shield_delay_t: f64,
+    #[serde(with = "crate::wire::f32_sparse")]
     pub shield_flash: f64,
     /// Seconds until the cannon can fire again.
+    #[serde(with = "crate::wire::f32_sparse")]
     pub fire_t: f64,
     /// Gun heat 0..100; at 100 the cannon locks until it cools.
+    #[serde(with = "crate::wire::f32_sparse")]
     pub heat: f64,
     pub overheated: bool,
     /// Seconds until the hull-alarm or under-attack loops sound again.
+    #[serde(with = "crate::wire::f32_sparse")]
     pub alarm_t: f64,
     /// Grinder slugs loaded; they fire instead of cutter rounds.
     pub slugs: u32,
     /// Side-thruster input this step, -1..1 (0 without the part).
+    #[serde(with = "crate::wire::f32_sparse")]
     pub strafe: f64,
     /// Caught in a debt collector's net.
     pub net: Option<crate::opposition::NetHold>,
     /// The last hard turn direction, for counting reversals that tear a net.
+    #[serde(with = "crate::wire::f32_sparse")]
     pub last_turn_sign: f64,
     /// Seconds left slowed by a sheriff's stun bolt.
+    #[serde(with = "crate::wire::f32_sparse")]
     pub stun_t: f64,
     /// Afterburner: seconds of burst left, engine heat 0..100, seconds of
     /// overheat penalty left, and whether the button was held last step.
+    #[serde(with = "crate::wire::f32_sparse")]
     pub burn_t: f64,
+    #[serde(with = "crate::wire::f32_sparse")]
     pub engine_heat: f64,
+    #[serde(with = "crate::wire::f32_sparse")]
     pub engine_over_t: f64,
     pub prev_burn: bool,
     /// Missiles in the rack, and the reload and launch-gap timers.
     pub missiles: u32,
+    #[serde(with = "crate::wire::f32_sparse")]
     pub missile_reload_t: f64,
+    #[serde(with = "crate::wire::f32_sparse")]
     pub missile_gap_t: f64,
 }
 
@@ -177,6 +204,9 @@ impl Ship {
 }
 
 /// A piece of salvage.
+///
+/// On the network its spin and its cable and fuse timers are packed (see
+/// [`crate::wire`]); its value and hit points stay f64.
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Item {
     /// Stable identity: the tow chain refers to items by id.
@@ -190,18 +220,25 @@ pub struct Item {
     pub value: f64,
     /// Hit points; None is indestructible.
     pub hp: Option<f64>,
+    #[serde(with = "crate::wire::f32_wire")]
     pub angle: f64,
+    #[serde(with = "crate::wire::f32_wire")]
     pub spin: f64,
     pub towed: bool,
     /// Rope length to this item's anchor while towed.
+    #[serde(with = "crate::wire::f32_sparse")]
     pub link_len: f64,
     /// Velocity change the rope applied this step.
+    #[serde(with = "crate::wire::f32_sparse")]
     pub jerk: f64,
     /// Smoothed 0..1 cable tension, for the cable's colour.
+    #[serde(with = "crate::wire::f32_sparse")]
     pub tension: f64,
     /// Seconds since being thrown (dropped or cut), counting down.
+    #[serde(with = "crate::wire::f32_sparse")]
     pub thrown_t: f64,
     /// Seconds until a primed reactor blows; 0 when not primed.
+    #[serde(with = "crate::wire::f32_sparse")]
     pub fuse: f64,
     /// Who set this reactor off, and so answers for its blast.
     pub primed_by: crate::world::Blame,
@@ -216,6 +253,7 @@ pub struct Item {
     /// The rival (jumper id) dragging this item off, if any.
     pub hooked_by: Option<u32>,
     /// Seconds until a towed rogue core next tries to zap the tug.
+    #[serde(with = "crate::wire::f32_sparse")]
     pub zap_t: f64,
     pub shape: Vec<ShapePt>,
     pub dead: bool,
@@ -346,10 +384,13 @@ pub struct Rock {
     pub hp: f64,
     /// Gold-seamed rock drops ore when broken.
     pub veined: bool,
+    #[serde(with = "crate::wire::f32_wire")]
     pub angle: f64,
+    #[serde(with = "crate::wire::f32_wire")]
     pub spin: f64,
     pub shape: Vec<ShapePt>,
     pub craters: Vec<Crater>,
+    #[serde(with = "crate::wire::f32_sparse")]
     pub flash: f64,
     /// Pebbles from breakage crumble after this many seconds.
     pub crumble_t: Option<f64>,
@@ -686,10 +727,15 @@ pub struct RadCloud {
 /// A cannon round (yours) or a bolt (theirs).
 #[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Bullet {
+    #[serde(with = "crate::wire::f32_wire")]
     pub x: f64,
+    #[serde(with = "crate::wire::f32_wire")]
     pub y: f64,
+    #[serde(with = "crate::wire::f32_wire")]
     pub vx: f64,
+    #[serde(with = "crate::wire::f32_wire")]
     pub vy: f64,
+    #[serde(with = "crate::wire::f32_wire")]
     pub life: f64,
     pub dmg: f64,
     /// A heavy grinder slug rather than a cutter round.

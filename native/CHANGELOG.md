@@ -7,6 +7,44 @@ and the port uses [Semantic Versioning](https://semver.org/) as defined in
 
 ## [Unreleased]
 
+## [1.4.6] - 2026-11-11
+
+Fixes from a third repository audit.
+
+### Fixed
+
+- An online game could crash when a new shift started. If a player had left
+  during the last shift, the others moved down a pilot slot; a player whose
+  Welcome to the new shift was lost on the way (it is resent 300 ms later)
+  took the new shift's first snapshots with their old pilot number, which
+  could be past the new shift's pilots. A snapshot made for another pilot is
+  now dropped until the Welcome arrives.
+- Hosting used more upload than it needed to. Tugs, salvage, rocks and shots
+  sent every number at full size 20 times a second; their timers and levels,
+  which mostly rest at zero, now travel as one byte while they do, and their
+  headings and spins at half size. A snapshot is a quarter smaller with the
+  pilots spread out and two fifths smaller with everyone at the bay: about
+  0.55 Mbit/s per pilot, where it was 0.75. Hull, shield and credit figures
+  are sent exactly, as before.
+- A shop request that went through was saved on the spot, waiting for the
+  disk on the server's step loop, so a changed client sending requests as
+  fast as the rate limit allows could make the break stutter for everyone.
+  The server now saves changed careers once a second, when the next shift
+  starts, when a lobby player leaves, and when it stops.
+- A player whose game crashed or lost its network, and who joined again
+  before the server had noticed, was told their pilot was already flying
+  and had to wait for the old connection to time out. With the right
+  identity the new connection now takes over the pilot (or the place in the
+  lobby) at once, and the old one is told why it was disconnected.
+
+### Changed
+
+- `tools/package.ps1` stops if the working tree has uncommitted changes, and
+  prints the commit it packages, so every release zip matches a commit.
+- The player guide says how much upload hosting needs (about 0.6 Mbit/s for
+  each pilot, more while everyone is in one place), and the multiplayer
+  design note carries the measured figures beside its estimate.
+
 ## [1.4.5] - 2026-11-11
 
 Fixes from a second repository audit.
