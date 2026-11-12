@@ -946,12 +946,16 @@ impl Server {
         // A player the server isn't holding (new, back after a shift away,
         // or back after a restart) must hold the secret their saved career
         // was claimed with. Checked only once there is room, so a full
-        // server writes nothing for strangers.
+        // server writes nothing for strangers. This runs before the career
+        // is loaded or created, so a refusal never leaves a career unbound.
         if known.is_none() && !self.full() {
-            let (ok, why) = self.careers.claim(&player, &secret);
-            self.log.extend(why);
-            if !ok {
-                return self.reject(id, Reject::WrongSecret);
+            match self.careers.claim(&player, &secret) {
+                Ok(()) => {}
+                Err(careers::Refusal::WrongSecret) => return self.reject(id, Reject::WrongSecret),
+                Err(careers::Refusal::Storage(why)) => {
+                    self.log.push(why);
+                    return self.reject(id, Reject::ServerError);
+                }
             }
         }
         let slot = match known {

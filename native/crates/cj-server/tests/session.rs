@@ -439,6 +439,34 @@ fn a_saved_career_refuses_the_wrong_secret_after_a_restart() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// Regression: when the key binding a career to its owner's secret couldn't
+/// be saved, the server still let the player in and saved their career,
+/// with no key, for the next secret to claim. Now it turns them away with a
+/// reason of its own and writes no career.
+#[test]
+fn a_key_that_cant_be_saved_turns_the_player_away() {
+    let dir = std::env::temp_dir().join(format!("cj-session-nokey-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let stem: String = [1u8; 16].iter().map(|b| format!("{b:02x}")).collect();
+    // A folder where the key's temporary file goes: it can't be created.
+    std::fs::create_dir_all(dir.join(format!("{stem}.key.tmp"))).expect("made");
+    let mut s = Server::new(Config {
+        careers: Some(dir.clone()),
+        ..config_for(4)
+    });
+    let mut a = Bot::join(&mut s, 1, 1);
+    a.hello(VERSION, 7);
+    steps(&mut s, &mut [&mut a], 3);
+    assert_eq!(a.rejected, Some(Reject::ServerError));
+    assert!(a.pilot.is_none() && !a.waiting);
+    assert!(
+        !dir.join(format!("{stem}.json")).exists(),
+        "no career without its key"
+    );
+    assert!(!dir.join(format!("{stem}.key")).exists());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// Regression: a player who reconnected during the break got their pilot
 /// back but not their career, so their shop and belt vote stayed shut until
 /// another shift had been flown.

@@ -7,6 +7,21 @@ and the port uses [Semantic Versioning](https://semver.org/) as defined in
 
 ## [Unreleased]
 
+## [1.4.4] - 2026-11-11
+
+A follow-up fix from the independent audit.
+
+### Fixed
+
+- When a server couldn't save the key that binds a career to its owner's
+  secret, it let the player in anyway and saved their career with no key,
+  so the next player using that id with any secret could claim it. The
+  server now turns the player away and writes no career until the key can
+  be saved. A key that can't be read turns them away too, as before.
+- A player turned away for that reason is now told the server couldn't
+  save their pilot and to ask the host to check its disk, instead of being
+  told the server knows their pilot from another install.
+
 ## [1.4.3] - 2026-11-11
 
 More online fixes from the independent audit.

@@ -97,39 +97,52 @@ impl CareerStore {
             .map_err(|e| format!("couldn't save career {stem}: {e}"))
     }
 
-    /// Whether `secret` may load player `id`'s career, and a line for the
-    /// log when something went wrong.
+    /// Whether `secret` may load player `id`'s career.
     ///
     /// The first secret to claim an id is bound to it: a new player, or a
     /// career saved before fingerprints were kept (1.4.2 and earlier), whose
-    /// owner is the first to come back. A fingerprint that can't be written
-    /// still lets the player in, unprotected until it can be. One that is
-    /// there but can't be read refuses them, so a disk fault never opens a
-    /// career to anyone.
-    pub fn claim(&self, id: &PlayerId, secret: &[u8; 16]) -> (bool, Option<String>) {
+    /// owner is the first to come back. Every disk fault refuses the claim,
+    /// whether the fingerprint can't be read or can't be saved: a career
+    /// must never be saved without its key, or the next secret to arrive
+    /// would bind it. The caller refuses before the career is created, so a
+    /// refused claim leaves nothing behind.
+    pub fn claim(&self, id: &PlayerId, secret: &[u8; 16]) -> Result<(), Refusal> {
         let Some(dir) = &self.dir else {
             // In memory nothing outlives the player's own connection.
-            return (true, None);
+            return Ok(());
         };
         let stem = file_stem(id);
         let path = dir.join(format!("{stem}.key"));
         let print = fingerprint(secret);
         match std::fs::read_to_string(&path) {
-            Ok(saved) => (saved.trim() == print, None),
+            Ok(saved) if saved.trim() == print => Ok(()),
+            Ok(_) => Err(Refusal::WrongSecret),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 let tmp = dir.join(format!("{stem}.key.tmp"));
-                let kept = write_flushed(&tmp, &print).and_then(|()| std::fs::rename(&tmp, &path));
-                let why = kept
-                    .err()
-                    .map(|e| format!("couldn't save the key for career {stem}: {e}"));
-                (true, why)
+                write_flushed(&tmp, &print)
+                    .and_then(|()| std::fs::rename(&tmp, &path))
+                    .map_err(|e| {
+                        // A half-written key is never read (only `.key` is),
+                        // but leaving it would clutter the folder.
+                        let _ = std::fs::remove_file(&tmp);
+                        Refusal::Storage(format!("couldn't save the key for career {stem}: {e}"))
+                    })
             }
-            Err(e) => (
-                false,
-                Some(format!("couldn't read the key for career {stem}: {e}")),
-            ),
+            Err(e) => Err(Refusal::Storage(format!(
+                "couldn't read the key for career {stem}: {e}"
+            ))),
         }
     }
+}
+
+/// Why [`CareerStore::claim`] turned a secret away.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Refusal {
+    /// The career is bound to another secret.
+    WrongSecret,
+    /// The key couldn't be read or saved, so nobody can be let in safely;
+    /// holds a sentence for the log.
+    Storage(String),
 }
 
 /// A secret's SHA-256 as 64 hex digits. The secret is 16 random bytes, not
@@ -193,7 +206,7 @@ mod tests {
         let (store, _) = CareerStore::open(None);
         assert!(store.save(&[1; 16], &Career::new(Mode::Standard)).is_ok());
         assert!(store.load(&[1; 16]).0.is_none());
-        assert!(store.claim(&[1; 16], &[9; 16]).0);
+        assert_eq!(store.claim(&[1; 16], &[9; 16]), Ok(()));
     }
 
     /// The first secret to claim a career is the only one that may load it
@@ -202,17 +215,11 @@ mod tests {
     fn a_career_belongs_to_the_secret_that_first_claimed_it() {
         let d = folder("claim");
         let (store, _) = CareerStore::open(Some(d.clone()));
-        let (ok, why) = store.claim(&[1; 16], &[7; 16]);
-        assert!(ok && why.is_none(), "a new player binds their secret");
-        assert!(store.claim(&[1; 16], &[7; 16]).0, "and comes back with it");
-        assert!(
-            !store.claim(&[1; 16], &[8; 16]).0,
-            "another secret is refused"
-        );
-        assert!(
-            store.claim(&[2; 16], &[8; 16]).0,
-            "other players are their own"
-        );
+        let claim = |id: u8, secret: u8| store.claim(&[id; 16], &[secret; 16]);
+        assert_eq!(claim(1, 7), Ok(()), "a new player binds their secret");
+        assert_eq!(claim(1, 7), Ok(()), "and comes back with it");
+        assert_eq!(claim(1, 8), Err(Refusal::WrongSecret), "another is refused");
+        assert_eq!(claim(2, 8), Ok(()), "other players are their own");
         let saved =
             std::fs::read_to_string(d.join(format!("{}.key", file_stem(&[1; 16])))).expect("kept");
         assert_eq!(saved, fingerprint(&[7; 16]));
@@ -229,8 +236,8 @@ mod tests {
         store
             .save(&[4; 16], &Career::new(Mode::Standard))
             .expect("saved");
-        assert!(store.claim(&[4; 16], &[5; 16]).0);
-        assert!(!store.claim(&[4; 16], &[6; 16]).0);
+        assert_eq!(store.claim(&[4; 16], &[5; 16]), Ok(()));
+        assert_eq!(store.claim(&[4; 16], &[6; 16]), Err(Refusal::WrongSecret));
         let _ = std::fs::remove_dir_all(&d);
     }
 
@@ -242,9 +249,37 @@ mod tests {
         let (store, _) = CareerStore::open(Some(d.clone()));
         // A folder where the key should be: it exists but can't be read.
         std::fs::create_dir_all(d.join(format!("{}.key", file_stem(&[3; 16])))).expect("made");
-        let (ok, why) = store.claim(&[3; 16], &[3; 16]);
-        assert!(!ok);
-        assert!(why.is_some_and(|w| w.contains("couldn't read")));
+        let refused = store.claim(&[3; 16], &[3; 16]);
+        assert!(matches!(refused, Err(Refusal::Storage(w)) if w.contains("couldn't read")));
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// Regression: a key that couldn't be saved still let the player in, so
+    /// their career was saved with no key and the next secret to arrive
+    /// could claim it. Now the claim is refused, no key is left behind, and
+    /// nobody can claim the career until a key can be saved.
+    #[test]
+    fn a_key_that_cant_be_saved_refuses_the_claim() {
+        let d = folder("unwritable");
+        let (store, _) = CareerStore::open(Some(d.clone()));
+        let stem = file_stem(&[5; 16]);
+        // A folder where the key's temporary file goes: it can't be created.
+        let tmp = d.join(format!("{stem}.key.tmp"));
+        std::fs::create_dir_all(&tmp).expect("made");
+        let refused = store.claim(&[5; 16], &[5; 16]);
+        assert!(matches!(refused, Err(Refusal::Storage(w)) if w.contains("couldn't save")));
+        assert!(!d.join(format!("{stem}.key")).exists(), "no key was bound");
+        assert!(
+            matches!(store.claim(&[5; 16], &[6; 16]), Err(Refusal::Storage(_))),
+            "nor can another secret claim it meanwhile"
+        );
+        std::fs::remove_dir(&tmp).expect("cleared");
+        assert_eq!(
+            store.claim(&[5; 16], &[5; 16]),
+            Ok(()),
+            "bound once it can be saved"
+        );
+        assert_eq!(store.claim(&[5; 16], &[6; 16]), Err(Refusal::WrongSecret));
         let _ = std::fs::remove_dir_all(&d);
     }
 }
