@@ -223,7 +223,7 @@ dependencies = [
 
 [[package]]
 name = "cj-game"
-version = "1.8.0"
+version = "1.9.0"
 dependencies = [
  "cj-net",
  "cj-server",
@@ -248,7 +248,7 @@ dependencies = [
 
 [[package]]
 name = "cj-server"
-version = "1.8.0"
+version = "1.9.0"
 dependencies = [
  "cj-net",
  "cj-sim",

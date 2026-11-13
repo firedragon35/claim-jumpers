@@ -32,6 +32,7 @@ mod marge;
 mod music;
 mod net;
 mod online;
+mod perf;
 mod post;
 mod profile;
 mod radar;
@@ -1104,6 +1105,7 @@ async fn main() {
     let mut vignette = draw::Vignette::new();
     // Shaders compile here, after the window exists.
     let mut post = post::Post::new();
+    let mut perf = perf::Perf::new();
     let store = save::Store::open();
     let (vw, vh) = view();
     let settings = settings::Settings::from_json(store.read(SETTINGS_FILE).as_deref());
@@ -1325,6 +1327,12 @@ async fn main() {
             back: false,
             start: keys.start,
         };
+
+        // The real frame time, before the simulation's clamp, for F3.
+        perf.record(get_frame_time());
+        if is_key_pressed(KeyCode::F3) {
+            perf.on = !perf.on;
+        }
 
         // Simulation, or the drifting field behind the menus.
         let dt = f64::from(get_frame_time()).min(MAX_FRAME_DT);
@@ -1637,6 +1645,16 @@ async fn main() {
             app.toast = Some((warning, get_time() + SAVE_WARNING_TIME));
         }
         draw_toast(&look, &app.toast, (vw, vh));
+        // Last, over every screen, in window units.
+        if perf.on {
+            draw::screen_camera((vw, vh));
+            perf.draw(
+                &look,
+                (vw, vh),
+                app.fx.particles.len(),
+                app.settings.effects,
+            );
+        }
         let picked = if smoke { sm.drive(&mut app) } else { picked };
         if let Some(a) = picked {
             app.act(a, &mut audio);

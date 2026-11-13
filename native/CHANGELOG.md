@@ -7,6 +7,21 @@ and the port uses [Semantic Versioning](https://semver.org/) as defined in
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-11-12
+
+### Added
+
+- F3 shows a frame-time overlay on any screen: frames per second, the
+  average frame time, the slowest frame of the last two seconds (red when
+  it's below 60 fps), the particle count and whether effects are on. It is
+  hidden by default and not saved.
+
+### Changed
+
+- The player README lists F3, mentions the Glow and effects and HUD size
+  settings, and suggests F3 and turning effects off when the game runs
+  slowly.
+
 ## [1.8.0] - 2026-11-12
 
 ### Added

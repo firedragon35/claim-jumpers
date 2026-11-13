@@ -54,13 +54,14 @@ PvP on/off (online)     B                   D-pad up
 Marge's voice on/off    V
 Music on/off            N
 Skip training           T
+Frame-time overlay      F3
 
 Menus: arrow keys, D-pad or left stick to move; Enter, Space or A to press;
 LB / RB to switch tabs. The mouse works too.
 
 The flight keys can be changed under Settings on the title screen. Settings
 also has the music, reduced shake and flashing, a colorblind-safe palette,
-and local co-op: a second player flies a partner tug from the numpad
+glow and effects, the HUD size, and local co-op: a second player flies a partner tug from the numpad
 (8 thrust, 4 / 6 turn, 5 brake, 0 fire, Enter latch) or a second gamepad.
 
 
@@ -165,6 +166,8 @@ TROUBLESHOOTING
   recently used pad is player 1. With gamepad co-op on, the last connected
   pad belongs to player 2.
 - Window too small: drag the window edge or maximise it; everything scales.
+- Slow or choppy: press F3 to see the frame rate and the slowest recent
+  frame. Turning off Glow and effects under Settings saves the most time.
 
 
 CREDITS
