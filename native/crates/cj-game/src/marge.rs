@@ -1,7 +1,7 @@
 //! Marge on the dispatch radio (src/js/04-dispatcher-radio.js and the
 //! radio() function in 11-guided-first-shift.js): the radio panel in the
-//! bottom-left corner, its throttle, her spoken voice through the Windows
-//! speech synthesizer, and the guided-training card.
+//! bottom-left corner, its throttle, her bundled neural voice recordings,
+//! and the guided-training card.
 
 use crate::audio::Audio;
 use crate::lines::{callout, lines, ASIDES};
@@ -18,92 +18,38 @@ const RADIO_GAP: f64 = 3.5;
 /// A line stays bright this long, then the panel fades to quiet.
 const RADIO_HOLD: f64 = 5.5;
 
-/* Speech delivery (pitch and rate, 1 = normal). Marge is low, unhurried
- * and dry; her last sentence (usually the jab) lands lower and slower. The
- * warning system is crisp and flat, so the two read as different speakers. */
-const MARGE_VOICE: (f32, f32) = (0.62, 0.88);
-const MARGE_PUNCHLINE: (f32, f32) = (0.56, 0.82);
-const MARGE_ASIDE: (f32, f32) = (0.54, 0.78);
-const SYSTEM_VOICE: (f32, f32) = (1.05, 1.0);
-
-/// Marge's voice. Unavailable speech leaves the text radio working.
+/// Bundled neural voices; the radio text remains available without sound.
 pub struct Voice {
-    tts: Option<tts::Tts>,
-    marge: Option<tts::Voice>,
-    system: Option<tts::Voice>,
+    clips: Vec<Vec<f32>>,
+    generation: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    until: std::time::Instant,
     pub enabled: bool,
-    /// What happened when speech started, for the smoke report.
     pub status: String,
 }
 
 impl Voice {
     pub fn new(enabled: bool) -> Voice {
-        let mut tts = match tts::Tts::default() {
-            Ok(t) => t,
-            Err(e) => {
-                return Voice {
-                    tts: None,
-                    marge: None,
-                    system: None,
-                    enabled,
-                    status: format!("unavailable ({e})"),
-                }
-            }
-        };
-        let voices: Vec<tts::Voice> = tts
-            .voices()
-            .unwrap_or_default()
-            .into_iter()
-            .filter(|v| v.language().as_str().to_lowercase().starts_with("en"))
+        let clips: Option<Vec<_>> = crate::recordings::ASSETS
+            .iter()
+            .map(|a| crate::recordings::decode(a.wav))
             .collect();
-        let find = |names: &[&str]| {
-            voices
-                .iter()
-                .find(|v| {
-                    let n = v.name().to_lowercase();
-                    names.iter().any(|w| n.contains(w))
-                })
-                .cloned()
+        let status = match &clips {
+            Some(c) => format!(
+                "{} bundled neural recordings; Marge: bf_emma; cockpit: af_heart",
+                c.len()
+            ),
+            None => "unavailable (invalid bundled voice WAV)".to_owned(),
         };
-        // Marge: the mellower UK/AU-style female voices first, then any
-        // female voice; the warning system prefers a crisp US voice.
-        let marge = find(&[
-            "hazel", "susan", "moira", "karen", "libby", "sonia", "serena", "tessa", "victoria",
-        ])
-        .or_else(|| find(&["zira", "samantha", "aria", "jenny", "natasha", "female"]))
-        .or_else(|| voices.first().cloned());
-        let system = find(&["zira", "aria", "jenny", "samantha"]).or_else(|| marge.clone());
-        let _ = tts.set_volume(1.0);
-        let status = format!(
-            "{} English voice(s); Marge: {}",
-            voices.len(),
-            marge
-                .as_ref()
-                .map_or("system default".to_owned(), |v| v.name())
-        );
         Voice {
-            tts: Some(tts),
-            marge,
-            system,
+            clips: clips.unwrap_or_default(),
+            generation: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            until: std::time::Instant::now(),
             enabled,
             status,
         }
     }
 
-    fn speak(&mut self, text: &str, (pitch, rate): (f32, f32), system: bool) {
-        let voice = if system { &self.system } else { &self.marge };
-        let Some(t) = self.tts.as_mut() else { return };
-        if let Some(v) = voice {
-            let _ = t.set_voice(v);
-        }
-        let _ = t.set_pitch(pitch);
-        let _ = t.set_rate(rate);
-        let _ = t.speak(text, false);
-    }
-
-    /// Speak a radio line. Urgent lines cut off whatever she is saying;
-    /// routine ones are dropped while she is mid-sentence, so the radio
-    /// never queues a backlog.
+    /// Urgent lines interrupt; routine lines never build a speech backlog.
     pub fn say(
         &mut self,
         text: &str,
@@ -112,37 +58,44 @@ impl Voice {
         aside: Option<&str>,
         audio: &mut Audio,
     ) {
-        if !self.enabled || audio.is_muted() {
+        if !self.enabled || audio.is_muted() || self.clips.is_empty() {
             return;
         }
-        let Some(t) = self.tts.as_mut() else { return };
-        if t.is_speaking().unwrap_or(false) {
-            if !urgent {
+        if !urgent && std::time::Instant::now() < self.until {
+            return;
+        }
+        self.stop();
+        let mut samples = Vec::new();
+        for (line, system) in callout
+            .map(|s| (s, true))
+            .into_iter()
+            .chain(aside.map(|s| (s, false)))
+            .chain(std::iter::once((text, false)))
+        {
+            let Some(plan) = crate::recordings::plan(line, system) else {
+                eprintln!("recording missing for radio line: {line}");
                 return;
+            };
+            for i in plan {
+                samples.extend_from_slice(&self.clips[i]);
             }
-            let _ = t.stop();
+            samples.resize(samples.len() + 2_400, 0.0);
         }
-        if let Some(c) = callout {
+        if callout.is_some() {
             audio.caution();
-            self.speak(c, SYSTEM_VOICE, true);
         }
-        if let Some(a) = aside {
-            self.speak(a, MARGE_ASIDE, false);
-        }
-        // Speech reads straight quotes awkwardly and says "cr" as letters.
-        let spoken = spoken_text(text);
-        let sentences = sentences(&spoken);
-        let n = sentences.len();
-        for (i, s) in sentences.iter().enumerate() {
-            let last = n > 1 && i == n - 1;
-            self.speak(s, if last { MARGE_PUNCHLINE } else { MARGE_VOICE }, false);
+        let duration = samples.len() as f64 / 24_000.0;
+        let tag = self.generation.load(std::sync::atomic::Ordering::Relaxed);
+        let speech = crate::recordings::Playback::new(samples, self.generation.clone(), tag);
+        if audio.speech(speech) {
+            self.until = std::time::Instant::now() + std::time::Duration::from_secs_f64(duration);
         }
     }
 
     pub fn stop(&mut self) {
-        if let Some(t) = self.tts.as_mut() {
-            let _ = t.stop();
-        }
+        self.generation
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.until = std::time::Instant::now();
     }
 
     pub fn toggle(&mut self) {
@@ -153,57 +106,10 @@ impl Voice {
     }
 }
 
-/// Text tidied for the ear: no quote marks, and "1,200 cr" read as credits.
-fn spoken_text(text: &str) -> String {
-    let t: String = text
-        .chars()
-        .filter(|c| !matches!(c, '"' | '\u{201c}' | '\u{201d}'))
-        .collect();
-    let mut out = String::with_capacity(t.len());
-    let b: Vec<char> = t.chars().collect();
-    let mut i = 0;
-    while i < b.len() {
-        // (\d)\s*cr\b -> "$1 credits"
-        if b[i].is_ascii_digit() {
-            let mut j = i + 1;
-            while j < b.len() && b[j] == ' ' {
-                j += 1;
-            }
-            let word_end = j + 2 >= b.len() || !b[j + 2].is_alphanumeric();
-            if j + 1 < b.len() && b[j] == 'c' && b[j + 1] == 'r' && word_end {
-                out.push(b[i]);
-                out.push_str(" credits");
-                i = j + 2;
-                continue;
-            }
-        }
-        out.push(b[i]);
-        i += 1;
+impl Drop for Voice {
+    fn drop(&mut self) {
+        self.stop();
     }
-    out
-}
-
-/// Split into sentences the way /[^.!?]+[.!?]*\s*/g does, trimmed.
-fn sentences(text: &str) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut cur = String::new();
-    let mut ended = false;
-    for ch in text.chars() {
-        let stop = matches!(ch, '.' | '!' | '?');
-        if ended && !stop && !ch.is_whitespace() {
-            out.push(cur.trim().to_owned());
-            cur.clear();
-            ended = false;
-        }
-        cur.push(ch);
-        if stop {
-            ended = true;
-        }
-    }
-    if !cur.trim().is_empty() {
-        out.push(cur.trim().to_owned());
-    }
-    out
 }
 
 /// The radio panel's state for this shift (radioState).
@@ -403,29 +309,4 @@ pub fn draw_tutorial(look: &Look, w: &World, view: (f32, f32)) -> bool {
         crate::look::hex(col::TEXT),
     );
     hover && is_mouse_button_pressed(MouseButton::Left)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn speech_reads_credits_and_drops_quotes() {
-        assert_eq!(
-            spoken_text("Bounty of 1,400 cr on \"them\"."),
-            "Bounty of 1,400 credits on them."
-        );
-        assert_eq!(spoken_text("400cr crate"), "400 credits crate");
-        // "cr" inside a word stays.
-        assert_eq!(spoken_text("3 crews"), "3 crews");
-    }
-
-    #[test]
-    fn lines_split_into_sentences_like_the_browser() {
-        assert_eq!(
-            sentences("Ion storm. Shields down! Fly... like you mean it"),
-            vec!["Ion storm.", "Shields down!", "Fly...", "like you mean it"]
-        );
-        assert_eq!(sentences("Banked."), vec!["Banked."]);
-    }
 }

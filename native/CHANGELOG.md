@@ -7,6 +7,12 @@ and the port uses [Semantic Versioning](https://semver.org/) as defined in
 
 ## [Unreleased]
 
+## [1.10.0] - 2026-11-12
+
+### Added
+- Bundled, distinct neural voice recordings for Marge and cockpit warnings, including tutorial and sound-test dialogue. Live numbers and names use recorded phrase and number assets. Runtime speech synthesis and installed-voice dependencies are removed; text, mute, interruption, and routine-line throttling remain available.
+
+
 ## [1.9.0] - 2026-11-12
 
 ### Added

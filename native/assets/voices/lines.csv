@@ -1,0 +1,261 @@
+﻿id,speaker,kind,file,text,spoken_text,keys
+marge_start_01,marge,line,marge/line/start_01.wav,"Morning, hotshot. Five minutes on the clock. Bring me something worth the fuel.","Morning, hotshot. Five minutes on the clock. Bring me something worth the fuel.",Start_01
+marge_start_02,marge,line,marge/line/start_02.wav,"Shift is live, kiddo. Remember, the tug is collateral. So are you.","Shift is live, kiddo. Remember, the tug is collateral. So are you.",Start_02
+marge_start_03,marge,line,marge/line/start_03.wav,"Coffee is cold, my knees hurt, and you are on the clock. Go make money.","Coffee is cold, my knees hurt, and you are on the clock. Go make money.",Start_03
+marge_hook_01,marge,line,marge/line/hook_01.wav,Hooked. Mind the swing.,Hooked. Mind the swing.,Hook_01
+marge_hook_02,marge,line,marge/line/hook_02.wav,That is on the line. Try not to lose it this time.,That is on the line. Try not to lose it this time.,Hook_02
+marge_hook_03,marge,line,marge/line/hook_03.wav,Winch is holding. For now.,Winch is holding. For now.,Hook_03
+marge_heavy_01,marge,line,marge/line/heavy_01.wav,You are towing a small moon. Turning is a suggestion now.,You are towing a small moon. Turning is a suggestion now.,Heavy_01
+marge_heavy_02,marge,line,marge/line/heavy_02.wav,Engines are complaining. Join the club.,Engines are complaining. Join the club.,Heavy_02
+marge_maxed_01,marge,line,marge/line/maxed_01.wav,"Winch is full, sugar. Bank something or cut something.","Winch is full, sugar. Bank something or cut something.",Maxed_01
+marge_reactor_01,marge,line,marge/line/reactor_01.wav,You hooked a reactor core. Do not shoot the reactor core.,You hooked a reactor core. Do not shoot the reactor core.,Reactor_01
+marge_reactor_02,marge,line,marge/line/reactor_02.wav,Reactor on the line. One hard bump and it blows. Fly like your grandmother. Not mine. Mine was a menace.,Reactor on the line. One hard bump and it blows. Fly like your grandmother. Not mine. Mine was a menace.,Reactor_02
+marge_engine_01,marge,line,marge/line/engine_01.wav,Engine block. Seven tonnes of bad decisions waiting to happen.,Engine block. Seven tonnes of bad decisions waiting to happen.,Engine_01
+marge_jumper_01,marge,line,marge/line/jumper_01.wav,Claim jumper on scope. They want your haul. Rude.,Claim jumper on scope. They want your haul. Rude.,Jumper_01
+marge_jumper_02,marge,line,marge/line/jumper_02.wav,Pink contact inbound. Rival crew. They are not here to make friends.,Pink contact inbound. Rival crew. They are not here to make friends.,Jumper_02
+marge_sentriesrogue_01,marge,line,marge/line/sentriesrogue_01.wav,"Tug is down, and your sentries just lost their link. They are shooting at everything now. Including you, hotshot.","Tug is down, and your sentries just lost their link. They are shooting at everything now. Including you, hotshot.",SentriesRogue_01
+marge_roguedown_01,marge,line,marge/line/roguedown_01.wav,"Rogue sentry down. It dropped its core. Careful: those bite, and they go off if you bang them around.","Rogue sentry down. It dropped its core. Careful: those bite, and they go off if you bang them around.",RogueDown_01
+marge_latched_01,marge,line,marge/line/latched_01.wav,"They have a line on your cargo. Shoot them, or swing something heavy at their face.","They have a line on your cargo. Shoot them, or swing something heavy at their face.",Latched_01
+marge_severed_01,marge,line,marge/line/severed_01.wav,"They cut your line. That was our money, hotshot.","They cut your line. That was our money, hotshot.",Severed_01
+marge_severed_02,marge,line,marge/line/severed_02.wav,Line severed. Go get it back. I will wait. I always wait.,Line severed. Go get it back. I will wait. I always wait.,Severed_02
+marge_escaped_01,marge,line,marge/line/escaped_01.wav,And it is gone. I am logging that as tuition.,And it is gone. I am logging that as tuition.,Escaped_01
+marge_escaped_02,marge,line,marge/line/escaped_02.wav,They got away with it. Insurance says that was your fault. So do I.,They got away with it. Insurance says that was your fault. So do I.,Escaped_02
+marge_crab_01,marge,line,marge/line/crab_01.wav,Crab on your cable. Yank the line hard and shake it off.,Crab on your cable. Yank the line hard and shake it off.,Crab_01
+marge_crab_02,marge,line,marge/line/crab_02.wav,Something is crawling up your tow line. Give it a good jerk.,Something is crawling up your tow line. Give it a good jerk.,Crab_02
+marge_crabhull_01,marge,line,marge/line/crabhull_01.wav,"Crab on the hull. Spin the tug and throw it off, or limp home to the bay.","Crab on the hull. Spin the tug and throw it off, or limp home to the bay.",CrabHull_01
+marge_craboff_01,marge,line,marge/line/craboff_01.wav,Crab overboard. Nice spin. Do not let it go to your head.,Crab overboard. Nice spin. Do not let it go to your head.,CrabOff_01
+marge_bank_01,marge,line,marge/line/bank_01.wav,Banked.,Banked.,Bank_01
+marge_bank_02,marge,line,marge/line/bank_02.wav,"Bay crew says thanks. They are lying, but they said it.","Bay crew says thanks. They are lying, but they said it.",Bank_02
+marge_bank_03,marge,line,marge/line/bank_03.wav,Logged. The loan officer almost smiled.,Logged. The loan officer almost smiled.,Bank_03
+marge_bank_04,marge,line,marge/line/bank_04.wav,Into the bay it goes. Slowly. Like my pension.,Into the bay it goes. Slowly. Like my pension.,Bank_04
+marge_bankbig_01,marge,line,marge/line/bankbig_01.wav,Now that pays the interest. Some of it.,Now that pays the interest. Some of it.,BankBig_01
+marge_bankbig_02,marge,line,marge/line/bankbig_02.wav,"Well, look at you. I might even approve your lunch break.","Well, look at you. I might even approve your lunch break.",BankBig_02
+marge_hulllow_01,marge,line,marge/line/hulllow_01.wav,Hull is under thirty percent. Insurance already said no.,Hull is under thirty percent. Insurance already said no.,HullLow_01
+marge_dead_01,marge,line,marge/line/dead_01.wav,Tug is down. The deductible comes out of your pay. Again. Respawning at the bay.,Tug is down. The deductible comes out of your pay. Again. Respawning at the bay.,Dead_01
+marge_refinery_01,marge,line,marge/line/refinery_01.wav,"Sensor ping. The old Kessler ore works is drifting through. Nobody ever cracked that vault. Nobody ever had your nerve, or your debt.","Sensor ping. The old Kessler ore works is drifting through. Nobody ever cracked that vault. Nobody ever had your nerve, or your debt.",Refinery_01
+marge_refinery_02,marge,line,marge/line/refinery_02.wav,"Big contact. The Kessler refinery. Vault is still sealed, and still full. Do not get greedy. Who am I kidding.","Big contact. The Kessler refinery. Vault is still sealed, and still full. Do not get greedy. Who am I kidding.",Refinery_02
+marge_refineryhint_01,marge,line,marge/line/refineryhint_01.wav,"There are mining charges floating by the station. Tow them into the three sockets around the vault. Gently, hon.","There are mining charges floating by the station. Tow them into the three sockets around the vault. Gently, hon.",RefineryHint_01
+marge_drones_01,marge,line,marge/line/drones_01.wav,Security drones are waking up. The station still thinks it is on payroll. Must be nice.,Security drones are waking up. The station still thinks it is on payroll. Must be nice.,Drones_01
+marge_drones_02,marge,line,marge/line/drones_02.wav,Station security is online. Mind those charges. One hit and you are a postcard.,Station security is online. Mind those charges. One hit and you are a postcard.,Drones_02
+marge_armed_01,marge,line,marge/line/armed_01.wav,All three seated. Five seconds. Get clear of the vault.,All three seated. Five seconds. Get clear of the vault.,Armed_01
+marge_vault_01,marge,line,marge/line/vault_01.wav,Vault is open. That is a fortune in refined ore. Grab it and go.,Vault is open. That is a fortune in refined ore. Grab it and go.,Vault_01
+marge_jaws_01,marge,line,marge/line/jaws_01.wav,Uh. The jaws are moving. It is eating the field. Do not get eaten. I am not training a replacement.,Uh. The jaws are moving. It is eating the field. Do not get eaten. I am not training a replacement.,Jaws_01
+marge_jaws_02,marge,line,marge/line/jaws_02.wav,"Processing jaws are awake. It is pulling everything in. Including you, genius.","Processing jaws are awake. It is pulling everything in. Including you, genius.",Jaws_02
+marge_jawsship_01,marge,line,marge/line/jawsship_01.wav,"You are in the jaws. Full thrust, or cut the load. Now.","You are in the jaws. Full thrust, or cut the load. Now.",JawsShip_01
+marge_atecargo_01,marge,line,marge/line/atecargo_01.wav,It ate your cargo. That station owes us money now. Good luck collecting.,It ate your cargo. That station owes us money now. Good luck collecting.,AteCargo_01
+marge_miners_01,marge,line,marge/line/miners_01.wav,Heads up. Automated mining drones are still working the old Kessler contract. They cut rock and fling it everywhere. Like my ex.,Heads up. Automated mining drones are still working the old Kessler contract. They cut rock and fling it everywhere. Like my ex.,Miners_01
+marge_miners_02,marge,line,marge/line/miners_02.wav,"Mining drones on scope. They do not care what is in the way. Their ore spills are free money, though.","Mining drones on scope. They do not care what is in the way. Their ore spills are free money, though.",Miners_02
+marge_storm_01,marge,line,marge/line/storm_01.wav,Debris storm by the miners. Those pebbles are moving fast.,Debris storm by the miners. Those pebbles are moving fast.,Storm_01
+marge_storm_02,marge,line,marge/line/storm_02.wav,You are in their blast zone. Fast rock incoming. Duck. Figuratively.,You are in their blast zone. Fast rock incoming. Duck. Figuratively.,Storm_02
+marge_minerangry_01,marge,line,marge/line/minerangry_01.wav,You shot a miner. Now it is drilling you. Shocking.,You shot a miner. Now it is drilling you. Shocking.,MinerAngry_01
+marge_minerangry_02,marge,line,marge/line/minerangry_02.wav,"That miner is pointing its cutter at you. Back off, or finish the job.","That miner is pointing its cutter at you. Back off, or finish the job.",MinerAngry_02
+marge_minerkill_01,marge,line,marge/line/minerkill_01.wav,Miner down. Its ore hopper just burst open.,Miner down. Its ore hopper just burst open.,MinerKill_01
+marge_minerkill_02,marge,line,marge/line/minerkill_02.wav,Scrapped a miner. Grab the ore before somebody else does.,Scrapped a miner. Grab the ore before somebody else does.,MinerKill_02
+marge_collector_01,marge,line,marge/line/collector_01.wav,Debt collector on scope. They do not want the cargo. They want the tug.,Debt collector on scope. They do not want the cargo. They want the tug.,Collector_01
+marge_collector_02,marge,line,marge/line/collector_02.wav,Kessler Mutual Recovery is here. And our payment is not even late. Yet.,Kessler Mutual Recovery is here. And our payment is not even late. Yet.,Collector_02
+marge_netted_01,marge,line,marge/line/netted_01.wav,"You are netted. Hard left, hard right, tear it. Or shoot that thing.","You are netted. Hard left, hard right, tear it. Or shoot that thing.",Netted_01
+marge_netted_02,marge,line,marge/line/netted_02.wav,They got a net on you. Wiggle out before they tow you off the field.,They got a net on you. Wiggle out before they tow you off the field.,Netted_02
+marge_netfree_01,marge,line,marge/line/netfree_01.wav,Net is torn. Now get away from that man.,Net is torn. Now get away from that man.,NetFree_01
+marge_netfree_02,marge,line,marge/line/netfree_02.wav,"You are loose. Do not let them line up another shot, sugar.","You are loose. Do not let them line up another shot, sugar.",NetFree_02
+marge_collectorkill_01,marge,line,marge/line/collectorkill_01.wav,"Collector down. Legally, I never saw that.","Collector down. Legally, I never saw that.",CollectorKill_01
+marge_collectorkill_02,marge,line,marge/line/collectorkill_02.wav,Scrapped a repo man. That plating is worth something. Unlike him.,Scrapped a repo man. That plating is worth something. Unlike him.,CollectorKill_02
+marge_greedy_01,marge,line,marge/line/greedy_01.wav,That collector just went greedy. They are not here for your payment anymore. They want your haul.,That collector just went greedy. They are not here for your payment anymore. They want your haul.,Greedy_01
+marge_collectorleaves_01,marge,line,marge/line/collectorleaves_01.wav,"Collector is leaving. Your numbers check out, for once.","Collector is leaving. Your numbers check out, for once.",CollectorLeaves_01
+marge_netedge_01,marge,line,marge/line/netedge_01.wav,They are almost at the edge with you. Break free. Now.,They are almost at the edge with you. Break free. Now.,NetEdge_01
+marge_fatcable_01,marge,line,marge/line/fatcable_01.wav,"That is a fat cable. Kessler Mutual noticed. Collector inbound, and they will take the load if they catch you.","That is a fat cable. Kessler Mutual noticed. Collector inbound, and they will take the load if they catch you.",FatCable_01
+marge_fatcable_02,marge,line,marge/line/fatcable_02.wav,"You are hauling a fortune, and the bank can smell it. Collector on the way. Get it home.","You are hauling a fortune, and the bank can smell it. Collector on the way. Get it home.",FatCable_02
+marge_dronekill_01,marge,line,marge/line/dronekill_01.wav,Drone down. Kessler Security can send me the bill. I will lose it.,Drone down. Kessler Security can send me the bill. I will lose it.,DroneKill_01
+marge_rivalsannoyed_01,marge,line,marge/line/rivalsannoyed_01.wav,You keep scrapping their people. The rival crews are annoyed now. They will shoot while they steal.,You keep scrapping their people. The rival crews are annoyed now. They will shoot while they steal.,RivalsAnnoyed_01
+marge_rivalshostile_01,marge,line,marge/line/rivalshostile_01.wav,"The rival crews have a grudge, kiddo. Some of them are coming for you now, not the cargo.","The rival crews have a grudge, kiddo. Some of them are coming for you now, not the cargo.",RivalsHostile_01
+marge_rivalsvendetta_01,marge,line,marge/line/rivalsvendetta_01.wav,Congratulations. It is a vendetta. They hunt in pairs now. I am updating your obituary.,Congratulations. It is a vendetta. They hunt in pairs now. I am updating your obituary.,RivalsVendetta_01
+marge_hunter_01,marge,line,marge/line/hunter_01.wav,"Rival inbound, and that one is not here for cargo. It is here for you.","Rival inbound, and that one is not here for cargo. It is here for you.",Hunter_01
+marge_hunter_02,marge,line,marge/line/hunter_02.wav,"Hunter on scope. Somebody holds a grudge, hotshot.","Hunter on scope. Somebody holds a grudge, hotshot.",Hunter_02
+marge_wantedmore_01,marge,line,marge/line/wantedmore_01.wav,Another collector? Your wanted level just went up again. The sheriff reads the same reports I do.,Another collector? Your wanted level just went up again. The sheriff reads the same reports I do.,WantedMore_01
+marge_sheriffpatrol_01,marge,line,marge/line/sheriffpatrol_01.wav,"Sheriff patrol in the field. Keep your nose clean, for once.","Sheriff patrol in the field. Keep your nose clean, for once.",SheriffPatrol_01
+marge_sheriffwanted_01,marge,line,marge/line/sheriffwanted_01.wav,"Sheriff patrol inbound, and you are wanted. Keep your distance.","Sheriff patrol inbound, and you are wanted. Keep your distance.",SheriffWanted_01
+marge_pursuit_01,marge,line,marge/line/pursuit_01.wav,"The sheriff spotted you. Run, or get cuffed. Do not let him get close.","The sheriff spotted you. Run, or get cuffed. Do not let him get close.",Pursuit_01
+marge_pursuit_02,marge,line,marge/line/pursuit_02.wav,"Lights and sirens, kiddo. He is on you. Keep moving.","Lights and sirens, kiddo. He is on you. Keep moving.",Pursuit_02
+marge_lostsheriff_01,marge,line,marge/line/lostsheriff_01.wav,"You lost him. For now. He will be back, they always are.","You lost him. For now. He will be back, they always are.",LostSheriff_01
+marge_sheriffshotat_01,marge,line,marge/line/sheriffshotat_01.wav,"Watch your fire, hotshot. That is the sheriff. Hit him all you like, but if he goes down, you are wanted.","Watch your fire, hotshot. That is the sheriff. Hit him all you like, but if he goes down, you are wanted.",SheriffShotAt_01
+marge_reinforcements_01,marge,line,marge/line/reinforcements_01.wav,More law inbound. They are bringing friends.,More law inbound. They are bringing friends.,Reinforcements_01
+marge_reinforcements_02,marge,line,marge/line/reinforcements_02.wav,"Backup is on the way, and it is not yours.","Backup is on the way, and it is not yours.",Reinforcements_02
+marge_swat_01,marge,line,marge/line/swat_01.wav,"Five stars. That is the Galactic SWAT team. Live rounds, hotshot. Run. Very. Fast.","Five stars. That is the Galactic SWAT team. Live rounds, hotshot. Run. Very. Fast.",Swat_01
+marge_shakedown_01,marge,line,marge/line/shakedown_01.wav,"The sheriff is shaking you down. No warrant, no reason, he just wants your cargo. Run, or lose it.","The sheriff is shaking you down. No warrant, no reason, he just wants your cargo. Run, or lose it.",Shakedown_01
+marge_sheriffkill_01,marge,line,marge/line/sheriffkill_01.wav,You shot down the sheriff. Two more stars. I am not bailing you out.,You shot down the sheriff. Two more stars. I am not bailing you out.,SheriffKill_01
+marge_shielddown_01,marge,line,marge/line/shielddown_01.wav,"Shields are down. Hull is next, hotshot.","Shields are down. Hull is next, hotshot.",ShieldDown_01
+marge_shielddown_02,marge,line,marge/line/shielddown_02.wav,There go your shields. Try not getting hit. Novel idea.,There go your shields. Try not getting hit. Novel idea.,ShieldDown_02
+marge_missileslive_01,marge,line,marge/line/missileslive_01.wav,Missile rack is live. It shoots first and never asks.,Missile rack is live. It shoots first and never asks.,MissilesLive_01
+marge_overheat_01,marge,line,marge/line/overheat_01.wav,Heat sink is cooked. Guns and thrusters are locked until it cools. Like you should be.,Heat sink is cooked. Guns and thrusters are locked until it cools. Like you should be.,Overheat_01
+marge_overheat_02,marge,line,marge/line/overheat_02.wav,"You are overheating. Ease off the trigger, hotshot.","You are overheating. Ease off the trigger, hotshot.",Overheat_02
+marge_grind_01,marge,line,marge/line/grind_01.wav,Ground it into slugs. Accounting just wept.,Ground it into slugs. Accounting just wept.,Grind_01
+marge_grind_02,marge,line,marge/line/grind_02.wav,"Grinder fed. Sale value, zero. Ammo, plenty. I hate it here.","Grinder fed. Sale value, zero. Ammo, plenty. I hate it here.",Grind_02
+marge_grindreactor_01,marge,line,marge/line/grindreactor_01.wav,You put a reactor in the grinder? A reactor. In the grinder.,You put a reactor in the grinder? A reactor. In the grinder.,GrindReactor_01
+marge_scooped_01,marge,line,marge/line/scooped_01.wav,"Scoop caught something. Free money, probably.","Scoop caught something. Free money, probably.",Scooped_01
+marge_kill_01,marge,line,marge/line/kill_01.wav,Jumper scrapped. Their parts spend like anybody else's.,Jumper scrapped. Their parts spend like anybody else's.,Kill_01
+marge_kill_02,marge,line,marge/line/kill_02.wav,One less pink dot. Grab what fell off.,One less pink dot. Grab what fell off.,Kill_02
+marge_smash_01,marge,line,marge/line/smash_01.wav,You hit him with an engine. That is going in the newsletter.,You hit him with an engine. That is going in the newsletter.,Smash_01
+marge_smash_02,marge,line,marge/line/smash_02.wav,Cargo-based diplomacy. I approve.,Cargo-based diplomacy. I approve.,Smash_02
+marge_boom_01,marge,line,marge/line/boom_01.wav,That was a reactor. Was. Past tense.,That was a reactor. Was. Past tense.,Boom_01
+marge_boom_02,marge,line,marge/line/boom_02.wav,Reactor blew. Count your fingers. Then count the cargo.,Reactor blew. Count your fingers. Then count the cargo.,Boom_02
+marge_cut_01,marge,line,marge/line/cut_01.wav,"Cut loose. Your cargo, your call. Your mistake.","Cut loose. Your cargo, your call. Your mistake.",Cut_01
+marge_minute_01,marge,line,marge/line/minute_01.wav,One minute left. Bring it home.,One minute left. Bring it home.,Minute_01
+marge_tensec_01,marge,line,marge/line/tensec_01.wav,Ten seconds. Bay doors are closing.,Ten seconds. Bay doors are closing.,TenSec_01
+marge_newwreck_01,marge,line,marge/line/newwreck_01.wav,New derelict drifting into the field. Fresh pickings.,New derelict drifting into the field. Fresh pickings.,NewWreck_01
+marge_repair_01,marge,line,marge/line/repair_01.wav,"Bay crew is patching you up. Hold still, you are not that interesting.","Bay crew is patching you up. Hold still, you are not that interesting.",Repair_01
+marge_corezap_01,marge,line,marge/line/corezap_01.wav,That core is still angry. It will bite you every so often until it is in the bay.,That core is still angry. It will bite you every so often until it is in the bay.,CoreZap_01
+marge_engineoverheat_01,marge,line,marge/line/engineoverheat_01.wav,"You cooked the engine, hotshot. Six seconds of crawling while it cools. Ease off the burners.","You cooked the engine, hotshot. Six seconds of crawling while it cools. Ease off the burners.",EngineOverheat_01
+marge_jawswrecked_01,marge,line,marge/line/jawswrecked_01.wav,You broke the jaws. Somebody at Kessler is going to cry about that. It won't be me.,You broke the jaws. Somebody at Kessler is going to cry about that. It won't be me.,JawsWrecked_01
+marge_escortdone_01,marge,line,marge/line/escortdone_01.wav,"Hauler is docked. Not a scratch on it. Well, a few scratches. Nobody is counting.","Hauler is docked. Not a scratch on it. Well, a few scratches. Nobody is counting.",EscortDone_01
+marge_escortlow_01,marge,line,marge/line/escortlow_01.wav,"The hauler is coming apart, hon. Get those crews off it.","The hauler is coming apart, hon. Get those crews off it.",EscortLow_01
+marge_escortlost_01,marge,line,marge/line/escortlost_01.wav,We lost the hauler. That is going to be an awkward phone call.,We lost the hauler. That is going to be an awkward phone call.,EscortLost_01
+marge_ionclear_01,marge,line,marge/line/ionclear_01.wav,Ion storm has passed. Shields are coming back up. Slowly. Like everything else around here.,Ion storm has passed. Shields are coming back up. Slowly. Like everything else around here.,IonClear_01
+marge_ionstorm_01,marge,line,marge/line/ionstorm_01.wav,Ion storm rolling through. Your shields are gone until it passes. Fly like you mean it.,Ion storm rolling through. Your shields are gone until it passes. Fly like you mean it.,IonStorm_01
+marge_derelict_01,marge,line,marge/line/derelict_01.wav,Derelict freighter on scope. Hold full of salvage and nobody aboard. Every crew in the belt heard that too.,Derelict freighter on scope. Hold full of salvage and nobody aboard. Every crew in the belt heard that too.,Derelict_01
+marge_scatter_01,marge,line,marge/line/scatter_01.wav,Ha. Look at them run. Nobody wants to be next under that cargo.,Ha. Look at them run. Nobody wants to be next under that cargo.,Scatter_01
+marge_holdopen_01,marge,line,marge/line/holdopen_01.wav,"Hold is open. Ingots, an engine, maybe a reactor. Somebody locked that up for a reason. Take it anyway.","Hold is open. Ingots, an engine, maybe a reactor. Somebody locked that up for a reason. Take it anyway.",HoldOpen_01
+marge_holdsealed_01,marge,line,marge/line/holdsealed_01.wav,"That hold is sealed tight, hotshot. There is a keycard floating around out there. Tow it in.","That hold is sealed tight, hotshot. There is a keycard floating around out there. Tow it in.",HoldSealed_01
+marge_sanctuary_01,marge,line,marge/line/sanctuary_01.wav,"Carrier's private property, hotshot. The law can't touch you in here. Your record's clean. For now.","Carrier's private property, hotshot. The law can't touch you in here. Your record's clean. For now.",Sanctuary_01
+marge_escort_01,marge,line,marge/line/escort_01.wav,"Freight hauler inbound, headed for our bay, and every crew in the belt can see it. Keep them off it, hotshot.","Freight hauler inbound, headed for our bay, and every crew in the belt can see it. Keep them off it, hotshot.",Escort_01
+dispatcher_ionstorm,dispatcher,line,dispatcher/line/ionstorm.wav,Warning. Ion storm.,Warning. Ion storm.,IonStorm
+dispatcher_boss,dispatcher,line,dispatcher/line/boss.wav,Warning. Bounty target.,Warning. Bounty target.,Boss
+dispatcher_derelict,dispatcher,line,dispatcher/line/derelict.wav,Contact. Derelict freighter.,Contact. Derelict freighter.,Derelict
+dispatcher_sentriesrogue,dispatcher,line,dispatcher/line/sentriesrogue.wav,Warning. Rogue drones.,Warning. Rogue drones.,SentriesRogue
+dispatcher_hulllow,dispatcher,line,dispatcher/line/hulllow.wav,Warning. Hull integrity.,Warning. Hull integrity.,HullLow
+dispatcher_dead,dispatcher,line,dispatcher/line/dead.wav,Hull failure.,Hull failure.,Dead
+dispatcher_crabhull,dispatcher,line,dispatcher/line/crabhull.wav,Warning. Hull breach.,Warning. Hull breach.,CrabHull
+dispatcher_netted,dispatcher,line,dispatcher/line/netted.wav,Warning. Net. Net.,Warning. Net. Net.,Netted
+dispatcher_netedge,dispatcher,line,dispatcher/line/netedge.wav,Warning. Field boundary.,Warning. Field boundary.,NetEdge
+dispatcher_collector,dispatcher,line,dispatcher/line/collector.wav,Caution. Debt collector.,Caution. Debt collector.,"Collector,FatCable"
+dispatcher_greedy,dispatcher,line,dispatcher/line/greedy.wav,Warning. Hostile collector.,Warning. Hostile collector.,Greedy
+dispatcher_lowwallet,dispatcher,line,dispatcher/line/lowwallet.wav,Caution. Payment shortfall.,Caution. Payment shortfall.,LowWallet
+dispatcher_confiscated,dispatcher,line,dispatcher/line/confiscated.wav,Cargo confiscated.,Cargo confiscated.,Confiscated
+dispatcher_latched,dispatcher,line,dispatcher/line/latched.wav,Caution. Cargo tether.,Caution. Cargo tether.,Latched
+dispatcher_severed,dispatcher,line,dispatcher/line/severed.wav,Cable severed.,Cable severed.,Severed
+dispatcher_jaws,dispatcher,line,dispatcher/line/jaws.wav,Warning. Proximity.,Warning. Proximity.,Jaws
+dispatcher_jawsship,dispatcher,line,dispatcher/line/jawsship.wav,Pull out. Pull out.,Pull out. Pull out.,JawsShip
+dispatcher_armed,dispatcher,line,dispatcher/line/armed.wav,Charges armed.,Charges armed.,Armed
+dispatcher_overheat,dispatcher,line,dispatcher/line/overheat.wav,Overheat. Overheat.,Overheat. Overheat.,Overheat
+dispatcher_minute,dispatcher,line,dispatcher/line/minute.wav,One minute.,One minute.,Minute
+dispatcher_tensec,dispatcher,line,dispatcher/line/tensec.wav,Ten seconds.,Ten seconds.,TenSec
+dispatcher_shielddown,dispatcher,line,dispatcher/line/shielddown.wav,Shields down.,Shields down.,ShieldDown
+dispatcher_pursuit,dispatcher,line,dispatcher/line/pursuit.wav,Warning. Law enforcement.,Warning. Law enforcement.,"Pursuit,Shakedown"
+dispatcher_sheriffwanted,dispatcher,line,dispatcher/line/sheriffwanted.wav,Caution. Sheriff patrol.,Caution. Sheriff patrol.,SheriffWanted
+dispatcher_hunter,dispatcher,line,dispatcher/line/hunter.wav,Caution. Hostile contact.,Caution. Hostile contact.,Hunter
+dispatcher_swat,dispatcher,line,dispatcher/line/swat.wav,Warning. Warning. SWAT.,Warning. Warning. SWAT.,Swat
+dispatcher_reinforcements,dispatcher,line,dispatcher/line/reinforcements.wav,Caution. Additional units.,Caution. Additional units.,Reinforcements
+dispatcher_arrested,dispatcher,line,dispatcher/line/arrested.wav,Arrested.,Arrested.,Arrested
+marge_aside_01,marge,aside,marge/aside/aside_01.wav,Hmph.,Hmph.,Aside_01
+marge_aside_02,marge,aside,marge/aside/aside_02.wav,Mm.,Mm.,Aside_02
+marge_aside_03,marge,aside,marge/aside/aside_03.wav,"Oh, sugar.","Oh, sugar.",Aside_03
+marge_aside_04,marge,aside,marge/aside/aside_04.wav,Lord.,Lord.,Aside_04
+marge_aside_05,marge,aside,marge/aside/aside_05.wav,Well.,Well.,Aside_05
+marge_aside_06,marge,aside,marge/aside/aside_06.wav,Kiddo.,Kiddo.,Aside_06
+marge_aside_07,marge,aside,marge/aside/aside_07.wav,Sweetheart.,Sweetheart.,Aside_07
+marge_aside_08,marge,aside,marge/aside/aside_08.wav,Uh-huh.,Uh-huh.,Aside_08
+marge_training_01,marge,line,marge/line/training_01.wav,Hold W (or RT) to thrust and A / D to turn. Fly clear of the carrier bay.,Hold W (or RT) to thrust and A / D to turn. Fly clear of the carrier bay.,Training_01
+marge_training_02,marge,line,marge/line/training_02.wav,Fly up to a piece of salvage and press E (gamepad Y) to hook it onto your cable.,Fly up to a piece of salvage and press E (gamepad Y) to hook it onto your cable.,Training_02
+marge_training_03,marge,line,marge/line/training_03.wav,Tow it home: drag the cargo into the bay ring to bank it. Heavier cargo swings wider.,Tow it home: drag the cargo into the bay ring to bank it. Heavier cargo swings wider.,Training_03
+marge_training_04,marge,line,marge/line/training_04.wav,"Press Space (gamepad RB) to fire the cutting cannon. Rocks break into smaller pieces, and some hold ore.","Press Space (gamepad RB) to fire the cutting cannon. Rocks break into smaller pieces, and some hold ore.",Training_04
+marge_training_05,marge,line,marge/line/training_05.wav,"Cargo is a weapon. Hook something, swing hard, and press X (gamepad LB) to cut it loose. It flies.","Cargo is a weapon. Hook something, swing hard, and press X (gamepad LB) to cut it loose. It flies.",Training_05
+marge_training_skipped,marge,line,marge/line/training_skipped.wav,Fine. Skip the lesson. The rival crews will teach you instead.,Fine. Skip the lesson. The rival crews will teach you instead.,Training_skipped
+marge_training_complete,marge,line,marge/line/training_complete.wav,"That is the job, hotshot. Bank enough to cover the installment, and watch for pink contacts. Rivals are inbound.","That is the job, hotshot. Bank enough to cover the installment, and watch for pink contacts. Rivals are inbound.",Training_complete
+marge_p2free,marge,line,marge/line/p2free.wav,"P2, you lost the cable.","P2, you lost the cable.",P2Free
+marge_p2latch,marge,line,marge/line/p2latch.wav,"P2 has the tail of the cable. Two tugs, one haul. Try not to rip it in half.","P2 has the tail of the cable. Two tugs, one haul. Try not to rip it in half.",P2Latch
+marge_radiation,marge,line,marge/line/radiation.wav,"That's radiation, hotshot. Your shields are useless in there and the hull is cooking. Get out.","That's radiation, hotshot. Your shields are useless in there and the hull is cooking. Get out.",Radiation
+marge_chargesrestocked,marge,line,marge/line/chargesrestocked.wav,Somebody left more charges by the refinery. Try not to lose these.,Somebody left more charges by the refinery. Try not to lose these.,ChargesRestocked
+marge_jacked_empty,marge,line,marge/line/jacked_empty.wav,They dragged you out for nothing. Your line was empty. Ha.,They dragged you out for nothing. Your line was empty. Ha.,Jacked_empty
+marge_intel_cannon,marge,line,marge/line/intel_cannon.wav,Word is the crews have been studying your gunnery. Expect them to jink.,Word is the crews have been studying your gunnery. Expect them to jink.,Intel_cannon
+marge_intel_smash,marge,line,marge/line/intel_smash.wav,The crews are bolting extra plate on against your swinging cargo. Hit harder.,The crews are bolting extra plate on against your swinging cargo. Hit harder.,Intel_smash
+marge_intel_missile,marge,line,marge/line/intel_missile.wav,The crews are running decoys now. Your missiles will wander more.,The crews are running decoys now. Your missiles will wander more.,Intel_missile
+marge_soundtest_rare,marge,line,marge/line/soundtest_rare.wav,"A fusion drive. 1,500 cr. Well, well. I am almost impressed. Almost.","A fusion drive. 1,500 credits. Well, well. I am almost impressed. Almost.",SoundTest_rare
+marge_seated_part_00,marge,fragment,marge/fragment/seated_part_00.wav,Charge seated. ,Charge seated. ,Seated_part_00
+marge_seated_part_02,marge,fragment,marge/fragment/seated_part_02.wav," to go. Steady hands, kiddo."," to go. Steady hands, kiddo.",Seated_part_02
+marge_jacked_part_00,marge,fragment,marge/fragment/jacked_part_00.wav,They jacked the whole haul. ,They jacked the whole haul. ,Jacked_part_00
+marge_jacked_part_02,marge,fragment,marge/fragment/jacked_part_02.wav," cr of cargo, and not a credit off your loan. Greedy bastards."," credits of cargo, and not a credit off your loan. Greedy bastards.",Jacked_part_02
+marge_confiscated_part_00,marge,fragment,marge/fragment/confiscated_part_00.wav,"They took the whole load as ""payment"". ",They took the whole load as payment. ,Confiscated_part_00
+marge_confiscated_part_02,marge,fragment,marge/fragment/confiscated_part_02.wav," cr of cargo, credited at "," credits of cargo, credited at ",Confiscated_part_02
+marge_confiscated_part_04,marge,fragment,marge/fragment/confiscated_part_04.wav,". Liquidation prices. Thieves with paperwork, sugar.",". Liquidation prices. Thieves with paperwork, sugar.",Confiscated_part_04
+marge_arrested_part_00,marge,fragment,marge/fragment/arrested_part_00.wav,Arrested. ,Arrested. ,Arrested_part_00
+marge_arrested_part_02,marge,fragment,marge/fragment/arrested_part_02.wav,-star fine of ,-star fine of ,Arrested_part_02
+marge_arrested_part_04,marge,fragment,marge/fragment/arrested_part_04.wav, cr: , credits: ,Arrested_part_04
+marge_arrested_part_06,marge,fragment,marge/fragment/arrested_part_06.wav,. Your record is clean. My nerves are not.,. Your record is clean. My nerves are not.,Arrested_part_06
+marge_shookdown_part_00,marge,fragment,marge/fragment/shookdown_part_00.wav,He took ,He took ,ShookDown_part_00
+marge_shookdown_part_02,marge,fragment,marge/fragment/shookdown_part_02.wav," cr of cargo ""as evidence."" No charge, no receipt. That is not how evidence works, hotshot."," credits of cargo as evidence. No charge, no receipt. That is not how evidence works, hotshot.",ShookDown_part_02
+marge_sentrylost_part_00,marge,fragment,marge/fragment/sentrylost_part_00.wav,Lost a sentry drone. ,Lost a sentry drone. ,SentryLost_part_00
+marge_sentrylost_part_02,marge,fragment,marge/fragment/sentrylost_part_02.wav," left. Those are not free, hotshot."," left. Those are not free, hotshot.",SentryLost_part_02
+marge_lowwallet_part_00,marge,fragment,marge/fragment/lowwallet_part_00.wav,"Kessler Mutual ran your numbers, hon. You're ","Kessler Mutual ran your numbers, hon. You're ",LowWallet_part_00
+marge_lowwallet_part_02,marge,fragment,marge/fragment/lowwallet_part_02.wav," cr short of this shift's installment, so they're sending somebody. Bank something. Today."," credits short of this shift's installment, so they're sending somebody. Bank something. Today.",LowWallet_part_02
+marge_pod_part_00,marge,fragment,marge/fragment/pod_part_00.wav,Pod cracked open. ,Pod cracked open. ,Pod_part_00
+marge_pod_part_02,marge,fragment,marge/fragment/pod_part_02.wav,. Bay says ,. Bay says ,Pod_part_02
+marge_pod_part_04,marge,fragment,marge/fragment/pod_part_04.wav, cr. I've seen worse., credits. I've seen worse.,Pod_part_04
+marge_rare_part_00,marge,fragment,marge/fragment/rare_part_00.wav,A ,A ,Rare_part_00
+marge_rare_part_04,marge,fragment,marge/fragment/rare_part_04.wav," cr. Well, well. I'm almost impressed. Almost."," credits. Well, well. I'm almost impressed. Almost.",Rare_part_04
+marge_bossdown_part_00,marge,fragment,marge/fragment/bossdown_part_00.wav,That was ,That was ,BossDown_part_00
+marge_bossdown_part_04,marge,fragment,marge/fragment/bossdown_part_04.wav," cr bounty, paid. Don't let it go to your head."," credits bounty, paid. Don't let it go to your head.",BossDown_part_04
+marge_boss_part_00,marge,fragment,marge/fragment/boss_part_00.wav,That's ,That's ,Boss_part_00
+marge_boss_part_02,marge,fragment,marge/fragment/boss_part_02.wav,'s crew. Bounty of ,'s crew. Bounty of ,Boss_part_02
+marge_boss_part_04,marge,fragment,marge/fragment/boss_part_04.wav," cr on them, and they're coming for you, not the cargo."," credits on them, and they're coming for you, not the cargo.",Boss_part_04
+marge_paid_earnings_part_02,marge,fragment,marge/fragment/paid_earnings_part_02.wav, cr out of your earnings, credits out of your earnings,Paid_earnings_part_02
+marge_paid_split_part_00,marge,fragment,marge/fragment/paid_split_part_00.wav,your cargo covered ,your cargo covered ,Paid_split_part_00
+marge_paid_split_part_02,marge,fragment,marge/fragment/paid_split_part_02.wav, cr and , credits and ,Paid_split_part_02
+marge_paid_split_part_04,marge,fragment,marge/fragment/paid_split_part_04.wav, cr came out of your earnings, credits came out of your earnings,Paid_split_part_04
+marge_paid_cargo_1,marge,fragment,marge/fragment/paid_cargo_1.wav,"your cargo covered it, and they kept the change","your cargo covered it, and they kept the change",Paid_cargo_1
+marge_paid_cargo_2,marge,fragment,marge/fragment/paid_cargo_2.wav,your cargo covered it,your cargo covered it,Paid_cargo_2
+marge_what_01,marge,value,marge/value/what_01.wav,medical supplies,medical supplies,what_01
+marge_what_02,marge,value,marge/value/what_02.wav,someone's vintage synthesizer,someone's vintage synthesizer,what_02
+marge_what_03,marge,value,marge/value/what_03.wav,400 kg of instant noodles,400 kg of instant noodles,what_03
+marge_what_04,marge,value,marge/value/what_04.wav,unregistered jewellery,unregistered jewellery,what_04
+marge_what_05,marge,value,marge/value/what_05.wav,a crate of very old whisky,a crate of very old whisky,what_05
+marge_what_06,marge,value,marge/value/what_06.wav,spare navigation chips,spare navigation chips,what_06
+marge_what_07,marge,value,marge/value/what_07.wav,a very confused cat (now the bay crew's cat),a very confused cat (now the bay crew's cat),what_07
+marge_what_08,marge,value,marge/value/what_08.wav,"mining permits, some forged","mining permits, some forged",what_08
+marge_name_01,marge,value,marge/value/name_01.wav,"""Rust Queen"" Ivanna",Rust Queen Ivanna,name_01
+marge_name_02,marge,value,marge/value/name_02.wav,Big Sal Moreno,Big Sal Moreno,name_02
+marge_name_03,marge,value,marge/value/name_03.wav,Lucky Teodor,Lucky Teodor,name_03
+marge_name_04,marge,value,marge/value/name_04.wav,The Pruitt Twins,The Pruitt Twins,name_04
+marge_name_05,marge,value,marge/value/name_05.wav,Mad Hattie Okonkwo,Mad Hattie Okonkwo,name_05
+marge_name_06,marge,value,marge/value/name_06.wav,Deacon Vrell,Deacon Vrell,name_06
+marge_label_scrap,marge,value,marge/value/label_scrap.wav,alloy scrap,alloy scrap,label_SCRAP
+marge_label_ore,marge,value,marge/value/label_ore.wav,platinum ore,platinum ore,label_ORE
+marge_label_plate,marge,value,marge/value/label_plate.wav,armor plate,armor plate,label_PLATE
+marge_label_engine,marge,value,marge/value/label_engine.wav,fusion drive,fusion drive,label_ENGINE
+marge_label_reactor,marge,value,marge/value/label_reactor.wav,pristine core,pristine core,label_REACTOR
+marge_label_ingot,marge,value,marge/value/label_ingot.wav,iridium ingot,iridium ingot,label_INGOT
+marge_number_zero,marge,number,marge/number/number_zero.wav,zero,zero,number_zero
+marge_number_one,marge,number,marge/number/number_one.wav,one,one,number_one
+marge_number_two,marge,number,marge/number/number_two.wav,two,two,number_two
+marge_number_three,marge,number,marge/number/number_three.wav,three,three,number_three
+marge_number_four,marge,number,marge/number/number_four.wav,four,four,number_four
+marge_number_five,marge,number,marge/number/number_five.wav,five,five,number_five
+marge_number_six,marge,number,marge/number/number_six.wav,six,six,number_six
+marge_number_seven,marge,number,marge/number/number_seven.wav,seven,seven,number_seven
+marge_number_eight,marge,number,marge/number/number_eight.wav,eight,eight,number_eight
+marge_number_nine,marge,number,marge/number/number_nine.wav,nine,nine,number_nine
+marge_number_ten,marge,number,marge/number/number_ten.wav,ten,ten,number_ten
+marge_number_eleven,marge,number,marge/number/number_eleven.wav,eleven,eleven,number_eleven
+marge_number_twelve,marge,number,marge/number/number_twelve.wav,twelve,twelve,number_twelve
+marge_number_thirteen,marge,number,marge/number/number_thirteen.wav,thirteen,thirteen,number_thirteen
+marge_number_fourteen,marge,number,marge/number/number_fourteen.wav,fourteen,fourteen,number_fourteen
+marge_number_fifteen,marge,number,marge/number/number_fifteen.wav,fifteen,fifteen,number_fifteen
+marge_number_sixteen,marge,number,marge/number/number_sixteen.wav,sixteen,sixteen,number_sixteen
+marge_number_seventeen,marge,number,marge/number/number_seventeen.wav,seventeen,seventeen,number_seventeen
+marge_number_eighteen,marge,number,marge/number/number_eighteen.wav,eighteen,eighteen,number_eighteen
+marge_number_nineteen,marge,number,marge/number/number_nineteen.wav,nineteen,nineteen,number_nineteen
+marge_number_twenty,marge,number,marge/number/number_twenty.wav,twenty,twenty,number_twenty
+marge_number_thirty,marge,number,marge/number/number_thirty.wav,thirty,thirty,number_thirty
+marge_number_forty,marge,number,marge/number/number_forty.wav,forty,forty,number_forty
+marge_number_fifty,marge,number,marge/number/number_fifty.wav,fifty,fifty,number_fifty
+marge_number_sixty,marge,number,marge/number/number_sixty.wav,sixty,sixty,number_sixty
+marge_number_seventy,marge,number,marge/number/number_seventy.wav,seventy,seventy,number_seventy
+marge_number_eighty,marge,number,marge/number/number_eighty.wav,eighty,eighty,number_eighty
+marge_number_ninety,marge,number,marge/number/number_ninety.wav,ninety,ninety,number_ninety
+marge_number_hundred,marge,number,marge/number/number_hundred.wav,hundred,hundred,number_hundred
+marge_number_thousand,marge,number,marge/number/number_thousand.wav,thousand,thousand,number_thousand
+marge_number_million,marge,number,marge/number/number_million.wav,million,million,number_million
+marge_number_billion,marge,number,marge/number/number_billion.wav,billion,billion,number_billion
+marge_number_trillion,marge,number,marge/number/number_trillion.wav,trillion,trillion,number_trillion
+marge_number_quadrillion,marge,number,marge/number/number_quadrillion.wav,quadrillion,quadrillion,number_quadrillion
+marge_number_quintillion,marge,number,marge/number/number_quintillion.wav,quintillion,quintillion,number_quintillion
+marge_number_minus,marge,number,marge/number/number_minus.wav,minus,minus,number_minus
+marge_number_point,marge,number,marge/number/number_point.wav,point,point,number_point
+marge_credits,marge,number,marge/number/credits.wav,credits,credits,credits

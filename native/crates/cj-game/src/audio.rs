@@ -117,6 +117,7 @@ enum Voice {
 }
 
 enum Cmd {
+    Speech(crate::recordings::Playback),
     Play(Voice),
     /// Engine loop targets: gain and low-pass cutoff in Hz.
     Thrust(f32, f32),
@@ -237,6 +238,7 @@ struct Mixer {
     sr: f32,
     rx: Receiver<Cmd>,
     voices: Vec<Voice>,
+    speech: Option<crate::recordings::Playback>,
     noise: Noise,
     muted: bool,
     // Engine loop: current and target gain and cutoff, and its filter.
@@ -356,6 +358,12 @@ impl Mixer {
         s += self.eng_bq.run(self.noise.next()) * self.eng_gain;
         self.music_gain += (self.music_gain_to - self.music_gain) * (1.0 - (-dt / 0.3).exp());
         s += m * self.music_gain;
+        if let Some(speech) = &mut self.speech {
+            match speech.sample(self.sr) {
+                Some(sample) => s += sample,
+                None => self.speech = None,
+            }
+        }
 
         if self.muted {
             return 0.0;
@@ -385,6 +393,7 @@ impl Mixer {
     fn drain(&mut self) {
         while let Ok(cmd) = self.rx.try_recv() {
             match cmd {
+                Cmd::Speech(speech) => self.speech = Some(speech),
                 Cmd::Play(mut v) => {
                     match &mut v {
                         Voice::Noise { o, bq, .. } => bq.set(o.filter, o.freq, self.sr),
@@ -481,6 +490,15 @@ impl Audio {
 
     pub fn is_muted(&self) -> bool {
         self.muted
+    }
+
+    /// Queue recorded speech only while an output stream can receive it.
+    pub(crate) fn speech(&self, speech: crate::recordings::Playback) -> bool {
+        !self.failed.load(Ordering::Relaxed)
+            && self
+                .tx
+                .as_ref()
+                .is_some_and(|tx| tx.send(Cmd::Speech(speech)).is_ok())
     }
 
     /// The radio's two-tone blip as a line comes in.
@@ -1232,6 +1250,7 @@ fn open(failed: &Arc<AtomicBool>) -> Result<(Sender<Cmd>, cpal::Stream), String>
         sr: config.sample_rate as f32,
         rx,
         voices: Vec::new(),
+        speech: None,
         noise: Noise(0x1234_5678),
         muted: false,
         eng_gain: 0.0,
@@ -1293,6 +1312,51 @@ mod tests {
     use super::*;
 
     #[test]
+    fn recorded_dialogue_drops_routine_backlog_and_obeys_interrupt_and_mute() {
+        let (tx, rx) = channel();
+        let mut audio = Audio {
+            tx: Some(tx),
+            _stream: None,
+            failed: Arc::new(AtomicBool::new(false)),
+            reopen_at: 0.0,
+            muted: false,
+            sfx_scale: 1.0,
+            clock: 0.0,
+            last_rattle: -1.0,
+            rng: Noise(1),
+            error: None,
+        };
+        let mut voice = crate::marge::Voice::new(true);
+        voice.say("Banked.", false, None, None, &mut audio);
+        let Cmd::Speech(mut first) = rx.try_recv().expect("first line queued") else {
+            panic!("speech expected")
+        };
+        voice.say("Banked.", false, None, None, &mut audio);
+        assert!(
+            rx.try_recv().is_err(),
+            "routine speech must not queue a backlog"
+        );
+        assert!(first.sample(48_000.0).is_some());
+        voice.say("Banked.", true, None, None, &mut audio);
+        assert_eq!(
+            first.sample(48_000.0),
+            None,
+            "urgent speech cuts the old line"
+        );
+        let Cmd::Speech(mut urgent) = rx.try_recv().expect("urgent line queued") else {
+            panic!("speech expected")
+        };
+        voice.toggle();
+        assert_eq!(urgent.sample(48_000.0), None, "voice toggle stops playback");
+        voice.say("Banked.", true, None, None, &mut audio);
+        assert!(rx.try_recv().is_err());
+        voice.toggle();
+        audio.muted = true;
+        voice.say("Banked.", true, None, None, &mut audio);
+        assert!(rx.try_recv().is_err(), "muted speech must not queue");
+    }
+
+    #[test]
     fn an_enemy_shot_at_the_edge_of_hearing_is_not_played() {
         let (tx, rx) = channel();
         let mut a = Audio {
@@ -1351,6 +1415,7 @@ mod tests {
             sr: 48_000.0,
             rx,
             voices: Vec::new(),
+            speech: None,
             noise: Noise(1),
             muted: false,
             eng_gain: 0.0,

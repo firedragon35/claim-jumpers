@@ -4,7 +4,7 @@ A native Rust port of Claim Jumpers for Windows 10 and 11. This is the lead
 version of the game. The browser game (`claim-jumpers-game`) it was ported
 from is a frozen baseline at its 1.0.7, and new gameplay is built here first.
 
-**Status: release 1.9.0, online co-op and opt-in PvP for up to 20 pilots (all systems ported, packaged for Windows; history in [CHANGELOG.md](CHANGELOG.md)).** A career of
+**Status: release 1.10.0, online co-op and opt-in PvP for up to 20 pilots (all systems ported, packaged for Windows; history in [CHANGELOG.md](CHANGELOG.md)).** A career of
 five-minute shifts: fly the tug, tow and fight for salvage, and bank it at
 the carrier, against rival crews, debt collectors who net and tow the tug
 (or confiscate a fat load, or impound it), the law (wanted stars, patrols,
@@ -31,9 +31,12 @@ arrows are in.
 
 Marge is on the radio: every line from the browser, shown in the
 bottom-left panel with its throttle and once-per-shift rules, and spoken
-through the Windows speech synthesizer (her low, dry delivery, the
-punchline lower and slower, and the cockpit callouts in a second voice
-after a caution chime). Adaptive music plays under everything, with drums
+from bundled neural voice recordings (Marge uses bf_emma; cockpit
+callouts use af_heart after a caution chime). The recordings also cover
+tutorial instructions and changing amounts, names, and counts. Gameplay
+requires no speech service, network, or installed Windows voice. See
+[the voice manifest](assets/voices/manifest.json) for exact dialogue and sources.
+Adaptive music plays under everything, with drums
 and a lead coming in as danger rises. A career's first shift runs the
 guided training (five steps; T skips it), cargo smashes and boss kills
 hit-stop and slow the action, fast cargo leaves trails, and the shift's
@@ -78,7 +81,7 @@ careers survive rebuilds. `stage\BUILD.txt` records what was built.
 | Window, rendering, input | macroquad | 0.4.16 |
 | Gamepads | gilrs | 0.11.2 |
 | Audio output (procedural synth) | cpal | 0.18.2 |
-| Marge's voice (WinRT speech) | tts | 0.26.3 |
+| Marge / cockpit voices | Bundled Kokoro neural recordings | 24 kHz mono WAV |
 
 Fonts are embedded in the executable; see `assets/fonts/FONTS.md` for their
 source and licences (SIL OFL 1.1).
@@ -293,7 +296,8 @@ cargo test
   the under-attack alarm's rate limit and wreck contents.
 - The game crate's own tests check the sound engine's filter and
   compressor, the save files on disk, menu focus movement, how Marge's
-  lines are tidied and split into sentences for speech, settings loading
+  recorded dialogue resolves live names and credit amounts, playback
+  resamples and cancels on interruption, settings loading
   (validation, round trip) and key rebinding (swaps and reserved keys),
   the profile (validation, unlocking once, paint jobs needing their
   achievement), pilot-name cleaning, the local board (top 20 per mode,
@@ -358,10 +362,11 @@ Everything in the browser game is ported. Deliberate differences:
   outline too).
 - The night shift's darkness is a vertex-coloured ring rather than a
   canvas radial gradient; the radii and colours are the browser's.
-- Marge's voice is the Windows speech synthesizer, not the browser's;
-  she prefers the same voices by name (Hazel, Susan and so on, then Zira),
-  with the browser's pitch and rate. Which voices exist depends on the
-  Windows language packs installed.
+- Marge and cockpit callouts use embedded Kokoro neural recordings.
+  Live values are assembled from recorded phrases and number words; those
+  joins can sound less smooth than complete lines. Subtitles retain the
+  exact source text. Unknown future dialogue keeps its text and logs a
+  missing-recording message. Regenerate the pack when dialogue changes.
 - The music's kick drum falls in pitch over its whole 0.2 s note; the
   browser's reaches 40 Hz at 0.15 s.
 - Whether training has been done is kept in `training.txt` in the save

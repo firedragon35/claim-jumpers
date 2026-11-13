@@ -36,6 +36,7 @@ mod perf;
 mod post;
 mod profile;
 mod radar;
+mod recordings;
 mod replay;
 mod save;
 mod screens;
