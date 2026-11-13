@@ -549,12 +549,12 @@ fn stolen_cargo_buys_the_crews_upgrades() {
     let mut c = Career::new(Mode::Standard);
     let plain =
         World::for_career(Rng::Constant(0.5), (1280.0, 720.0), &c).new_jumper(0.0, 0.0, None);
-    settled(&mut c, |w| w.rival_loot = 3500.0);
+    settled(&mut c, |w| w.pilots[0].loot_lost = 3500.0);
     assert_eq!(c.crew_level(), 1);
     let mut w = World::for_career(Rng::Constant(0.5), (1280.0, 720.0), &c);
     assert_eq!(w.new_jumper(0.0, 0.0, None).hp, plain.hp + 1.0);
 
-    settled(&mut c, |w| w.rival_loot = 7000.0);
+    settled(&mut c, |w| w.pilots[0].loot_lost = 7000.0);
     assert_eq!(c.crew_level(), 3);
     let back = Career::from_json(&c.to_json()).expect("loads");
     assert_eq!(back.war_chest, c.war_chest);
@@ -563,7 +563,10 @@ fn stolen_cargo_buys_the_crews_upgrades() {
     assert_eq!(c.crew_level(), 2, "capped on Relaxed");
     c.mode = Mode::Standard;
 
-    settled(&mut c, |w| w.boss_down = Some("Lucky Teodor"));
+    settled(&mut c, |w| {
+        w.boss_down = Some("Lucky Teodor");
+        w.pilots[0].kills.boss = 1;
+    });
     assert_eq!(c.war_chest, 5250.0, "a boss kill empties half the chest");
     assert_eq!(c.crew_level(), 1);
 }
@@ -573,7 +576,7 @@ fn the_report_says_when_the_crews_upgrade() {
     let mut c = Career::new(Mode::Standard);
     let mut w = World::for_career(Rng::Constant(0.5), (1280.0, 720.0), &c);
     w.pilots[0].banked = 100_000.0;
-    w.rival_loot = 3000.0;
+    w.pilots[0].loot_lost = 3000.0;
     assert!(c.settle(&w, 0).chain_note.contains("tougher hulls"));
 }
 
@@ -626,6 +629,46 @@ fn a_shared_field_flies_each_career_and_settles_each_apart() {
     assert_eq!(s1.earned, 0.0);
     assert!(s2.earned > 0.0, "the second pilot's haul is theirs");
     assert_eq!((one.shift, two.shift), (rich.shift + 1, fresh.shift + 1));
+}
+
+/// Online, each career's crews grow from the cargo stolen from its own
+/// pilot, and only the pilot who downs a boss cuts their crews' chest
+/// (BUG-003: the field-wide totals used to reach every career).
+#[test]
+fn crews_are_funded_and_cut_per_pilot_on_a_shared_field() {
+    use cj_sim::world::SharedShift;
+    let shared = SharedShift {
+        belt: Belt::Hollis,
+        cond: Condition::Night,
+        mode: Mode::Standard,
+        shift_no: 2,
+        grudge: 0.0,
+        pvp: false,
+    };
+    let mut start = Career::new(Mode::Standard);
+    start.war_chest = 2000.0;
+    let careers = [start.clone(), start.clone()];
+    let mut w = World::for_careers(Rng::seeded(5), (1280.0, 720.0), 4, &shared, &careers);
+    // Pilot 0 was robbed; pilot 1 downed the boss.
+    w.rival_loot = 4000.0;
+    w.pilots[0].loot_lost = 4000.0;
+    w.boss_down = Some("Lucky Teodor");
+    w.pilots[1].kills.boss = 1;
+    let (mut robbed, mut hunter) = (start.clone(), start.clone());
+    robbed.settle(&w, 0);
+    hunter.settle(&w, 1);
+    assert_eq!(robbed.war_chest, 6000.0, "only its own pilot's losses");
+    assert_eq!(
+        hunter.war_chest,
+        2000.0 * cj_sim::consts::CREW_BOSS_KEEP,
+        "only its own kill"
+    );
+    let shop = |c: &Career| c.extra["lastShift"]["boss"].clone();
+    assert!(
+        shop(&robbed).is_null(),
+        "Marge doesn't credit someone else's boss"
+    );
+    assert_eq!(shop(&hunter), "Lucky Teodor");
 }
 
 /// A career with a mounted drone bay holding `n` sentries.

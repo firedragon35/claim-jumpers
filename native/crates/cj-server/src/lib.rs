@@ -23,6 +23,7 @@
 
 pub mod careers;
 
+use cj_net::auth::Print;
 use cj_net::{
     channel, ClientMsg, Info, Known, Lobby, LobbyPlayer, Phase, PlayerId, Reject, ServerMsg,
     Snapshot,
@@ -139,7 +140,8 @@ pub struct Recording {
 /// `Server::waiting`.
 struct Player {
     id: PlayerId,
-    secret: [u8; 16],
+    /// The print this player logged in with (see `cj_net::auth`).
+    print: Print,
     name: String,
     view: (f64, f64),
     conn: Option<ClientId>,
@@ -166,10 +168,10 @@ struct Player {
 }
 
 impl Player {
-    fn new(id: PlayerId, secret: [u8; 16], career: Career) -> Player {
+    fn new(id: PlayerId, print: Print, career: Career) -> Player {
         Player {
             id,
-            secret,
+            print,
             career,
             vote: None,
             name: String::new(),
@@ -202,6 +204,9 @@ enum Stage {
 enum ConnState {
     /// Connected; its Hello hasn't arrived yet.
     Joining,
+    /// Its Hello named a player new here: waiting for their print
+    /// ([`ClientMsg::Introduce`]) to check the Hello's proof against.
+    Introducing(Box<Pending>),
     /// Flying `pilot`.
     Playing { pilot: usize },
     /// In the lobby, waiting for the next shift.
@@ -210,9 +215,19 @@ enum ConnState {
     Leaving { at: u32 },
 }
 
+/// A Hello held while its player introduces themselves.
+struct Pending {
+    player: PlayerId,
+    proof: [u8; 32],
+    name: String,
+    view: (u16, u16),
+}
+
 /// One connected client.
 struct Conn {
     state: ConnState,
+    /// The login challenge sent when it connected (see `cj_net::auth`).
+    nonce: [u8; 16],
     /// The step it connected at.
     since: u32,
     /// Invalid messages so far.
@@ -302,7 +317,7 @@ fn player_of<'a>(
     match conns.get(&id)?.state {
         ConnState::Playing { pilot } => players.get_mut(pilot),
         ConnState::Waiting => waiting.iter_mut().find(|p| p.conn == Some(id)),
-        ConnState::Joining | ConnState::Leaving { .. } => None,
+        ConnState::Joining | ConnState::Introducing(_) | ConnState::Leaving { .. } => None,
     }
 }
 
@@ -635,6 +650,19 @@ impl Server {
         self.send_lobby();
     }
 
+    /// The server is stopping: a shift in progress is settled into every
+    /// flying pilot's career (saved, and sent to them) exactly as if its
+    /// time had run out. Stopping can't be used to bank early for profit:
+    /// a shorter shift only gives less time to earn against the same
+    /// installment. In the break there's nothing to settle.
+    pub fn settle_for_stop(&mut self) {
+        if matches!(self.stage, Stage::Shift) && !self.players.is_empty() {
+            self.log
+                .push(format!("server stopping: settling shift {}", self.shift_no));
+            self.start_break();
+        }
+    }
+
     /// Everyone connected, flying or waiting, is ready (and someone is).
     fn all_ready(&self) -> bool {
         let mut connected = self
@@ -719,10 +747,20 @@ impl Server {
         while let Some(e) = self.renet.get_event() {
             match e {
                 ServerEvent::ClientConnected { client_id } => {
+                    // From the OS random source, never the seeded game
+                    // generator: a nonce a restarted server repeats would
+                    // let a captured login be replayed.
+                    let nonce = cj_net::auth::random_bytes();
+                    self.send(
+                        client_id,
+                        channel::RELIABLE,
+                        &ServerMsg::Challenge { nonce },
+                    );
                     self.conns.insert(
                         client_id,
                         Conn {
                             state: ConnState::Joining,
+                            nonce,
                             since: self.tick,
                             strikes: 0,
                             inputs: 0,
@@ -786,14 +824,17 @@ impl Server {
             .conns
             .iter()
             .filter(|(_, c)| match c.state {
-                ConnState::Joining => tick - c.since > HELLO_TIMEOUT,
+                ConnState::Joining | ConnState::Introducing(_) => tick - c.since > HELLO_TIMEOUT,
                 ConnState::Leaving { at } => tick >= at,
                 ConnState::Playing { .. } | ConnState::Waiting => false,
             })
             .map(|(id, _)| *id)
             .collect();
         for id in done {
-            if matches!(self.conns[&id].state, ConnState::Joining) {
+            if matches!(
+                self.conns[&id].state,
+                ConnState::Joining | ConnState::Introducing(_)
+            ) {
                 self.log
                     .push(format!("client {id} dropped: no Hello within 5 s"));
             }
@@ -837,10 +878,11 @@ impl Server {
                 Ok(ClientMsg::Hello {
                     game_version,
                     player,
-                    secret,
+                    proof,
                     pilot,
                     view,
-                }) => self.hello(id, game_version, player, secret, &pilot, view),
+                }) => self.hello(id, game_version, player, proof, &pilot, view),
+                Ok(ClientMsg::Introduce { print }) => self.introduce(id, print),
                 Ok(ClientMsg::Action { seq, action }) => self.action(id, seq, action),
                 Ok(ClientMsg::Query) => self.query(id),
                 Ok(ClientMsg::Ready) => self.ready(id),
@@ -1007,7 +1049,7 @@ impl Server {
         id: ClientId,
         version: String,
         player: PlayerId,
-        secret: [u8; 16],
+        proof: [u8; 32],
         name: &str,
         view: (u16, u16),
     ) {
@@ -1018,13 +1060,76 @@ impl Server {
             let server = self.config.version.clone();
             return self.reject(id, Reject::VersionMismatch { server });
         }
+        // The print to check the proof against: the one this player logged
+        // in with while the server holds them, else their saved key.
+        let held = self
+            .waiting
+            .iter()
+            .chain(&self.players)
+            .find(|p| p.id == player)
+            .map(|p| p.print);
+        let print = match held.map_or_else(|| self.careers.saved_print(&player), |p| Ok(Some(p))) {
+            Ok(p) => p,
+            Err(careers::Refusal::Storage(why)) => {
+                self.log.push(why);
+                return self.reject(id, Reject::ServerError);
+            }
+            Err(_) => return self.reject(id, Reject::ServerError),
+        };
+        let Some(print) = print else {
+            // New here: ask for the print before anything is decided.
+            let pending = Pending {
+                player,
+                proof,
+                name: name.to_owned(),
+                view,
+            };
+            self.conns.get_mut(&id).expect("connected").state =
+                ConnState::Introducing(Box::new(pending));
+            return self.send(id, channel::RELIABLE, &ServerMsg::Introduce);
+        };
+        self.admit(id, player, print, proof, name, view);
+    }
+
+    /// A newcomer's print, asked for by [`Server::hello`]. Their Hello's
+    /// proof must match it, which shows the Hello and the print came from
+    /// the same client; then they are let in as a Hello would be (the
+    /// career store binds the print to their id).
+    fn introduce(&mut self, id: ClientId, print: Print) {
+        let conn = self.conns.get_mut(&id).expect("connected");
+        let ConnState::Introducing(_) = conn.state else {
+            return self.strike(id);
+        };
+        let ConnState::Introducing(p) = std::mem::replace(&mut conn.state, ConnState::Joining)
+        else {
+            unreachable!("checked above");
+        };
+        self.admit(id, p.player, print, p.proof, &p.name, p.view);
+    }
+
+    /// Lets a client in once its print is known: checks the Hello's proof
+    /// against this connection's nonce, then gives it a pilot (or a place
+    /// in the lobby).
+    fn admit(
+        &mut self,
+        id: ClientId,
+        player: PlayerId,
+        print: Print,
+        proof: [u8; 32],
+        name: &str,
+        view: (u16, u16),
+    ) {
+        let expected = cj_net::auth::proof(&self.conns[&id].nonce, &player, &print);
+        if !cj_net::auth::same(&proof, &expected) {
+            return self.reject(id, Reject::WrongSecret);
+        }
         // The same player again, with the right secret, while the server
         // still holds a connection for them: the new connection takes over.
         // A game that crashed or lost its network leaves its old connection
         // on the books until it times out, and turning the player away for
         // that long helps nobody. The old connection is told why and let go.
         if let Some(at) = self.waiting.iter().position(|p| p.id == player) {
-            if self.waiting[at].secret != secret {
+            if self.waiting[at].print != print {
                 return self.reject(id, Reject::WrongSecret);
             }
             // A lobby player is taken in afresh below, their career read
@@ -1044,7 +1149,7 @@ impl Server {
         // players who already have a key here are let in.
         if known.is_none() && !self.full() {
             let may_bind = self.new_ids < self.config.max_players;
-            match self.careers.claim(&player, &secret, may_bind) {
+            match self.careers.claim(&player, &print, may_bind) {
                 Ok(bound) => self.new_ids += usize::from(bound),
                 Err(careers::Refusal::Busy) => return self.reject(id, Reject::Busy),
                 Err(careers::Refusal::WrongSecret) => return self.reject(id, Reject::WrongSecret),
@@ -1055,7 +1160,7 @@ impl Server {
             }
         }
         let slot = match known {
-            Some(s) if self.players[s].secret != secret => {
+            Some(s) if self.players[s].print != print => {
                 return self.reject(id, Reject::WrongSecret)
             }
             Some(s) => {
@@ -1077,7 +1182,7 @@ impl Server {
                 || self.world.time_left < LATE_JOIN_CUTOFF =>
             {
                 let career = self.career_for(&player);
-                let mut p = Player::new(player, secret, career);
+                let mut p = Player::new(player, print, career);
                 p.name = self.pilot_name(name);
                 p.view = cj_net::clean_view(view);
                 p.conn = Some(id);
@@ -1115,7 +1220,7 @@ impl Server {
                 self.record(Entry::Join {
                     career: career.to_json(),
                 });
-                self.players.push(Player::new(player, secret, career));
+                self.players.push(Player::new(player, print, career));
                 slot
             }
         };
@@ -1485,6 +1590,12 @@ pub fn run(
             None => {}
         }
     };
+    // A requested stop mid-shift settles that shift first, so nobody loses
+    // what they banked when the host leaves (IMP-014). After a failed step
+    // the field may be half-updated, so it isn't settled then.
+    if outcome.is_ok() {
+        let _ = catch_unwind(AssertUnwindSafe(|| server.settle_for_stop()));
+    }
     // Even after a failed step, the last second of shopping can still be
     // saved and the connections closed.
     let _ = catch_unwind(AssertUnwindSafe(|| {

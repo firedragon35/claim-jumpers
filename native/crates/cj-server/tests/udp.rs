@@ -69,7 +69,7 @@ fn join_and_wait(addr: std::net::SocketAddr, welcomed: impl Fn()) -> (Session, b
     .expect("client transport");
     let mut client = RenetClient::new(ConnectionConfig::default());
     let mut session = Session::new();
-    let mut hello = Some(session.hello("9.9.9", [5; 16], [6; 16], "Udp", (1280, 720)));
+    session.set_login("9.9.9", [5; 16], &[6; 16], "Udp", (1280, 720));
     let dt = Duration::from_millis(16);
     let start = Instant::now();
     let mut stopped_at = None;
@@ -77,13 +77,13 @@ fn join_and_wait(addr: std::net::SocketAddr, welcomed: impl Fn()) -> (Session, b
         client.update(dt);
         let _ = net.update(dt, &mut client);
         if client.is_connected() {
-            if let Some((ch, bytes)) = hello.take() {
-                client.send_message(ch, bytes);
-            }
             for ch in [channel::RELIABLE, channel::UNRELIABLE] {
                 while let Some(bytes) = client.receive_message(ch) {
                     session.receive(&bytes).expect("valid");
                 }
+            }
+            while let Some((ch, bytes)) = session.take_login() {
+                client.send_message(ch, bytes);
             }
         }
         if session.pilot.is_some() && stopped_at.is_none() {

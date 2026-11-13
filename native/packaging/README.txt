@@ -151,10 +151,12 @@ PvP pilots can pick up a wrecked tug's cargo, and PvP wrecks pay no bounty.
 
 The connection is not encrypted: don't share anything private in the chat.
 
-Join only hosts you trust. To recognise you, your game sends every server
-you join the identity in mp_id.txt, the same one for every server. A host
-who runs a changed copy of the game could keep it and then play as you,
-with your careers, on any other server you play on.
+Join only hosts you trust. To recognise you, your game proves it holds the
+identity in mp_id.txt without sending it, so a login copied off the
+network can't be used again. The first time you join a server, though,
+your game gives it a fingerprint of that identity, the same for every
+server. A host who runs a changed copy of the game could keep it and then
+play as you, with your careers, on any other server you play on.
 
 
 MARGE'S VOICE
@@ -185,4 +187,5 @@ CREDITS
 -------
 Fonts: Big Shoulders Stencil Display, Barlow Semi Condensed and JetBrains
 Mono, under the SIL Open Font License 1.1 (see the licenses folder).
+Sprite art: made for this game by its author with Codex (OpenAI).
 Open-source components: see THIRD-PARTY-NOTICES.txt.

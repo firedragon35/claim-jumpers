@@ -3,8 +3,8 @@
 //!
 //! For now the way in is the `--join HOST:PORT` command-line option; the
 //! Host and Join screens come with player hosting (CJN-19). The transport
-//! is renet's unsecure netcode, so traffic (including the player secret)
-//! is not encrypted.
+//! is renet's unsecure netcode, so traffic is not encrypted; the player
+//! secret itself never crosses it (see `cj_net::auth`).
 //!
 //! For testing on one machine, `CJ_NET_LAG_MS` holds every message back so
 //! the round trip takes that long: half on the way out, half on the way in.
@@ -16,7 +16,6 @@
 use cj_net::client::Session;
 use renet::{ConnectionConfig, RenetClient};
 use renet_netcode::{ClientAuthentication, NetcodeClientTransport, NetcodeTransportError};
-use std::hash::{BuildHasher, Hasher};
 use std::net::{SocketAddr, ToSocketAddrs, UdpSocket};
 use std::sync::mpsc;
 use std::time::{Duration, SystemTime};
@@ -74,24 +73,6 @@ fn server_is_literal(server: &str) -> bool {
     server.parse::<std::net::SocketAddrV4>().is_ok()
 }
 
-/// 16 bytes that are hard to guess: std's per-process hash keys come from
-/// the operating system's random source. Not cryptographic, but the id and
-/// secret only need to be unlikely to collide or be guessed.
-fn random_bytes() -> [u8; 16] {
-    let mut out = [0u8; 16];
-    for (i, chunk) in out.chunks_mut(8).enumerate() {
-        let mut h = std::hash::RandomState::new().build_hasher();
-        h.write_usize(i);
-        h.write_u128(
-            SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .map_or(0, |d| d.as_nanos()),
-        );
-        chunk.copy_from_slice(&h.finish().to_le_bytes());
-    }
-    out
-}
-
 /// Reads 32 bytes from 64 hex digits.
 fn from_hex(s: &str) -> Option<[u8; 32]> {
     let s = s.trim();
@@ -120,7 +101,7 @@ pub fn identity(store: &crate::save::Store) -> ([u8; 16], [u8; 16]) {
             secret.try_into().expect("16 bytes"),
         );
     }
-    let (id, secret) = (random_bytes(), random_bytes());
+    let (id, secret) = (cj_net::auth::random_bytes(), cj_net::auth::random_bytes());
     store.write(ID_FILE, &to_hex(&[id, secret].concat()));
     (id, secret)
 }
@@ -130,11 +111,10 @@ pub struct Online {
     pub session: Session,
     client: RenetClient,
     transport: NetcodeClientTransport,
-    /// The Hello, sent as soon as the connection is up.
-    hello: Option<(u8, Vec<u8>)>,
-    /// A Hello held back while the player looks at the server first
-    /// ([`Online::join`] sends it).
-    held: Option<(u8, Vec<u8>)>,
+    /// Only looking at the server first: the login waits for
+    /// [`Online::join`]. Otherwise it goes once the server's challenge is
+    /// in (see `Session::take_login`).
+    looking: bool,
     /// Seconds until the next Query while looking first.
     query_in: f64,
     /// Seconds spent waiting to connect.
@@ -242,7 +222,11 @@ impl Online {
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap_or_default();
         // A connection number the server tells clients apart by.
-        let client_id = u64::from_le_bytes(random_bytes()[..8].try_into().expect("8 bytes"));
+        let client_id = u64::from_le_bytes(
+            cj_net::auth::random_bytes()[..8]
+                .try_into()
+                .expect("8 bytes"),
+        );
         let transport = NetcodeClientTransport::new(
             now,
             ClientAuthentication::Unsecure {
@@ -254,19 +238,13 @@ impl Online {
             socket,
         )
         .map_err(|e| format!("Can't start the connection: {e}"))?;
-        let session = Session::new();
-        let hello = session.hello(VERSION, id.0, id.1, pilot, view);
-        let (hello, held) = if look_first {
-            (None, Some(hello))
-        } else {
-            (Some(hello), None)
-        };
+        let mut session = Session::new();
+        session.set_login(VERSION, id.0, &id.1, pilot, view);
         Ok(Online {
             session,
             client: RenetClient::new(ConnectionConfig::default()),
             transport,
-            hello,
-            held,
+            looking: look_first,
             query_in: 0.0,
             waited: 0.0,
             server: server.to_owned(),
@@ -302,12 +280,9 @@ impl Online {
             Ok(()) => {}
         }
         if self.client.is_connected() {
-            if let Some((ch, bytes)) = self.hello.take() {
-                self.client.send_message(ch, bytes);
-            }
             // Looking first: ask again every 2 s, which also keeps the
             // server from dropping a connection that hasn't said Hello.
-            if self.held.is_some() {
+            if self.looking {
                 self.query_in -= dt;
                 if self.query_in <= 0.0 {
                     self.query_in = QUERY_EVERY;
@@ -325,6 +300,13 @@ impl Online {
             while let Some(bytes) = take_due(&mut self.incoming, self.clock) {
                 // A server that sends nonsense is ignored, not trusted.
                 let _ = self.session.receive(&bytes);
+            }
+            // The Hello once the challenge has arrived (and the print, if
+            // this server is meeting the player for the first time).
+            if !self.looking {
+                while let Some((ch, bytes)) = self.session.take_login() {
+                    self.client.send_message(ch, bytes);
+                }
             }
             while let Some((ch, bytes)) = take_due(&mut self.outgoing, self.clock) {
                 self.client.send_message(ch, bytes);
@@ -348,10 +330,9 @@ impl Online {
 
     /// Whether this connection is still only looking at the server.
     pub fn looking(&self) -> bool {
-        self.held.is_some()
+        self.looking
     }
 
-    /// Joins after looking first: sends the held Hello.
     /// The smoothed round trip to the server, in milliseconds.
     pub fn rtt_ms(&self) -> f64 {
         self.client.rtt() * 1000.0
@@ -376,10 +357,9 @@ impl Online {
         ]
     }
 
+    /// Joins after looking first: the login goes out on the next pump.
     pub fn join(&mut self) {
-        if let Some(h) = self.held.take() {
-            self.hello = Some(h);
-        }
+        self.looking = false;
     }
 
     /// Queues a message for the server.
@@ -562,6 +542,6 @@ server log:
     /// Two ids made in a row differ.
     #[test]
     fn random_ids_differ() {
-        assert_ne!(random_bytes(), random_bytes());
+        assert_ne!(cj_net::auth::random_bytes(), cj_net::auth::random_bytes());
     }
 }

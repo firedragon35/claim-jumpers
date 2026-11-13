@@ -7,6 +7,7 @@
 //! untrusted, so the server decodes it with [`decode`] (which bounds its
 //! size) and passes held controls through [`clean_input`].
 
+pub mod auth;
 pub mod client;
 pub mod snapshot;
 
@@ -46,21 +47,22 @@ pub mod channel {
     pub const RELIABLE: u8 = 2;
 }
 
-/// A player's public id on a server. Paired with a secret (see
-/// [`ClientMsg::Hello`]) it lets the same install reclaim its pilot. It
-/// proves nothing about who the player is, and with renet's unsecure
-/// transport the secret crosses the network unencrypted.
+/// A player's public id on a server. Paired with a secret, proved without
+/// sending it (see [`auth`]), it lets the same install reclaim its pilot.
+/// It proves nothing about who the player is.
 pub type PlayerId = [u8; 16];
 
 /// What a client sends.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum ClientMsg {
-    /// The first message after connecting.
+    /// The first message after the server's [`ServerMsg::Challenge`].
     Hello {
         /// The game's version; the server requires an exact match.
         game_version: String,
         player: PlayerId,
-        secret: [u8; 16],
+        /// [`auth::proof`] of the challenge's nonce: the secret itself
+        /// never crosses the network.
+        proof: [u8; 32],
         /// The pilot name to show; the server cleans it ([`clean_name`]).
         pilot: String,
         /// The client's window size in logical pixels, which sets how much
@@ -82,6 +84,9 @@ pub enum ClientMsg {
     Chat { text: String },
     /// In the break: a shop request or a belt vote ([`ShopReq`]).
     Shop(ShopReq),
+    /// The answer to [`ServerMsg::Introduce`]: this player's
+    /// [`auth::Print`], sent once to a server that has never seen them.
+    Introduce { print: auth::Print },
 }
 
 /// What a player asks the shop in the break. The server checks each one
@@ -199,6 +204,11 @@ pub enum ServerMsg {
     /// cost, and their career afterwards (in the save format; a career that
     /// ended in repossession or a paid-off fleet is already the fresh one).
     Settled(Box<Settled>),
+    /// Sent as a connection opens: the nonce its Hello must prove (see
+    /// [`auth`]). Each connection gets a new one.
+    Challenge { nonce: [u8; 16] },
+    /// The Hello's player is new here: send [`ClientMsg::Introduce`].
+    Introduce,
 }
 
 /// See [`ServerMsg::Shop`].
@@ -454,7 +464,7 @@ mod tests {
             encode(&ClientMsg::Hello {
                 game_version: "1.15.0".to_owned(),
                 player: [7; 16],
-                secret: [9; 16],
+                proof: [9; 32],
                 pilot: "Tugger-1234".to_owned(),
                 view: (1280, 720),
             }),
@@ -466,6 +476,7 @@ mod tests {
                 text: "hello field".to_owned(),
             }),
             encode(&ClientMsg::Query),
+            encode(&ClientMsg::Introduce { print: [3; 32] }),
         ];
         let byte = |rng: &mut cj_sim::rng::Rng| rng.int(0, 255) as u8;
         for round in 0..100_000 {
@@ -519,7 +530,7 @@ mod tests {
         let hello = ClientMsg::Hello {
             game_version: "1.3.0".to_owned(),
             player: [7; 16],
-            secret: [9; 16],
+            proof: [9; 32],
             pilot: "Ace".to_owned(),
             view: (1280, 720),
         };

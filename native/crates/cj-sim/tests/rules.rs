@@ -253,8 +253,21 @@ fn hard_impact_primes_a_reactor_which_then_blows() {
 
 #[test]
 fn a_rival_escaping_with_loot_counts_it_lost() {
+    let w = rival_escape(None);
+    // Loose ore it took near the tug funds this pilot's crews but was never
+    // towed, so insurance doesn't pay on it (BUG-005).
+    assert_eq!(w.pilots[0].loot_lost, 170.0);
+    assert_eq!(w.pilots[0].insured_loss, 0.0);
+    // Ore the pilot had towed before the rival took it is an insured loss.
+    let w = rival_escape(Some(0));
+    assert_eq!(w.pilots[0].insured_loss, 170.0);
+}
+
+/// Runs a cutter off the field with one piece of ore, owned by `owner`.
+fn rival_escape(owner: Option<usize>) -> World {
     let mut w = field();
     add(&mut w, ItemType::Ore, 100.0, 1000.0);
+    w.items[0].owner = owner;
     let j = w.new_jumper(60.0, 1000.0, Some(Variant::Cutter));
     w.jumpers.push(j);
     let mut hauled = false;
@@ -271,6 +284,7 @@ fn a_rival_escaping_with_loot_counts_it_lost() {
         "it left with the ore"
     );
     assert_eq!(w.pilots[0].stats.lost, 170.0);
+    w
 }
 
 #[test]

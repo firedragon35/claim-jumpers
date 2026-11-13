@@ -164,7 +164,7 @@ dependencies = [
 
 [[package]]
 name = "cj-game"
-version = "1.16.0"
+version = "1.17.0"
 dependencies = [
  "cj-net",
  "cj-server",
@@ -184,18 +184,18 @@ dependencies = [
  "cj-sim",
  "postcard",
  "serde",
+ "sha2",
 ]
 
 [[package]]
 name = "cj-server"
-version = "1.16.0"
+version = "1.17.0"
 dependencies = [
  "cj-net",
  "cj-sim",
  "renet",
  "renet_netcode",
  "serde",
- "sha2",
 ]
 
 [[package]]

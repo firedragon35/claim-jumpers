@@ -981,9 +981,10 @@ pub fn pause(
     dpi: f32,
     armed: (bool, bool),
     voice_on: bool,
-    // `Some(hosting)` online: the shared shift keeps running under this
-    // card, and leaving drops this pilot (or, for a host, stops the server).
-    online: Option<bool>,
+    // `Some((hosting, pilots))` online: the shared shift keeps running under
+    // this card, and leaving drops this pilot (or, for a host, stops the
+    // server for the `pilots` flying, after settling their shift).
+    online: Option<(bool, usize)>,
 ) -> Option<Act> {
     let (armed_end, armed_menu) = armed;
     let (w, h) = (900.0, 360.0);
@@ -1043,14 +1044,18 @@ pub fn pause(
     let by = by + 50.0;
     // Online there's one way out, and it needs two presses like Main menu:
     // a slip mustn't drop a pilot from a shared shift or stop a server.
-    if let Some(hosting) = online {
+    if let Some((hosting, pilots)) = online {
         let leave = match (armed_end || armed_menu, hosting) {
-            (false, false) => "Leave server",
-            (false, true) => "Stop server",
-            (true, false) => "Leaves the shared shift. Press again",
-            (true, true) => "Stops the server for everyone. Press again",
+            (false, false) => "Leave server".to_owned(),
+            (false, true) => "Stop server".to_owned(),
+            (true, false) => "Leaves the shared shift. Press again".to_owned(),
+            // The server settles the running shift before it stops (IMP-014).
+            (true, true) => format!(
+                "Stops the server for {pilots} pilot{}, shift settled. Press again",
+                if pilots == 1 { "" } else { "s" }
+            ),
         };
-        if u.button_at(look, "leave", r.x + 36.0, by, Style::Ghost, leave, true)
+        if u.button_at(look, "leave", r.x + 36.0, by, Style::Ghost, &leave, true)
             .0
         {
             act = Some(Act::PauseToMenu);
@@ -2571,6 +2576,20 @@ fn map_tab(look: &Look, u: &mut Ui, career: &Career, r: Rect) -> Option<Act> {
                 " War chest {} · crew level {}.",
                 cr(career.war_chest),
                 career.crew_level()
+            )
+        } else if i == 0 {
+            // The bank's cover terms and what it would have paid on last
+            // shift's losses (IMP-006), so the premium is an informed buy.
+            let last = career
+                .extra
+                .get("lastShift")
+                .and_then(|s| s["insuredLoss"].as_f64())
+                .unwrap_or(0.0);
+            format!(
+                " Insurance pays {:.0}% of your towed cargo lost, up to {}; last shift you lost {}.",
+                cj_sim::field::INSURE_COVER * 100.0,
+                cr(cj_sim::field::INSURE_CAP),
+                cr(last)
             )
         } else {
             String::new()

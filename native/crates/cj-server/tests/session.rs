@@ -51,6 +51,16 @@ struct Bot {
     /// Every event the server has sent.
     heard: Vec<Emitted>,
     seq: u32,
+    /// The server's login challenge, once it has arrived.
+    nonce: Option<[u8; 16]>,
+    /// The secret byte of the last Hello sent.
+    secret: u8,
+    /// The pilot name to say Hello with ("Bot <id>" when unset).
+    name: Option<String>,
+    /// The last Hello sent, as an eavesdropper would have copied it.
+    sent_hello: Option<ClientMsg>,
+    /// A Hello asked for (version, secret byte), sent once challenged.
+    hello_with: Option<(String, u8)>,
 }
 
 impl Bot {
@@ -70,6 +80,11 @@ impl Bot {
             last: None,
             heard: Vec::new(),
             seq: 0,
+            nonce: None,
+            secret: 0,
+            name: None,
+            sent_hello: None,
+            hello_with: None,
         }
     }
 
@@ -77,14 +92,33 @@ impl Bot {
         self.client.send_message(ch, cj_net::encode(msg));
     }
 
+    /// Says Hello with the secret made of `secret` repeated, proved
+    /// against the server's challenge as the game does (sent as soon as
+    /// the challenge is in).
     fn hello(&mut self, version: &str, secret: u8) {
+        self.hello_with = Some((version.to_owned(), secret));
+        self.try_hello();
+    }
+
+    fn try_hello(&mut self) {
+        let (Some(nonce), Some((version, secret))) = (self.nonce, self.hello_with.clone()) else {
+            return;
+        };
+        self.hello_with = None;
+        let print = cj_net::auth::fingerprint(&[secret; 16]);
         let msg = ClientMsg::Hello {
-            game_version: version.to_owned(),
+            game_version: version,
             player: self.player,
-            secret: [secret; 16],
-            pilot: format!("Bot {}", self.id),
+            proof: cj_net::auth::proof(&nonce, &self.player, &print),
+            pilot: self
+                .name
+                .clone()
+                .unwrap_or_else(|| format!("Bot {}", self.id)),
             view: (1280, 720),
         };
+        // Kept for an Introduce, which sends the same secret's print.
+        self.secret = secret;
+        self.sent_hello = Some(msg.clone());
         self.send(channel::RELIABLE, &msg);
     }
 
@@ -126,6 +160,14 @@ impl Bot {
                     ServerMsg::Snapshot(s) => self.last = Some(*s),
                     ServerMsg::Events(e) => self.heard.extend(e),
                     ServerMsg::Looks(_) => {}
+                    ServerMsg::Challenge { nonce } => {
+                        self.nonce = Some(nonce);
+                        self.try_hello();
+                    }
+                    ServerMsg::Introduce => {
+                        let print = cj_net::auth::fingerprint(&[self.secret; 16]);
+                        self.send(channel::RELIABLE, &ClientMsg::Introduce { print });
+                    }
                 }
             }
         }
@@ -531,6 +573,60 @@ fn each_career_is_settled_saved_and_kept_across_a_restart() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// Regression (IMP-023): a Hello used to carry the player's secret, so a
+/// copy taken off the network logged in as them. Now it carries a proof of
+/// that connection's challenge: replayed on a new connection, whose
+/// challenge differs, it is refused, while the real player still gets in.
+#[test]
+fn a_copied_hello_doesnt_log_in_on_another_connection() {
+    let mut s = server(4);
+    let mut a = Bot::join(&mut s, 1, 1);
+    a.hello(VERSION, 7);
+    steps(&mut s, &mut [&mut a], 4);
+    assert_eq!(a.pilot, Some(0));
+    let copied = a.sent_hello.clone().expect("a Hello was sent");
+    s.renet.disconnect_local_client(1, &mut a.client);
+    steps(&mut s, &mut [], 2);
+
+    // The eavesdropper connects and sends the copied Hello as it was.
+    let mut thief = Bot::join(&mut s, 2, 9);
+    steps(&mut s, &mut [&mut thief], 1);
+    thief.send(channel::RELIABLE, &copied);
+    steps(&mut s, &mut [&mut thief], 3);
+    assert_eq!(thief.rejected, Some(Reject::WrongSecret));
+    assert_eq!(thief.pilot, None);
+
+    // The player, back with their secret, still reclaims their pilot.
+    let mut back = Bot::join(&mut s, 3, 1);
+    back.hello(VERSION, 7);
+    steps(&mut s, &mut [&mut back], 4);
+    assert_eq!((back.pilot, back.rejected), (Some(0), None));
+}
+
+/// A server stopped mid-shift settles that shift into every pilot's career
+/// first, so what they banked isn't lost when the host leaves (IMP-014);
+/// stopping again in the break settles nothing twice.
+#[test]
+fn stopping_mid_shift_settles_it_for_every_pilot() {
+    let mut s = server(4);
+    let mut a = Bot::join(&mut s, 1, 1);
+    a.hello(VERSION, 7);
+    let mut b = Bot::join(&mut s, 2, 2);
+    b.hello(VERSION, 7);
+    steps(&mut s, &mut [&mut a, &mut b], 3);
+    s.world.pilots[1].banked = 1500.0;
+    s.settle_for_stop();
+    steps(&mut s, &mut [&mut a, &mut b], 3);
+    assert!(s.in_break());
+    assert_eq!((a.settled.len(), b.settled.len()), (1, 1));
+    assert!(b.settled[0].settlement.earned > 0.0, "the haul is kept");
+    let after = cj_sim::career::Career::from_json(&b.settled[0].career).expect("a career");
+    assert_eq!(after.shift, 2, "the career moved on a shift");
+    s.settle_for_stop();
+    steps(&mut s, &mut [&mut a, &mut b], 3);
+    assert_eq!((a.settled.len(), b.settled.len()), (1, 1), "only once");
+}
+
 /// Regression: a saved career was loaded by player id alone, so after a
 /// restart (or once the server had forgotten a player who left) any secret
 /// claimed it. Now only the secret that first claimed it may.
@@ -659,14 +755,8 @@ fn newcomers_past_the_minutes_cap_are_refused_and_write_nothing() {
 fn nameless_pilots_get_names_nobody_else_has() {
     let mut s = server(4);
     let nameless_hello = |b: &mut Bot| {
-        let msg = ClientMsg::Hello {
-            game_version: VERSION.to_owned(),
-            player: b.player,
-            secret: [7; 16],
-            pilot: "Пётр".to_owned(),
-            view: (1280, 720),
-        };
-        b.send(channel::RELIABLE, &msg);
+        b.name = Some("Пётр".to_owned());
+        b.hello(VERSION, 7);
     };
     let mut a = Bot::join(&mut s, 1, 1);
     nameless_hello(&mut a);
@@ -1025,7 +1115,7 @@ fn three_players_join_leave_and_rejoin() {
     for bot in [&mut a, &mut b, &mut c] {
         bot.hello(VERSION, 7);
     }
-    steps(&mut s, &mut [&mut a, &mut b, &mut c], 3);
+    steps(&mut s, &mut [&mut a, &mut b, &mut c], 6);
     assert_eq!((a.pilot, b.pilot, c.pilot), (Some(0), Some(1), Some(2)));
     for (bot, you) in [(&a, 0), (&b, 1), (&c, 2)] {
         let snap = bot.last.as_ref().expect("a snapshot");
@@ -1127,7 +1217,10 @@ fn a_flood_of_inputs_is_rate_limited() {
     let mut s = server(4);
     let mut a = Bot::join(&mut s, 1, 1);
     a.hello(VERSION, 7);
-    steps(&mut s, &mut [&mut a], 1);
+    // Welcomed first (challenge, Hello, introduce), so the flood is a
+    // playing client's.
+    steps(&mut s, &mut [&mut a], 4);
+    assert_eq!(a.pilot, Some(0));
     for _ in 0..1000 {
         a.input(Input {
             thrust: 1.0,

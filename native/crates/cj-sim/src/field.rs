@@ -575,8 +575,9 @@ pub const CORES_MAX: u32 = 9;
 /* ------------------------------- Insurance ------------------------------- */
 
 /// Cargo insurance bought in the shop covers the next shift: the claim is
-/// INSURE_COVER of the cargo lost to rivals, collectors and wrecks, at most
-/// INSURE_CAP.
+/// INSURE_COVER of the pilot's own towed cargo lost that shift (carried off
+/// by rivals, eaten by the maw, taken by a collector or the law, less any
+/// part that paid a fine; see `Pilot::insured_loss`), at most INSURE_CAP.
 pub const INSURE_COVER: f64 = 0.6;
 pub const INSURE_CAP: f64 = 5000.0;
 

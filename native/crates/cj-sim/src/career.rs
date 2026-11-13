@@ -691,7 +691,7 @@ impl Career {
         let wage = self.crew.map_or(0.0, |c| c.def().wage);
         self.wallet -= wage;
         let insurance = if self.insured {
-            js::round((w.pilots[p].stats.lost * INSURE_COVER).min(INSURE_CAP))
+            js::round((w.pilots[p].insured_loss * INSURE_COVER).min(INSURE_CAP))
         } else {
             0.0
         };
@@ -708,10 +708,13 @@ impl Career {
         };
         // Contract chains advance (or end) with the contract.
         let mut chain_note = self.settle_chain(job.as_ref(), job_done);
-        // Stolen cargo funds the crews; taking down a boss costs them dearly.
+        // Cargo stolen from this pilot funds this career's crews; this
+        // pilot taking down a boss costs them dearly. Both are per pilot so
+        // an online field doesn't grow (or cut) every career's crews at once.
         let crew_before = self.crew_level();
-        self.war_chest += w.rival_loot;
-        if w.boss_down.is_some() {
+        let boss_by_me = w.pilots[p].kills.boss > 0;
+        self.war_chest += w.pilots[p].loot_lost;
+        if boss_by_me {
             self.war_chest *= CREW_BOSS_KEEP;
         }
         if self.crew_level() > crew_before {
@@ -748,10 +751,10 @@ impl Career {
         self.extra.insert(
             "lastShift".to_owned(),
             json!({
-                "earned": earned, "deaths": w.pilots[p].stats.deaths, "kills": w.pilots[p].stats.jumpers, "arrests": w.pilots[p].arrests,
+                "earned": earned, "insuredLoss": w.pilots[p].insured_loss, "deaths": w.pilots[p].stats.deaths, "kills": w.pilots[p].stats.jumpers, "arrests": w.pilots[p].arrests,
                 "wallet": self.wallet,
                 "contract": job.as_ref().map(|_| if job_done { "done" } else { "missed" }),
-                "boss": w.boss_down, "hold": w.hold_opened, "escort": w.escort_done,
+                "boss": w.boss_down.filter(|_| boss_by_me), "hold": w.hold_opened, "escort": w.escort_done,
             }),
         );
 

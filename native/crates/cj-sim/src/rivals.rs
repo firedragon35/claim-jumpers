@@ -345,9 +345,17 @@ impl World {
         {
             // The loss is the cargo owner's; loot never towed counts against
             // the tug the rival was hunting.
-            let loser = self.items[ii].owner.unwrap_or(p);
-            self.pilots[loser].stats.lost += self.items[ii].value;
-            self.rival_loot += self.items[ii].value;
+            let owner = self.items[ii].owner;
+            let loser = owner.unwrap_or(p);
+            let value = self.items[ii].value;
+            self.pilots[loser].stats.lost += value;
+            // The loot funds the loser's crews; only cargo the pilot had
+            // actually towed is an insurable loss.
+            self.pilots[loser].loot_lost += value;
+            if owner.is_some() {
+                self.pilots[loser].insured_loss += value;
+            }
+            self.rival_loot += value;
             self.remove_item(ii);
             self.jumpers[j].dead = true;
             self.radio(Radio::Escaped, true, false);

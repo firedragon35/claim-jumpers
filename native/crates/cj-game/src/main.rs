@@ -604,6 +604,11 @@ impl App {
             self.store
                 .write(BOARD_FILE, &profile::board_to_json(&self.board));
         }
+        // A daily's fighting counts toward the lifetime records, but not its
+        // earnings or any achievement: those belong to careers (owner's call).
+        self.profile
+            .add_fighting(&self.world.me().stats, &self.world.me().kills);
+        self.store.write(PROFILE_FILE, &self.profile.to_json());
         let st = Settlement {
             earned,
             due: 0.0,
@@ -671,13 +676,8 @@ impl App {
         }
         p.bump("shifts", 1.0);
         p.bump("banked", earned);
-        p.bump("deaths", f64::from(w.me().stats.deaths));
         p.best(earned);
-        p.bump("kills", f64::from(w.me().stats.jumpers));
-        p.bump("bosses", f64::from(w.me().kills.boss));
-        for (i, n) in profile::kill_counts(&w.me().kills).into_iter().enumerate() {
-            p.kills[i] += n;
-        }
+        p.add_fighting(&w.me().stats, &w.me().kills);
         let mut earned_ids = Vec::new();
         if met {
             earned_ids.push("contract");
@@ -1726,7 +1726,10 @@ async fn main() {
                     dpi,
                     (app.armed_end, app.armed_menu),
                     app.voice.enabled,
-                    app.online.as_ref().map(|_| app.hosted.is_some()),
+                    app.online.as_ref().map(|_| {
+                        let pilots = app.world.pilots.iter().filter(|p| p.away.is_none()).count();
+                        (app.hosted.is_some(), pilots)
+                    }),
                 )
             }
             Screen::Launch => {

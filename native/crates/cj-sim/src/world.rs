@@ -172,6 +172,16 @@ pub struct Pilot {
     /// out (see [`World::set_away`]). Never sent to clients.
     #[serde(skip)]
     pub leaving: bool,
+    /// Cargo value rivals escaped with that was this pilot's loss: it funds
+    /// this pilot's career's crews (`Career::settle`), not every career on
+    /// the field. Settlement-only, so never sent to clients.
+    #[serde(skip)]
+    pub loot_lost: f64,
+    /// The part of `stats.lost` an insurance claim pays on: this pilot's own
+    /// towed cargo destroyed or taken, less any of it that paid a fine.
+    /// `stats.lost` stays the report's wider figure. Never sent to clients.
+    #[serde(skip)]
+    pub insured_loss: f64,
     /// Set while this pilot's player is disconnected: the tug is out of the
     /// field (see [`World::set_away`]). Never sent to clients.
     #[serde(skip)]
@@ -235,6 +245,8 @@ impl Pilot {
             payback: Vec::new(),
             last_pvp_hit: None,
             leaving: false,
+            loot_lost: 0.0,
+            insured_loss: 0.0,
             away: None,
         }
     }

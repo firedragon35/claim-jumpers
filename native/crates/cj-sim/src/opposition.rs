@@ -1006,6 +1006,7 @@ impl World {
             if towed {
                 if let Some(o) = owner {
                     self.pilots[o].stats.lost += value;
+                    self.pilots[o].insured_loss += value;
                 }
                 self.radio(Radio::AteCargo, true, false);
             }
@@ -1279,6 +1280,7 @@ impl World {
         let value = self.line_value(p);
         self.drop_chain_into(p, Tint::Collector);
         self.pilots[p].stats.lost += value;
+        self.pilots[p].insured_loss += value;
         let exit = self.collectors[c].exit;
         let s = &mut self.pilots[p].ship;
         s.net = None;
@@ -2160,6 +2162,9 @@ impl World {
         self.pilots[p].fines += from_cargo + from_earnings;
         self.pilots[p].fine_from_cargo += from_cargo;
         self.pilots[p].stats.lost += cargo;
+        // Cargo that settled the fine paid a debt; only the change the law
+        // kept is a loss insurance covers.
+        self.pilots[p].insured_loss += cargo - from_cargo;
         self.pilots[p].arrests += 1;
         self.pilots[p].wanted = 0;
         if self.pilots[p].ship.net.is_some() {
@@ -2202,6 +2207,7 @@ impl World {
         let cargo = self.line_value(p);
         self.drop_chain_into(p, Tint::Law);
         self.pilots[p].stats.lost += cargo;
+        self.pilots[p].insured_loss += cargo;
         self.sheriffs[k].shakedown = false;
         let s = &mut self.pilots[p].ship;
         s.stun_t = 0.0;

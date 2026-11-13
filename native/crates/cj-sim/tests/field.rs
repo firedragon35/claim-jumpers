@@ -78,10 +78,12 @@ fn insurance_pays_part_of_a_lost_load_for_one_shift() {
     let c2 = Career::from_json(&c.to_json()).expect("loads");
     assert!(c2.insured);
     let mut w = quiet(&c, Rng::seeded(4));
-    w.pilots[0].stats.lost = 2000.0;
+    w.pilots[0].insured_loss = 2000.0;
     let st = c.settle(&w, 0);
     assert_eq!(st.insurance, 2000.0 * INSURE_COVER);
     assert!(!c.insured);
+    // The shop shows the last shift's insurable loss beside the offer.
+    assert_eq!(c.extra["lastShift"]["insuredLoss"], 2000.0);
     let st = c.settle(&w, 0);
     assert_eq!(st.insurance, 0.0, "the cover was for one shift");
 }
@@ -697,6 +699,10 @@ fn cargo_taken_in_an_arrest_counts_as_lost() {
     w.sheriffs[0].shakedown = false;
     w.arrest(0);
     assert_eq!(w.pilots[0].stats.lost, cargo);
+    // Insurance pays only on the cargo the fine didn't take (BUG-005); a
+    // one-star fine at neutral standing is FINE_PER_STAR.
+    let fine = cj_sim::opposition::FINE_PER_STAR;
+    assert_eq!(w.pilots[0].insured_loss, (cargo - fine).max(0.0));
 }
 
 #[test]

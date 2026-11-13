@@ -7,6 +7,24 @@ and the port uses [Semantic Versioning](https://semver.org/) as defined in
 
 ## [Unreleased]
 
+## [1.17.0] - 2026-11-13
+
+The owner's decisions on the 1.15.0 audit's open questions. Everyone on a
+server needs this version: the login changed.
+
+### Fixed
+- Online, each career's rival crews grow only from the cargo stolen from that pilot, and only the pilot who downs a boss weakens their crews (the whole field's loot and boss kill used to reach every career). Marge's shop remarks about a boss follow the same rule.
+- Cargo insurance pays only on your own towed cargo that was destroyed or taken. Cargo that paid an arrest's fine, and loose cargo a rival took near you, no longer count.
+
+### Changed
+- Online login no longer sends your secret. Each connection gets a fresh challenge from the server and the game answers with a proof, so a login copied off the network can't be replayed. A server meeting you for the first time is sent a fingerprint of your identity once. Careers and keys saved by earlier servers keep working.
+- A server stopped in the middle of a shift settles that shift first, so every pilot keeps what they banked. The host's Stop server button says how many pilots it stops for.
+- Daily challenges count toward your lifetime records: deaths, rivals scrapped, bosses and kills by hull. Earnings and achievements stay with careers.
+
+### Added
+- The bank's insurance offer shows what it covers (60% of your towed cargo lost, up to 5,000 cr) and what you lost last shift.
+- Credits for the sprite art in the player README.
+
 ## [1.16.0] - 2026-11-13
 
 From the 1.15.0 audit: its confirmed bugs, and the improvements that need no

@@ -121,6 +121,16 @@ fn blend<T: Tracked + Clone>(now: &mut [T], before: &[T], alpha: f64) {
     }
 }
 
+/// The login details a [`Session`] holds until its Hello goes out.
+struct Login {
+    game_version: String,
+    player: PlayerId,
+    print: crate::auth::Print,
+    pilot: String,
+    view: (u16, u16),
+    hello_sent: bool,
+}
+
 /// A connection's state as the client sees it.
 pub struct Session {
     /// The pilot the server gave this client, once welcomed.
@@ -141,6 +151,13 @@ pub struct Session {
     /// The last shift's settlement and this player's career after it,
     /// waiting for the game to take them.
     pub settled: Option<(cj_sim::career::Settlement, cj_sim::career::Career)>,
+    /// The server's login challenge, once it has arrived: the Hello
+    /// can't be built before it (see [`crate::auth`]).
+    nonce: Option<[u8; 16]>,
+    /// The server asked for this player's print (a first join there).
+    introduce: bool,
+    /// Who this client logs in as ([`Session::set_login`]).
+    login: Option<Login>,
     /// The current shift's first server step: older snapshots are dropped.
     from_tick: u32,
     seq: u32,
@@ -185,6 +202,9 @@ impl Session {
             chat: Vec::new(),
             settled: None,
             shop: None,
+            nonce: None,
+            introduce: false,
+            login: None,
             from_tick: 0,
             seq: 0,
             action_seq: 0,
@@ -202,23 +222,49 @@ impl Session {
         }
     }
 
-    /// The Hello to send first, on the reliable channel.
-    pub fn hello(
-        &self,
+    /// Sets who this client logs in as. Nothing is sent yet: the Hello
+    /// needs the server's challenge, so [`Session::take_login`] hands it
+    /// out once that has arrived. Only the secret's print is kept.
+    pub fn set_login(
+        &mut self,
         game_version: &str,
         player: PlayerId,
-        secret: [u8; 16],
+        secret: &[u8; 16],
         pilot: &str,
         view: (u16, u16),
-    ) -> (u8, Vec<u8>) {
-        let msg = ClientMsg::Hello {
+    ) {
+        self.login = Some(Login {
             game_version: game_version.to_owned(),
             player,
-            secret,
+            print: crate::auth::fingerprint(secret),
             pilot: pilot.to_owned(),
             view,
+            hello_sent: false,
+        });
+    }
+
+    /// The next login message to send (reliable), if one is due: the Hello
+    /// once the challenge is in, proving the secret without sending it;
+    /// then, only if a server new to this player asks, the print. Call it
+    /// after taking in messages, until it returns `None`.
+    pub fn take_login(&mut self) -> Option<(u8, Vec<u8>)> {
+        let login = self.login.as_mut()?;
+        let msg = if std::mem::take(&mut self.introduce) {
+            ClientMsg::Introduce { print: login.print }
+        } else if !login.hello_sent {
+            let nonce = self.nonce?;
+            login.hello_sent = true;
+            ClientMsg::Hello {
+                game_version: login.game_version.clone(),
+                player: login.player,
+                proof: crate::auth::proof(&nonce, &login.player, &login.print),
+                pilot: login.pilot.clone(),
+                view: login.view,
+            }
+        } else {
+            return None;
         };
-        (channel::RELIABLE, crate::encode(&msg))
+        Some((channel::RELIABLE, crate::encode(&msg)))
     }
 
     /// A [`ClientMsg::Query`] to send before Hello (reliable).
@@ -289,6 +335,8 @@ impl Session {
                 self.waiting = true;
             }
             ServerMsg::Info(i) => self.info = Some(i),
+            ServerMsg::Challenge { nonce } => self.nonce = Some(nonce),
+            ServerMsg::Introduce => self.introduce = true,
             ServerMsg::Chat(line) => self.chat.push(line),
             ServerMsg::Shop(r) => {
                 if let Some(c) = cj_sim::career::Career::from_json(&r.career) {

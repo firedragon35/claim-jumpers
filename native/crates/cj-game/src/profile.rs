@@ -3,7 +3,7 @@
 //! repossession; plus the pilot name and the local leaderboard
 //! (src/js/18-hud-and-screens.js). Stored as the browser stores them.
 
-use cj_sim::world::Kills;
+use cj_sim::world::{Kills, Stats};
 use serde_json::{json, Map, Value};
 
 /// [id, title, how to earn it].
@@ -210,6 +210,19 @@ impl Profile {
         }
     }
 
+    /// Adds one flight's fighting tallies (deaths, rivals scrapped, bosses
+    /// and kills by hull) to the lifetime records. Both career shifts and
+    /// daily challenges count here; career-only stats (shifts, banked, best
+    /// shift) and achievements stay with the career path.
+    pub fn add_fighting(&mut self, stats: &Stats, kills: &Kills) {
+        self.bump("deaths", f64::from(stats.deaths));
+        self.bump("kills", f64::from(stats.jumpers));
+        self.bump("bosses", f64::from(kills.boss));
+        for (i, n) in kill_counts(kills).into_iter().enumerate() {
+            self.kills[i] += n;
+        }
+    }
+
     pub fn best(&mut self, n: f64) {
         self.stats[2] = self.stats[2].max(n);
     }
@@ -316,6 +329,31 @@ pub fn board_for(rows: &[Score], mode: &str) -> Vec<Score> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fighting_tallies_add_without_touching_career_stats() {
+        let mut p = Profile::from_json(None);
+        let stats = Stats {
+            deaths: 1,
+            jumpers: 3,
+            ..Stats::default()
+        };
+        let kills = Kills {
+            skiff: 2,
+            boss: 1,
+            ..Kills::default()
+        };
+        p.add_fighting(&stats, &kills);
+        p.add_fighting(&stats, &kills);
+        let stat = |k: &str| p.stats[PROFILE_STATS.iter().position(|s| s.0 == k).unwrap()];
+        assert_eq!(
+            (stat("deaths"), stat("kills"), stat("bosses")),
+            (2.0, 6.0, 2.0)
+        );
+        assert_eq!((stat("shifts"), stat("banked")), (0.0, 0.0));
+        assert_eq!(p.kills[0], 4);
+        assert!(p.got.is_empty());
+    }
 
     #[test]
     fn profile_load_validates_and_round_trips() {

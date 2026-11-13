@@ -45,6 +45,10 @@ fn step(s: &mut Server, me: &mut Pilot, input: Input) {
             me.session.receive(&bytes).expect("valid server message");
         }
     }
+    // The Hello once the challenge is in, and the print if asked.
+    while let Some(msg) = me.session.take_login() {
+        me.send(msg);
+    }
     me.seen.events.clear();
     me.session.present(&mut me.seen, STEP);
 }
@@ -95,10 +99,8 @@ fn a_client_hooks_salvage_and_banks_it() {
         client: s.renet.new_local_client(1),
         seen: World::empty(cj_sim::rng::Rng::Constant(0.5), (1280.0, 720.0)),
     };
-    let hello = me
-        .session
-        .hello("9.9.9", [1; 16], [2; 16], "Tester", (1280, 720));
-    me.send(hello);
+    me.session
+        .set_login("9.9.9", [1; 16], &[2; 16], "Tester", (1280, 720));
 
     let mut hooked = false;
     let mut worst: f64 = 0.0;
@@ -205,10 +207,8 @@ fn rough_pair(delay: u32, jitter: u32, loss: u32) -> (Server, Pilot, Lagged) {
         client: s.renet.new_local_client(1),
         seen: World::empty(cj_sim::rng::Rng::Constant(0.5), (1280.0, 720.0)),
     };
-    let hello = me
-        .session
-        .hello("9.9.9", [1; 16], [2; 16], "Lag", (1280, 720));
-    me.send(hello);
+    me.session
+        .set_login("9.9.9", [1; 16], &[2; 16], "Lag", (1280, 720));
     let link = Lagged {
         delay,
         jitter,
@@ -248,6 +248,9 @@ fn lagged_step(s: &mut Server, me: &mut Pilot, link: &mut Lagged, input: Input, 
         while let Some(bytes) = me.client.receive_message(ch) {
             me.session.receive(&bytes).expect("valid");
         }
+    }
+    while let Some(msg) = me.session.take_login() {
+        me.send(msg);
     }
     me.seen.events.clear();
     me.session.present(&mut me.seen, STEP);
@@ -342,10 +345,8 @@ fn a_client_follows_the_server_into_the_next_shift() {
         client: s.renet.new_local_client(1),
         seen: World::empty(cj_sim::rng::Rng::Constant(0.5), (1280.0, 720.0)),
     };
-    let hello = me
-        .session
-        .hello("9.9.9", [1; 16], [2; 16], "Tester", (1280, 720));
-    me.send(hello);
+    me.session
+        .set_login("9.9.9", [1; 16], &[2; 16], "Tester", (1280, 720));
     let fly = Input {
         thrust: 1.0,
         ..Input::default()
@@ -380,9 +381,25 @@ fn a_client_follows_the_server_into_the_next_shift() {
 /// way) the client stays connected, the server keeps taking its controls,
 /// the drawn tug moves without big jumps, and a reliable message (a chat
 /// line) still gets through and back.
+///
+/// Run over several link seeds: which packets a seed loses decides the
+/// worst single correction (measured 2.5 to 9.4 units over ten seeds, with
+/// and without the login handshake's extra packets), so one seed's number
+/// says little. Every seed must stay under 10 and the seeds average under 6.
 #[test]
 fn play_holds_up_over_jitter_and_packet_loss() {
+    let worst: Vec<f64> = (1..=4).map(rough_run).collect();
+    println!("worst corrections over a rough link: {worst:.3?} units");
+    let mean = worst.iter().sum::<f64>() / worst.len() as f64;
+    assert!(worst.iter().all(|w| *w < 10.0), "a tug jumped: {worst:?}");
+    assert!(mean < 6.0, "the tug jumped {mean} units on average");
+}
+
+/// One rough-link run with link seed `dice`: checks the connection holds
+/// and chat gets through, and returns the worst correction seen.
+fn rough_run(dice: u64) -> f64 {
     let (mut s, mut me, mut link) = rough_pair(4, 4, 10);
+    link.dice = dice;
     let mut last: Option<cj_sim::entities::Body> = None;
     let (mut worst, mut said) = (0.0f64, false);
     for t in 0..900u32 {
@@ -407,13 +424,15 @@ fn play_holds_up_over_jitter_and_packet_loss() {
         }
         last = Some(b);
     }
-    println!("worst correction over a rough link: {worst:.3} units");
-    assert!(s.renet.is_connected(1), "still connected");
-    assert_eq!(me.session.pilot, Some(0));
-    assert!(me.session.lobby.is_some(), "lobby lists arrive");
+    assert!(s.renet.is_connected(1), "seed {dice}: still connected");
+    assert_eq!(me.session.pilot, Some(0), "seed {dice}");
+    assert!(
+        me.session.lobby.is_some(),
+        "seed {dice}: lobby lists arrive"
+    );
     assert!(
         me.session.chat.iter().any(|l| l.text == "still here"),
-        "the reliable chat line came back"
+        "seed {dice}: the reliable chat line came back"
     );
-    assert!(worst < 6.0, "the tug jumped {worst} units");
+    worst
 }

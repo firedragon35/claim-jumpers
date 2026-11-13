@@ -9,8 +9,8 @@
 //! repairs what it can. A file that can't be loaded is copied aside as
 //! `<player>.bad.json` before the fresh career replaces it.
 //!
-//! Beside each career, `<player>.key` holds a SHA-256 fingerprint of the
-//! secret that first claimed it, so only that player can load it again,
+//! Beside each career, `<player>.key` holds the print (a SHA-256
+//! fingerprint, see `cj_net::auth`) of the secret that first claimed it, so only that player can load it again,
 //! even after the server restarts or has forgotten them. Only the
 //! fingerprint is kept: each install uses one secret on every server it
 //! joins, so a host who stored the secret itself could pass as that player
@@ -19,9 +19,9 @@
 //! With no folder (tests, or one that can't be created) careers last as
 //! long as the server runs.
 
+use cj_net::auth::Print;
 use cj_net::PlayerId;
 use cj_sim::career::Career;
-use sha2::{Digest, Sha256};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
@@ -97,7 +97,28 @@ impl CareerStore {
             .map_err(|e| format!("couldn't save career {stem}: {e}"))
     }
 
-    /// Whether `secret` may load player `id`'s career.
+    /// The print saved for player `id`, if they have a key here. A login
+    /// is checked against it (see `cj_net::auth`); `Ok(None)` means a
+    /// player new to this folder (or no folder at all), who must
+    /// introduce their print. A key that can't be read, or isn't a
+    /// print, refuses the player rather than letting anyone in.
+    pub fn saved_print(&self, id: &PlayerId) -> Result<Option<Print>, Refusal> {
+        let Some(dir) = &self.dir else {
+            return Ok(None);
+        };
+        let stem = file_stem(id);
+        match std::fs::read_to_string(dir.join(format!("{stem}.key"))) {
+            Ok(saved) => from_hex(saved.trim())
+                .map(Some)
+                .ok_or_else(|| Refusal::Storage(format!("the key for career {stem} is damaged"))),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(Refusal::Storage(format!(
+                "couldn't read the key for career {stem}: {e}"
+            ))),
+        }
+    }
+
+    /// Whether the secret with `print` may load player `id`'s career.
     ///
     /// The first secret to claim an id is bound to it: a new player, or a
     /// career saved before fingerprints were kept (1.4.2 and earlier), whose
@@ -113,14 +134,14 @@ impl CareerStore {
     /// [`Refusal::Busy`] and nothing is written; ids that already have a key
     /// are checked as usual. The server uses it to cap how fast strangers
     /// can add careers to the folder.
-    pub fn claim(&self, id: &PlayerId, secret: &[u8; 16], may_bind: bool) -> Result<bool, Refusal> {
+    pub fn claim(&self, id: &PlayerId, print: &Print, may_bind: bool) -> Result<bool, Refusal> {
         let Some(dir) = &self.dir else {
             // In memory nothing outlives the player's own connection.
             return Ok(false);
         };
         let stem = file_stem(id);
         let path = dir.join(format!("{stem}.key"));
-        let print = fingerprint(secret);
+        let print = to_hex(print);
         match std::fs::read_to_string(&path) {
             Ok(saved) if saved.trim() == print => Ok(false),
             Ok(_) => Err(Refusal::WrongSecret),
@@ -157,20 +178,33 @@ pub enum Refusal {
     Storage(String),
 }
 
-/// A secret's SHA-256 as 64 hex digits. The secret is 16 random bytes, not
-/// something a person chose, so a plain hash can't be guessed backwards and
-/// a slow password hash would add nothing.
-fn fingerprint(secret: &[u8; 16]) -> String {
-    Sha256::digest(secret)
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect()
+/// A print as the 64 hex digits a key file holds (the same format keys
+/// have always had, so keys saved by earlier servers still match).
+fn to_hex(print: &Print) -> String {
+    print.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// Reads a key file's 64 hex digits back; `None` if it isn't one.
+fn from_hex(s: &str) -> Option<Print> {
+    if s.len() != 64 || !s.is_ascii() {
+        return None;
+    }
+    let mut out = [0u8; 32];
+    for (i, b) in out.iter_mut().enumerate() {
+        *b = u8::from_str_radix(&s[2 * i..2 * i + 2], 16).ok()?;
+    }
+    Some(out)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use cj_sim::career::Mode;
+
+    /// The print of the test secret made of `b` repeated.
+    fn fp(b: u8) -> Print {
+        cj_net::auth::fingerprint(&[b; 16])
+    }
 
     fn folder(tag: &str) -> PathBuf {
         let d = std::env::temp_dir().join(format!("cj-careers-{tag}-{}", std::process::id()));
@@ -218,7 +252,7 @@ mod tests {
         let (store, _) = CareerStore::open(None);
         assert!(store.save(&[1; 16], &Career::new(Mode::Standard)).is_ok());
         assert!(store.load(&[1; 16]).0.is_none());
-        assert_eq!(store.claim(&[1; 16], &[9; 16], true), Ok(false));
+        assert_eq!(store.claim(&[1; 16], &fp(9), true), Ok(false));
     }
 
     /// The first secret to claim a career is the only one that may load it
@@ -227,14 +261,16 @@ mod tests {
     fn a_career_belongs_to_the_secret_that_first_claimed_it() {
         let d = folder("claim");
         let (store, _) = CareerStore::open(Some(d.clone()));
-        let claim = |id: u8, secret: u8| store.claim(&[id; 16], &[secret; 16], true);
+        let claim = |id: u8, secret: u8| store.claim(&[id; 16], &fp(secret), true);
         assert_eq!(claim(1, 7), Ok(true), "a new player binds their secret");
         assert_eq!(claim(1, 7), Ok(false), "and comes back with it");
         assert_eq!(claim(1, 8), Err(Refusal::WrongSecret), "another is refused");
         assert_eq!(claim(2, 8), Ok(true), "other players are their own");
         let saved =
             std::fs::read_to_string(d.join(format!("{}.key", file_stem(&[1; 16])))).expect("kept");
-        assert_eq!(saved, fingerprint(&[7; 16]));
+        assert_eq!(saved, to_hex(&fp(7)));
+        assert_eq!(store.saved_print(&[1; 16]), Ok(Some(fp(7))), "read back");
+        assert_eq!(store.saved_print(&[9; 16]), Ok(None), "a newcomer");
         assert_ne!(saved, file_stem(&[7; 16]), "not the secret itself");
         let _ = std::fs::remove_dir_all(&d);
     }
@@ -245,19 +281,19 @@ mod tests {
     fn no_new_keys_are_bound_while_binding_is_refused() {
         let d = folder("busy");
         let (store, _) = CareerStore::open(Some(d.clone()));
-        assert_eq!(store.claim(&[1; 16], &[7; 16], true), Ok(true));
-        assert_eq!(store.claim(&[2; 16], &[7; 16], false), Err(Refusal::Busy));
+        assert_eq!(store.claim(&[1; 16], &fp(7), true), Ok(true));
+        assert_eq!(store.claim(&[2; 16], &fp(7), false), Err(Refusal::Busy));
         assert!(
             !d.join(format!("{}.key", file_stem(&[2; 16]))).exists(),
             "no key for the refused id"
         );
         assert_eq!(
-            store.claim(&[1; 16], &[7; 16], false),
+            store.claim(&[1; 16], &fp(7), false),
             Ok(false),
             "a known player is checked as usual"
         );
         assert_eq!(
-            store.claim(&[1; 16], &[8; 16], false),
+            store.claim(&[1; 16], &fp(8), false),
             Err(Refusal::WrongSecret)
         );
         let _ = std::fs::remove_dir_all(&d);
@@ -272,9 +308,9 @@ mod tests {
         store
             .save(&[4; 16], &Career::new(Mode::Standard))
             .expect("saved");
-        assert_eq!(store.claim(&[4; 16], &[5; 16], true), Ok(true));
+        assert_eq!(store.claim(&[4; 16], &fp(5), true), Ok(true));
         assert_eq!(
-            store.claim(&[4; 16], &[6; 16], true),
+            store.claim(&[4; 16], &fp(6), true),
             Err(Refusal::WrongSecret)
         );
         let _ = std::fs::remove_dir_all(&d);
@@ -288,7 +324,7 @@ mod tests {
         let (store, _) = CareerStore::open(Some(d.clone()));
         // A folder where the key should be: it exists but can't be read.
         std::fs::create_dir_all(d.join(format!("{}.key", file_stem(&[3; 16])))).expect("made");
-        let refused = store.claim(&[3; 16], &[3; 16], true);
+        let refused = store.claim(&[3; 16], &fp(3), true);
         assert!(matches!(refused, Err(Refusal::Storage(w)) if w.contains("couldn't read")));
         let _ = std::fs::remove_dir_all(&d);
     }
@@ -305,24 +341,24 @@ mod tests {
         // A folder where the key's temporary file goes: it can't be created.
         let tmp = d.join(format!("{stem}.key.tmp"));
         std::fs::create_dir_all(&tmp).expect("made");
-        let refused = store.claim(&[5; 16], &[5; 16], true);
+        let refused = store.claim(&[5; 16], &fp(5), true);
         assert!(matches!(refused, Err(Refusal::Storage(w)) if w.contains("couldn't save")));
         assert!(!d.join(format!("{stem}.key")).exists(), "no key was bound");
         assert!(
             matches!(
-                store.claim(&[5; 16], &[6; 16], true),
+                store.claim(&[5; 16], &fp(6), true),
                 Err(Refusal::Storage(_))
             ),
             "nor can another secret claim it meanwhile"
         );
         std::fs::remove_dir(&tmp).expect("cleared");
         assert_eq!(
-            store.claim(&[5; 16], &[5; 16], true),
+            store.claim(&[5; 16], &fp(5), true),
             Ok(true),
             "bound once it can be saved"
         );
         assert_eq!(
-            store.claim(&[5; 16], &[6; 16], true),
+            store.claim(&[5; 16], &fp(6), true),
             Err(Refusal::WrongSecret)
         );
         let _ = std::fs::remove_dir_all(&d);
