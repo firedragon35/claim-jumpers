@@ -7,6 +7,19 @@ and the port uses [Semantic Versioning](https://semver.org/) as defined in
 
 ## [Unreleased]
 
+## [1.13.0] - 2026-11-13
+
+### Changed
+- The rest of the field is painted in the painted art style. Security drones, mining drones and sentries (red when rogue) have their own art. Salvage is painted by type and grade: scrap fragments, iron, copper, cobalt and platinum ore, hull plating, engines, reactor cores, ingots, the rogue core, the flight recorder, sealed pods and mining charges, with rare pieces on a glow of their colour. Keycards stay as they were. Wrecks are drawn as debris, and the derelict freighter as a long derelict hull. The salvage carrier is the collection hub, and the refinery's hub is the mining vault, with its jaws, sockets and countdown unchanged. Warning rings, beacons, cracks and emergency lights still show. Vector style is unchanged, and collision is unchanged.
+- Painted salvage is drawn 15% larger, and painted rivals, the law, debt collectors and haulers 30% larger, so they stand out in the field. Collision is unchanged.
+- In painted style a pilot's paint job (or online slot colour) colours its shield instead of tinting the ship, so the ship art keeps its own colours. Vector tugs still wear their paint on the hull.
+- Missiles are drawn 10% larger and torpedoes 15% larger, in both art styles.
+
+### Added
+- Missiles and torpedoes set off an EMP pulse when they explode (90 px for a missile, 160 px for a torpedo). Hostiles caught in it (rivals, the law and debt collectors you have provoked, security drones and angry mining crews) lose their engines for 10 seconds: they drift on their momentum and can still turn and shoot, but cannot chase, flee or tow. Blue arcs crackle over a disabled ship. Your tug, co-op partners and the hauler are never caught.
+- Explosions light up the rocks around them for a moment, in the blast's colour. Vector rocks catch it the way the 1.6.0 lighting works, with a bright rim on the faces toward the blast and a glow on that side. Painted rocks get a wash of the blast's light.
+- Field ambience: the energy wall at the edge of the belt hums louder as you fly toward it, over the same stretch where its glow brightens. Radiation crackles like a Geiger counter: a few clicks at the edge of a cloud, a rattle at its heart. Both play only while flying and stop with mute.
+
 ## [1.12.0] - 2026-11-12
 
 ### Changed

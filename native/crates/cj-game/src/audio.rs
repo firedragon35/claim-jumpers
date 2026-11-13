@@ -124,6 +124,9 @@ enum Cmd {
     Mute(bool),
     /// Music bus target gain (glides with a 0.3 s time constant).
     MusicGain(f32),
+    /// Field ambience levels (0 to 1): the energy wall's hum and the
+    /// radiation crackle.
+    Ambience(f32, f32),
 }
 
 /// RBJ cookbook biquad, configured the way WebAudio's BiquadFilterNode is
@@ -233,6 +236,53 @@ impl Noise {
     }
 }
 
+/// The field's ambient loops. The energy wall hums: two low saws a little
+/// apart, so they beat, under a low-pass. Radiation crackles: a Geiger
+/// counter's random clicks of high-passed noise, faster the deeper you are.
+#[derive(Default)]
+struct Ambience {
+    hum: f32,
+    hum_to: f32,
+    crackle: f32,
+    crackle_to: f32,
+    phase: [f32; 3],
+    hum_bq: Biquad,
+    click_bq: Biquad,
+    /// The current click's envelope.
+    click: f32,
+    ready: bool,
+}
+
+impl Ambience {
+    fn next(&mut self, noise: &mut Noise, sr: f32) -> f32 {
+        let dt = 1.0 / sr;
+        if !self.ready {
+            self.hum_bq.set(Filter::Lowpass, 320.0, sr);
+            self.click_bq.set(Filter::Highpass, 2400.0, sr);
+            self.ready = true;
+        }
+        self.hum += (self.hum_to - self.hum) * (1.0 - (-dt / 0.3).exp());
+        self.crackle += (self.crackle_to - self.crackle) * (1.0 - (-dt / 0.15).exp());
+        let mut out = 0.0;
+        if self.hum > 1e-4 {
+            let mut x = 0.0;
+            for (p, f) in self.phase.iter_mut().zip([55.0, 55.8, 110.0]) {
+                *p = (*p + f * dt).fract();
+                x += osc(Wave::Sawtooth, *p, f * dt);
+            }
+            out += self.hum_bq.run(x) * self.hum * 0.09;
+        }
+        // Clicks per second climb from a few at the rim to a rattle inside.
+        let rate = 4.0 + 90.0 * self.crackle;
+        if self.crackle > 1e-3 && (noise.next() * 0.5 + 0.5) < rate * dt {
+            self.click = 0.5 + 0.5 * (noise.next() * 0.5 + 0.5);
+        }
+        self.click *= (-dt / 0.003).exp();
+        out += self.click_bq.run(noise.next()) * self.click * self.crackle.sqrt() * 0.5;
+        out
+    }
+}
+
 /// Everything the audio callback owns.
 struct Mixer {
     sr: f32,
@@ -252,6 +302,7 @@ struct Mixer {
     comp_db: f32,
     music_gain: f32,
     music_gain_to: f32,
+    ambience: Ambience,
 }
 
 impl Mixer {
@@ -356,6 +407,7 @@ impl Mixer {
                 .set(Filter::Lowpass, self.eng_cut.max(20.0), self.sr);
         }
         s += self.eng_bq.run(self.noise.next()) * self.eng_gain;
+        s += self.ambience.next(&mut self.noise, self.sr);
         self.music_gain += (self.music_gain_to - self.music_gain) * (1.0 - (-dt / 0.3).exp());
         s += m * self.music_gain;
         if let Some(speech) = &mut self.speech {
@@ -405,6 +457,10 @@ impl Mixer {
                     self.voices.push(v);
                 }
                 Cmd::MusicGain(g) => self.music_gain_to = g,
+                Cmd::Ambience(hum, crackle) => {
+                    self.ambience.hum_to = hum;
+                    self.ambience.crackle_to = crackle;
+                }
                 Cmd::Thrust(g, c) => {
                     self.eng_gain_to = g;
                     self.eng_cut_to = c;
@@ -638,6 +694,17 @@ impl Audio {
             bq: Biquad::default(),
             music: false,
         }));
+    }
+
+    /// The field ambience: `hum` for the energy wall and `crackle` for
+    /// radiation, each 0 (silent) to 1 (loudest).
+    pub fn set_ambience(&self, hum: f64, crackle: f64) {
+        let (hum, crackle) = if self.muted {
+            (0.0, 0.0)
+        } else {
+            (hum.clamp(0.0, 1.0) as f32, crackle.clamp(0.0, 1.0) as f32)
+        };
+        self.send(Cmd::Ambience(hum, crackle));
     }
 
     /// The engine loop: heavy loads lower the pitch; sputters cut out.
@@ -1232,6 +1299,38 @@ impl Audio {
 
 /// True if this stream error means the stream has stopped for good. The
 /// others are reports about a stream that is still playing.
+/// The field ambience for the viewed tug, as (hum, crackle), each 0 to 1.
+/// The hum rises over the same stretch the energy wall brightens (from 900
+/// px to 120 px off the edge); the crackle starts just outside a radiation
+/// cloud and is loudest at its heart.
+pub fn field_ambience(w: &cj_sim::World) -> (f64, f64) {
+    let s = &w.me().ship;
+    if !s.alive {
+        return (0.0, 0.0);
+    }
+    let (x, y) = (s.b.x, s.b.y);
+    let edge = (x - w.edge_lo)
+        .min(w.edge_hi - x)
+        .min(y - w.edge_lo)
+        .min(w.edge_hi - y);
+    let hum = 1.0 - smoothstep(120.0, 900.0, edge);
+    let r = cj_sim::consts::RAD_CLOUD_RADIUS;
+    let crackle = w
+        .clouds
+        .iter()
+        .map(|c| {
+            let d = (c.x - x).hypot(c.y - y);
+            (c.t / 3.0).min(1.0) * (1.0 - smoothstep(r * 0.2, r + 120.0, d))
+        })
+        .fold(0.0, f64::max);
+    (hum, crackle)
+}
+
+fn smoothstep(a: f64, b: f64, x: f64) -> f64 {
+    let t = ((x - a) / (b - a)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
 fn stream_is_lost(kind: cpal::ErrorKind) -> bool {
     use cpal::ErrorKind::{DeviceChanged, RealtimeDenied, Xrun};
     !matches!(kind, Xrun | RealtimeDenied | DeviceChanged)
@@ -1262,6 +1361,7 @@ fn open(failed: &Arc<AtomicBool>) -> Result<(Sender<Cmd>, cpal::Stream), String>
         comp_db: 0.0,
         music_gain: 0.0,
         music_gain_to: 0.0,
+        ambience: Ambience::default(),
     };
     let stream = match format {
         cpal::SampleFormat::F32 => build::<f32>(&device, &config, mixer, failed.clone()),
@@ -1310,6 +1410,50 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The ambient loops are silent at zero and stay well inside full
+    /// scale at full level.
+    #[test]
+    fn ambience_is_silent_off_and_bounded_on() {
+        let mut noise = Noise(0x1234_5678);
+        let mut a = Ambience::default();
+        assert!((0..4800).all(|_| a.next(&mut noise, 48_000.0) == 0.0));
+        a.hum_to = 1.0;
+        a.crackle_to = 1.0;
+        let peak = (0..96_000)
+            .map(|_| a.next(&mut noise, 48_000.0).abs())
+            .fold(0.0, f32::max);
+        assert!(peak > 0.01 && peak < 0.9, "{peak}");
+    }
+
+    /// The wall hums louder as the tug nears it, and radiation crackles
+    /// only in and around a cloud.
+    #[test]
+    fn the_wall_hums_and_radiation_crackles_near_the_tug() {
+        let mut w = cj_sim::World::new_shift(cj_sim::rng::Rng::seeded(4), (1280.0, 720.0));
+        w.clouds.clear();
+        let mid = (w.edge_lo + w.edge_hi) / 2.0;
+        let at = |w: &mut cj_sim::World, x: f64| {
+            w.pilots[w.view_pilot].ship.alive = true;
+            w.pilots[w.view_pilot].ship.b.x = x;
+            w.pilots[w.view_pilot].ship.b.y = mid;
+            field_ambience(w)
+        };
+        assert_eq!(at(&mut w, mid), (0.0, 0.0));
+        let hi = w.edge_hi;
+        let far = at(&mut w, hi - 700.0).0;
+        let near = at(&mut w, hi - 200.0).0;
+        assert!(0.0 < far && far < near && near < 1.0, "{far} {near}");
+        w.clouds.push(cj_sim::entities::RadCloud {
+            x: mid,
+            y: mid,
+            t: 20.0,
+        });
+        assert_eq!(at(&mut w, mid).1, 1.0);
+        let r = cj_sim::consts::RAD_CLOUD_RADIUS;
+        assert!(at(&mut w, mid + r).1 > 0.0);
+        assert_eq!(at(&mut w, mid + r + 200.0).1, 0.0);
+    }
 
     #[test]
     fn recorded_dialogue_drops_routine_backlog_and_obeys_interrupt_and_mute() {
@@ -1427,6 +1571,7 @@ mod tests {
             comp_db: 0.0,
             music_gain: 0.0,
             music_gain_to: 0.0,
+            ambience: Ambience::default(),
         };
         let mut last = 0.0;
         for i in 0..48_000 {

@@ -6,7 +6,7 @@
 use crate::controls::Device;
 use crate::draw::{
     arc_pts, circle_pts, dashed, draw_sprite, fill_convex, fill_fan, fill_poly, glow_stroke,
-    long_fit, polyline, rect_pts, ship_tint, v, Xf,
+    long_fit, polyline, rect_pts, ship_tint, v, Xf, ITEM_SCALE, NOSE_UP, OTHER_SHIP_SCALE,
 };
 use crate::look::{col, rgba, text_centered, Look};
 use crate::settings::{key_label, Bind, Settings};
@@ -34,14 +34,40 @@ pub fn tag(look: &Look, x: f32, y: f32, s: &str, rgb: u32, scale: f32) {
 }
 
 /// A mining charge canister in local coordinates, with a blinking light.
-pub fn charge(xf: &Xf, t: f32, warn: bool) {
+pub fn charge(look: &Look, xf: &Xf, t: f32, warn: bool) {
+    let lit = (t * if warn { 20.0 } else { 6.0 }).sin() > 0.0;
+    if crate::look::sprites() {
+        let tex = &look.props.charge;
+        draw_sprite(
+            look,
+            tex,
+            xf.o,
+            long_fit(tex, 30.0 * ITEM_SCALE),
+            xf.angle(),
+            ship_tint(),
+            None,
+        );
+        if lit {
+            let p = xf.o;
+            look.additive(|| {
+                look.glow(
+                    p.x,
+                    p.y,
+                    if warn { 12.0 } else { 8.0 },
+                    col::DANGER,
+                    true,
+                    0.9,
+                )
+            });
+        }
+        return;
+    }
     let body = rect_pts(xf, -13.0, -8.0, 26.0, 16.0);
     fill_convex(&body, c(0x3a0f0a));
     polyline(&body, true, 2.0, c(col::DANGER));
     for x in [-9.0, -1.0, 7.0] {
         fill_convex(&rect_pts(xf, x, -8.0, 3.0, 16.0), c(col::HAZARD));
     }
-    let lit = (t * if warn { 20.0 } else { 6.0 }).sin() > 0.0;
     let p = xf.p(0.0, 0.0);
     draw_circle(p.x, p.y, 3.5, c(if lit { col::DANGER } else { 0x5a1a10 }));
 }
@@ -126,18 +152,32 @@ pub fn refinery(look: &Look, r: &Refinery, t: f32, scale: f32) {
     };
     draw_circle(mc.x, mc.y, MAW_R as f32 * 0.6, glow);
 
-    // Hub: an armoured octagon with hazard banding.
-    let hub_r = REFINERY_HUB_R as f32;
-    let hub: Vec<Vec2> = (0..8)
-        .map(|i| {
-            let a = i as f32 / 8.0 * TAU + PI / 8.0;
-            xf.p(a.cos() * hub_r, a.sin() * hub_r)
-        })
-        .collect();
-    fill_fan(xf.o, &hub, c(0x10141d));
-    glow_stroke(&hub, true, col::STEEL, 2.5, 1.0);
-    let band = arc_pts(&xf, 0.0, 0.0, hub_r - 18.0, 0.0, TAU, 96);
-    dashed(&band, false, 14.0, 14.0, 0.0, 5.0, rgba(col::HAZARD, 0.5));
+    if crate::look::sprites() {
+        // The vault art: armoured ring, pincers and core in one.
+        let tex = &look.props.refinery;
+        draw_sprite(
+            look,
+            tex,
+            xf.o,
+            long_fit(tex, REFINERY_HUB_R as f32 * 2.3),
+            r.angle as f32,
+            ship_tint(),
+            None,
+        );
+    } else {
+        // Hub: an armoured octagon with hazard banding.
+        let hub_r = REFINERY_HUB_R as f32;
+        let hub: Vec<Vec2> = (0..8)
+            .map(|i| {
+                let a = i as f32 / 8.0 * TAU + PI / 8.0;
+                xf.p(a.cos() * hub_r, a.sin() * hub_r)
+            })
+            .collect();
+        fill_fan(xf.o, &hub, c(0x10141d));
+        glow_stroke(&hub, true, col::STEEL, 2.5, 1.0);
+        let band = arc_pts(&xf, 0.0, 0.0, hub_r - 18.0, 0.0, TAU, 96);
+        dashed(&band, false, 14.0, 14.0, 0.0, 5.0, rgba(col::HAZARD, 0.5));
+    }
     let label = xf.p(0.0, -100.0);
     text_centered(
         "KESSLER ORE WORKS",
@@ -150,35 +190,38 @@ pub fn refinery(look: &Look, r: &Refinery, t: f32, scale: f32) {
     );
     // Vault: sealed plates, or blown open and glowing.
     let vault = arc_pts(&xf, 0.0, 0.0, 64.0, 0.0, TAU, 48);
-    if r.state == RefineryState::Open || hungry {
-        fill_fan(
-            xf.o,
-            &vault,
-            Color::new(1.0, 210.0 / 255.0, 74.0 / 255.0, 0.18),
-        );
-        glow_stroke(&vault, true, col::ORE, 2.0, 1.0);
-        polyline(
-            &arc_pts(&xf, -30.0, 0.0, 50.0, PI * 0.6, PI * 1.4, 16),
-            false,
-            6.0,
-            c(0x5b6578),
-        );
-        polyline(
-            &arc_pts(&xf, 30.0, 0.0, 50.0, -PI * 0.4, PI * 0.4, 16),
-            false,
-            6.0,
-            c(0x5b6578),
-        );
-    } else {
-        fill_fan(xf.o, &vault, c(0x1d222d));
-        glow_stroke(&vault, true, col::ORE, 2.5, 1.0);
-        let gold = Color::new(1.0, 210.0 / 255.0, 74.0 / 255.0, 0.5);
-        polyline(&xf.pts(&[(-50.0, 0.0), (50.0, 0.0)]), false, 4.0, gold);
-        polyline(&xf.pts(&[(0.0, -50.0), (0.0, 50.0)]), false, 4.0, gold);
-        for i in 0..8 {
-            let a = i as f32 / 8.0 * TAU;
-            let p = xf.p(a.cos() * 54.0, a.sin() * 54.0);
-            draw_circle(p.x, p.y, 3.0, c(col::ORE));
+    let open = r.state == RefineryState::Open || hungry;
+    if open || !crate::look::sprites() {
+        if open {
+            fill_fan(
+                xf.o,
+                &vault,
+                Color::new(1.0, 210.0 / 255.0, 74.0 / 255.0, 0.18),
+            );
+            glow_stroke(&vault, true, col::ORE, 2.0, 1.0);
+            polyline(
+                &arc_pts(&xf, -30.0, 0.0, 50.0, PI * 0.6, PI * 1.4, 16),
+                false,
+                6.0,
+                c(0x5b6578),
+            );
+            polyline(
+                &arc_pts(&xf, 30.0, 0.0, 50.0, -PI * 0.4, PI * 0.4, 16),
+                false,
+                6.0,
+                c(0x5b6578),
+            );
+        } else {
+            fill_fan(xf.o, &vault, c(0x1d222d));
+            glow_stroke(&vault, true, col::ORE, 2.5, 1.0);
+            let gold = Color::new(1.0, 210.0 / 255.0, 74.0 / 255.0, 0.5);
+            polyline(&xf.pts(&[(-50.0, 0.0), (50.0, 0.0)]), false, 4.0, gold);
+            polyline(&xf.pts(&[(0.0, -50.0), (0.0, 50.0)]), false, 4.0, gold);
+            for i in 0..8 {
+                let a = i as f32 / 8.0 * TAU;
+                let p = xf.p(a.cos() * 54.0, a.sin() * 54.0);
+                draw_circle(p.x, p.y, 3.0, c(col::ORE));
+            }
         }
     }
     // Sockets: empty brackets, seated charges, or scorched after the blast.
@@ -186,7 +229,7 @@ pub fn refinery(look: &Look, r: &Refinery, t: f32, scale: f32) {
         let (px, py) = r.socket_pos(k);
         let sxf = Xf::new(px, py, r.angle + sk.a + std::f64::consts::FRAC_PI_2);
         if sk.filled {
-            charge(&sxf, t, r.state == RefineryState::Armed);
+            charge(look, &sxf, t, r.state == RefineryState::Armed);
         } else if sk.spent {
             let p = sxf.p(0.0, 0.0);
             draw_circle(p.x, p.y, 20.0, c(0x20160f));
@@ -231,6 +274,19 @@ fn js_round(x: f64) -> i64 {
 
 /// Draws a refinery security drone: a dark diamond with a pulsing red eye. `t` is the animation clock in seconds; the outline turns white while the drone flashes from a hit.
 pub fn drone(look: &Look, d: &Drone, t: f32) {
+    if crate::look::sprites() {
+        let tex = &look.props.security_drone;
+        draw_sprite(
+            look,
+            tex,
+            v(d.b.x, d.b.y),
+            long_fit(tex, d.b.r as f32 * 2.6),
+            d.angle as f32 + NOSE_UP,
+            ship_tint(),
+            (d.flash > 0.0).then_some(0.6),
+        );
+        return;
+    }
     let xf = Xf::new(d.b.x, d.b.y, d.angle);
     let pts = xf.pts(&[(15.0, 0.0), (0.0, -11.0), (-11.0, 0.0), (0.0, 11.0)]);
     fill_convex(&pts, c(0x1b1f28));
@@ -271,9 +327,9 @@ pub fn collector(look: &Look, w: &World, k: &Collector, t: f32, rng: &mut Rng, s
             look,
             tex,
             v(k.b.x, k.b.y),
-            long_fit(tex, 72.0),
+            long_fit(tex, 72.0 * OTHER_SHIP_SCALE),
             k.angle as f32,
-            ship_tint(None),
+            ship_tint(),
             (k.flash > 0.0).then_some(0.6),
         );
     } else {
@@ -416,9 +472,9 @@ pub fn sheriff(look: &Look, sh: &Sheriff, t: f32) {
         let tex = &look.ships.sheriff;
         // Galactic SWAT: the same cruiser, bigger and blacked out in red.
         let (len, tint) = if sh.swat {
-            (75.0, Color::new(0.62, 0.32, 0.32, 1.0))
+            (75.0 * OTHER_SHIP_SCALE, Color::new(0.62, 0.32, 0.32, 1.0))
         } else {
-            (60.0, ship_tint(None))
+            (60.0 * OTHER_SHIP_SCALE, ship_tint())
         };
         draw_sprite(
             look,
@@ -548,7 +604,7 @@ pub fn cuff_meter(look: &Look, w: &World, t: f32, scale: f32) {
 }
 
 /// A mining drone, plus its beam while cutting.
-pub fn miner(m: &Miner, w: &World, t: f32, rng: &mut Rng) {
+pub fn miner(look: &Look, m: &Miner, w: &World, t: f32, rng: &mut Rng) {
     if let Some((bx, by)) = m.beam {
         let angry =
             m.angry_t > 0.0 && w.me().ship.alive && (bx, by) == (w.me().ship.b.x, w.me().ship.b.y);
@@ -563,6 +619,24 @@ pub fn miner(m: &Miner, w: &World, t: f32, rng: &mut Rng) {
         );
         let r = 4.0 + rng.range(0.0, 3.0) as f32;
         draw_circle(bx as f32, by as f32, r, rgba(col::TEXT, 0.8));
+    }
+    if crate::look::sprites() {
+        let tex = &look.props.mining_drone;
+        // Its claws point down the image: that's its nose.
+        draw_sprite(
+            look,
+            tex,
+            v(m.b.x, m.b.y),
+            long_fit(tex, m.b.r as f32 * 2.6),
+            m.angle as f32 - NOSE_UP,
+            ship_tint(),
+            (m.flash > 0.0).then_some(0.6),
+        );
+        if m.angry_t > 0.0 {
+            let (x, y) = (m.b.x as f32, m.b.y as f32);
+            look.additive(|| look.glow(x, y, 12.0, col::DANGER, true, 0.8));
+        }
+        return;
     }
     let xf = Xf::new(m.b.x, m.b.y, m.angle);
     let r = m.b.r as f32;
@@ -604,6 +678,31 @@ pub fn miner(m: &Miner, w: &World, t: f32, rng: &mut Rng) {
 
 /// Draws a sentry drone, which has a hexagonal body. `t` is the animation clock in seconds.
 pub fn sentry(look: &Look, d: &Sentry, t: f32) {
+    if crate::look::sprites() {
+        let tex = if d.rogue {
+            &look.props.rogue_sentry
+        } else {
+            &look.props.sentry
+        };
+        // Rogues flicker: a controller that's no longer there.
+        let a = if d.rogue && (t * 23.0 + d.orbit as f32).sin() < -0.6 {
+            0.45
+        } else {
+            1.0
+        };
+        let mut tint = ship_tint();
+        tint.a = a;
+        draw_sprite(
+            look,
+            tex,
+            v(d.x, d.y),
+            long_fit(tex, d.r as f32 * 2.8),
+            d.angle as f32 + NOSE_UP,
+            tint,
+            (d.flash > 0.0).then_some(0.6),
+        );
+        return;
+    }
     let xf = Xf::new(d.x, d.y, d.angle);
     let hex: Vec<Vec2> = (0..6)
         .map(|i| {
@@ -640,7 +739,8 @@ pub fn sentry(look: &Look, d: &Sentry, t: f32) {
 
 /// A small homing missile with a motor flare; torpedoes are bigger and hot.
 pub fn missile(look: &Look, m: &Missile, rng: &mut Rng) {
-    let k = if m.torpedo { 1.8 } else { 1.0 };
+    // Drawn 10% (missile) and 15% (torpedo) over their 1.12 sizes.
+    let k = if m.torpedo { 1.8 * 1.15 } else { 1.1 };
     let xf = Xf::new(m.x, m.y, m.angle);
     let sp = |x: f32, y: f32| (x * k, y * k);
     if m.torpedo {
@@ -662,6 +762,24 @@ pub fn missile(look: &Look, m: &Missile, rng: &mut Rng) {
     );
 }
 
+/// Electric arcs crackling over a hostile whose engines an EMP knocked out;
+/// they thin out over its last second.
+fn emp_arcs(x: f64, y: f64, r: f64, emp_t: f64, rng: &mut Rng) {
+    let a = (emp_t as f32).min(1.0) * 0.85;
+    let (x, y, r) = (x as f32, y as f32, r as f32 * 1.15);
+    for _ in 0..3 {
+        let mut ang = rng.angle() as f32;
+        let mut p = vec2(x + r * ang.cos(), y + r * ang.sin());
+        for _ in 0..3 {
+            ang += rng.range(0.2, 0.45) as f32;
+            let rr = r * rng.range(0.8, 1.2) as f32;
+            let q = vec2(x + rr * ang.cos(), y + rr * ang.sin());
+            draw_line(p.x, p.y, q.x, q.y, 1.5, rgba(col::CABLE, a));
+            p = q;
+        }
+    }
+}
+
 /// Draw the whole opposition in the browser's order, after the rivals.
 pub fn draw_all(
     look: &Look,
@@ -678,7 +796,7 @@ pub fn draw_all(
     }
     for m in &w.miners {
         if visible(m.b.x, m.b.y, m.b.r) {
-            miner(m, w, t, rng);
+            miner(look, m, w, t, rng);
         }
     }
     for k in &w.collectors {
@@ -700,6 +818,20 @@ pub fn draw_all(
                 n.spin as f32,
                 0.9,
             );
+        }
+    }
+    // Engines knocked out by an EMP: over the rivals and the opposition alike.
+    let emp = w
+        .jumpers
+        .iter()
+        .map(|e| (e.b, e.emp_t))
+        .chain(w.drones.iter().map(|e| (e.b, e.emp_t)))
+        .chain(w.miners.iter().map(|e| (e.b, e.emp_t)))
+        .chain(w.collectors.iter().map(|e| (e.b, e.emp_t)))
+        .chain(w.sheriffs.iter().map(|e| (e.b, e.emp_t)));
+    for (b, emp_t) in emp {
+        if emp_t > 0.0 && visible(b.x, b.y, b.r * 1.4) {
+            look.additive(|| emp_arcs(b.x, b.y, b.r, emp_t, rng));
         }
     }
     for m in &w.missiles {
@@ -724,9 +856,9 @@ pub fn hauler(look: &Look, h: &cj_sim::field::Hauler, t: f32, scale: f32) {
             look,
             tex,
             v(h.b.x, h.b.y),
-            long_fit(tex, 100.0),
+            long_fit(tex, 100.0 * OTHER_SHIP_SCALE),
             h.angle as f32,
-            ship_tint(None),
+            ship_tint(),
             (h.flash > 0.0).then_some(0.6),
         );
     } else {

@@ -565,6 +565,9 @@ pub struct Jumper {
     /// A named boss crew and the bounty on it.
     pub boss: Option<Boss>,
     pub b: Body,
+    /// Seconds left with its engines knocked out by an EMP pulse.
+    #[serde(with = "crate::wire::f32_sparse")]
+    pub emp_t: f64,
     pub hp: f64,
     pub angle: f64,
     pub state: JumperState,
@@ -624,6 +627,7 @@ pub fn make_jumper(
     // Crews with good standing send half as many hunters (`hunter_mul`).
     let hunter = v.hunter || rng.next() < st.hunters * hunter_mul;
     Jumper {
+        emp_t: 0.0,
         id,
         variant,
         boss: None,

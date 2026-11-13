@@ -15,5 +15,12 @@ hulls, the sheriff, the debt collector and the hauler. `ShipArt` in
 `look.rs` says which draws what. Player and rival art points its nose up
 the image; the sheriff, collector and hauler point right.
 
+`drones/`, `items/`, `wrecks/` and `stations/`: 33 more sprites from the
+same pack for drones and sentries, salvage by type and grade, wrecks and
+the derelict freighter, the carrier's hub and the refinery's vault.
+`PropArt` in `look.rs` says which draws what. The rest of the pack
+(crystal and ice rocks, ore nodes, other containers, the field sample
+rocks and the leftover debris) isn't used yet.
+
 Origin and rights of the art: to be confirmed by the owner before a
 public release; add a credit to `packaging/README.txt` if one is needed.

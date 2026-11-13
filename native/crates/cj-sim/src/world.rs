@@ -354,6 +354,24 @@ pub struct World {
     pub pvp_allowed: bool,
 }
 
+/// Runs one hostile's AI step. With its engines out (EMP) it may still turn
+/// and fire, but its velocity stays the drift it had going in.
+macro_rules! emp_step {
+    ($list:expr, $i:expr, $dt:expr, $step:expr) => {{
+        let i = $i;
+        let drift = $list
+            .get(i)
+            .filter(|e| e.emp_t > 0.0)
+            .map(|e| (e.b.vx, e.b.vy));
+        $step;
+        if let (Some((vx, vy)), Some(e)) = (drift, $list.get_mut(i)) {
+            e.b.vx = vx;
+            e.b.vy = vy;
+            e.emp_t = (e.emp_t - $dt).max(0.0);
+        }
+    }};
+}
+
 impl World {
     /// An empty field with a fresh stock tug at the bay.
     pub fn empty(rng: Rng, view: (f64, f64)) -> World {
@@ -817,7 +835,12 @@ impl World {
         for j in 0..self.jumpers.len() {
             let b = self.jumpers[j].b;
             let p = self.nearest_pilot(b.x, b.y);
-            self.with_hearer(Some(p), |w| w.update_jumper(j, dt));
+            emp_step!(
+                self.jumpers,
+                j,
+                dt,
+                self.with_hearer(Some(p), |w| w.update_jumper(j, dt))
+            );
         }
         for i in 0..self.items.len() {
             let it = &mut self.items[i];
@@ -865,20 +888,35 @@ impl World {
         }
         self.update_refinery(dt);
         for i in 0..self.drones.len() {
-            self.update_drone(i, dt);
+            emp_step!(self.drones, i, dt, self.update_drone(i, dt));
         }
         for i in 0..self.collectors.len() {
             let p = self.collectors[i].target;
-            self.with_hearer(Some(p), |w| w.update_collector(i, dt));
+            emp_step!(
+                self.collectors,
+                i,
+                dt,
+                self.with_hearer(Some(p), |w| w.update_collector(i, dt))
+            );
         }
         for i in 0..self.sheriffs.len() {
             let p = self.sheriffs[i].target;
-            self.with_hearer(Some(p), |w| w.update_sheriff(i, dt));
+            emp_step!(
+                self.sheriffs,
+                i,
+                dt,
+                self.with_hearer(Some(p), |w| w.update_sheriff(i, dt))
+            );
         }
         for i in 0..self.miners.len() {
             let b = self.miners[i].b;
             let p = self.nearest_pilot(b.x, b.y);
-            self.with_hearer(Some(p), |w| w.update_miner(i, dt));
+            emp_step!(
+                self.miners,
+                i,
+                dt,
+                self.with_hearer(Some(p), |w| w.update_miner(i, dt))
+            );
         }
         self.update_nets(dt);
         self.update_missiles(dt);

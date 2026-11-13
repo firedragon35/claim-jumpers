@@ -398,3 +398,62 @@ fn the_refinery_jaws_pull_from_half_as_far_and_can_be_wrecked() {
     assert_eq!(w.refinery.as_ref().unwrap().state, RefineryState::Wrecked);
     assert!(!pulls_when_wrecked);
 }
+
+#[test]
+fn a_missile_blast_knocks_out_hostile_engines_in_range_for_ten_seconds() {
+    use cj_sim::opposition::{Missile, EMP_TIME, MISSILE_EMP_R};
+    let mut w = quiet(&Career::new(Mode::Standard), Rng::seeded(21));
+    // No rocks to bump the drifting rivals: only their engines could speed them up.
+    w.rocks.clear();
+    w.pilots[0].ship.b.x = BAY_X + 1500.0;
+    w.pilots[0].ship.b.y = BAY_Y;
+    let (x, y) = (BAY_X + 2400.0, BAY_Y);
+    // Struck, inside the pulse, and well outside it.
+    for dx in [0.0, MISSILE_EMP_R * 0.8, MISSILE_EMP_R + 300.0] {
+        let mut j = w.new_jumper(x + dx, y, Some(Variant::Brute));
+        j.hunter = false;
+        j.b.vx = 0.0;
+        j.b.vy = 0.0;
+        w.jumpers.push(j);
+    }
+    let id = w.jumpers[0].id;
+    w.missiles.push(Missile {
+        x,
+        y,
+        vx: 0.0,
+        vy: 0.0,
+        angle: 0.0,
+        target: Some(Tgt::Jumper(id)),
+        life: 1.0,
+        torpedo: false,
+        pilot: 0,
+        tracking: 1.0,
+    });
+    step(&mut w, &Input::default());
+    let emp: Vec<f64> = w.jumpers.iter().map(|j| j.emp_t).collect();
+    assert!(
+        emp[0] > EMP_TIME - 0.1 && emp[1] > EMP_TIME - 0.1,
+        "{emp:?}"
+    );
+    assert_eq!(emp[2], 0.0);
+    // A disabled rival keeps its drift: it can't accelerate.
+    let v0 = js_speed(&w, 1);
+    for _ in 0..(5.0 / STEP) as usize {
+        step(&mut w, &Input::default());
+        assert!(js_speed(&w, 1) <= v0 + 1e-6, "engine fired while EMP'd");
+    }
+    // After the ten seconds it flies again.
+    for _ in 0..(6.0 / STEP) as usize {
+        step(&mut w, &Input::default());
+    }
+    assert_eq!(w.jumpers[1].emp_t, 0.0);
+    for _ in 0..(2.0 / STEP) as usize {
+        step(&mut w, &Input::default());
+    }
+    assert!(js_speed(&w, 1) > v0 + 1.0, "engines never came back");
+}
+
+fn js_speed(w: &World, j: usize) -> f64 {
+    let b = w.jumpers[j].b;
+    b.vx.hypot(b.vy)
+}

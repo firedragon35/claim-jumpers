@@ -166,6 +166,12 @@ pub const SHERIFF_PATROL_TIME: f64 = 75.0;
 pub const FINE_PER_STAR: f64 = 800.0;
 /// Seconds a sheriff's stun bolt leaves the tug sluggish.
 pub const STUN_TIME: f64 = 1.5;
+/// Seconds an EMP pulse keeps a hostile's engines dead: it drifts, but can still turn and shoot.
+pub const EMP_TIME: f64 = 10.0;
+/// EMP pulse radius from a missile's blast.
+pub const MISSILE_EMP_R: f64 = 90.0;
+/// EMP pulse radius from a torpedo's blast.
+pub const TORPEDO_EMP_R: f64 = 160.0;
 /// Per second, a patrol near a clean tug with cargo shakes it down.
 pub const SHAKEDOWN_CHANCE: f64 = 1.0 / 100.0;
 
@@ -248,6 +254,9 @@ const REP_IMPOUNDED_BANK: f64 = -5.0;
 pub struct Drone {
     pub id: u32,
     pub b: Body,
+    /// Seconds left with its engines knocked out by an EMP pulse.
+    #[serde(with = "crate::wire::f32_sparse")]
+    pub emp_t: f64,
     pub hp: f64,
     pub angle: f64,
     pub orbit: f64,
@@ -277,6 +286,9 @@ pub enum CollectorState {
 pub struct Collector {
     pub id: u32,
     pub b: Body,
+    /// Seconds left with its engines knocked out by an EMP pulse.
+    #[serde(with = "crate::wire::f32_sparse")]
+    pub emp_t: f64,
     pub hp: f64,
     pub angle: f64,
     pub state: CollectorState,
@@ -334,6 +346,9 @@ pub enum SheriffState {
 pub struct Sheriff {
     pub id: u32,
     pub b: Body,
+    /// Seconds left with its engines knocked out by an EMP pulse.
+    #[serde(with = "crate::wire::f32_sparse")]
+    pub emp_t: f64,
     pub hp: f64,
     pub angle: f64,
     pub state: SheriffState,
@@ -366,6 +381,9 @@ pub struct Sheriff {
 pub struct Miner {
     pub id: u32,
     pub b: Body,
+    /// Seconds left with its engines knocked out by an EMP pulse.
+    #[serde(with = "crate::wire::f32_sparse")]
+    pub emp_t: f64,
     pub hp: f64,
     pub angle: f64,
     /// The rock (by id) it is cutting.
@@ -1084,6 +1102,7 @@ impl World {
         let fire_t = self.rng.range(1.2, 2.2);
         let id = self.fresh_id();
         self.drones.push(Drone {
+            emp_t: 0.0,
             id,
             b: Body {
                 x: r.x + a.cos() * (REFINERY_HUB_R + 40.0),
@@ -1216,6 +1235,7 @@ impl World {
         let (px, py) = self.edge_point(1300.0);
         let id = self.fresh_id();
         self.collectors.push(Collector {
+            emp_t: 0.0,
             id,
             b: Body {
                 x: px.clamp(self.edge_lo + 40.0, self.edge_hi - 40.0),
@@ -1761,6 +1781,7 @@ impl World {
         let (px, py) = self.edge_point(1200.0);
         let id = self.fresh_id();
         self.sheriffs.push(Sheriff {
+            emp_t: 0.0,
             id,
             b: Body {
                 x: px.clamp(self.edge_lo + 40.0, self.edge_hi - 40.0),
@@ -2566,8 +2587,60 @@ impl World {
         let m = &mut self.missiles[k];
         m.life = 0.0;
         let (x, y) = (m.x, m.y);
+        let r = if m.torpedo {
+            TORPEDO_EMP_R
+        } else {
+            MISSILE_EMP_R
+        };
         self.explosion_fx(x, y, 45.0, Tint::Hazard);
         self.sfx(Sfx::MissileHit);
+        self.emp_pulse(x, y, r);
+    }
+
+    /// Knocks out the engines of every hostile within `r` of (x, y). The
+    /// missile's own targets list is what counts as hostile, so the pilots'
+    /// tugs, partners, the hauler and calm law or miners are never caught.
+    pub(crate) fn emp_pulse(&mut self, x: f64, y: f64, r: f64) {
+        for t in self.missile_targets() {
+            let Some(b) = self.target_body(t) else {
+                continue;
+            };
+            if js::dist(b.x, b.y, x, y) - b.r >= r {
+                continue;
+            }
+            let emp = match t {
+                Tgt::Jumper(id) => self
+                    .jumpers
+                    .iter_mut()
+                    .find(|e| e.id == id)
+                    .map(|e| &mut e.emp_t),
+                Tgt::Drone(id) => self
+                    .drones
+                    .iter_mut()
+                    .find(|e| e.id == id)
+                    .map(|e| &mut e.emp_t),
+                Tgt::Collector(id) => self
+                    .collectors
+                    .iter_mut()
+                    .find(|e| e.id == id)
+                    .map(|e| &mut e.emp_t),
+                Tgt::Sheriff(id) => self
+                    .sheriffs
+                    .iter_mut()
+                    .find(|e| e.id == id)
+                    .map(|e| &mut e.emp_t),
+                Tgt::Miner(id) => self
+                    .miners
+                    .iter_mut()
+                    .find(|e| e.id == id)
+                    .map(|e| &mut e.emp_t),
+                Tgt::Net(_) | Tgt::Sentry(_) | Tgt::Jaws => None,
+            };
+            if let Some(emp) = emp {
+                *emp = EMP_TIME;
+            }
+        }
+        self.emit(Event::Emp { x, y, r });
     }
 
     /* ------------------------------ Sentries ------------------------------ */
@@ -2872,6 +2945,7 @@ impl World {
             let retarget = self.rng.range(0.0, 1.0);
             let id = self.fresh_id();
             self.miners.push(Miner {
+                emp_t: 0.0,
                 id,
                 b: Body {
                     x,

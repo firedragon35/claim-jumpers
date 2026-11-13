@@ -722,6 +722,7 @@ fn a_drone_rotates_its_volleys_between_tugs_in_range() {
     use cj_sim::opposition::Drone;
     let mut w = two_pilot_field();
     w.drones.push(Drone {
+        emp_t: 0.0,
         id: 999,
         b: Body {
             x: 1500.0,

@@ -1425,6 +1425,14 @@ async fn main() {
             }
         }
 
+        // The field's ambience plays only while flying.
+        let (hum, crackle) = if app.screen == Screen::Play {
+            audio::field_ambience(&app.world)
+        } else {
+            (0.0, 0.0)
+        };
+        audio.set_ambience(hum, crackle);
+
         // Draw the field, then the HUD or the screen's card.
         let dpi = screen_dpi_scale();
         draw::render(draw::Scene {

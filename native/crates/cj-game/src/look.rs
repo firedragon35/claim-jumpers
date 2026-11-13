@@ -304,11 +304,113 @@ impl ShipArt {
     }
 }
 
+macro_rules! art_png {
+    ($path:literal) => {
+        include_bytes!(concat!("../../../assets/sprites/", $path, ".png"))
+    };
+}
+
+/// Sprites for everything besides rocks and ships: drones, cargo, wrecks
+/// and the two stations. Arrays run in grade order (see cj_sim::items).
+pub struct PropArt {
+    pub security_drone: Texture2D,
+    pub mining_drone: Texture2D,
+    pub sentry: Texture2D,
+    pub rogue_sentry: Texture2D,
+    /// Bent, plain, alloy.
+    pub scrap: [Texture2D; 3],
+    /// Iron, copper, cobalt, platinum.
+    pub ore: [Texture2D; 4],
+    pub plate: Texture2D,
+    /// Burnt-out, block, fusion drive.
+    pub engine: [Texture2D; 3],
+    /// Cracked, standard, pristine.
+    pub reactor: [Texture2D; 3],
+    /// Silver, gold, iridium.
+    pub ingot: [Texture2D; 3],
+    pub rogue_core: Texture2D,
+    pub blackbox: Texture2D,
+    pub pod: Texture2D,
+    pub charge: Texture2D,
+    /// Debris for ordinary wrecks (pick with `wreck_art`).
+    pub wrecks: Vec<Texture2D>,
+    pub freighter: Texture2D,
+    /// The salvage carrier's main hull.
+    pub carrier: Texture2D,
+    /// The refinery's hub and vault.
+    pub refinery: Texture2D,
+}
+
+impl PropArt {
+    fn load() -> PropArt {
+        PropArt {
+            security_drone: png(art_png!("drones/security_drone")),
+            mining_drone: png(art_png!("drones/mining_drone")),
+            sentry: png(art_png!("drones/sentry_drone")),
+            rogue_sentry: png(art_png!("drones/rogue_sentry_drone")),
+            scrap: [
+                png(art_png!("items/hull_fragment_02")),
+                png(art_png!("items/hull_fragment_01")),
+                png(art_png!("items/hull_fragment_03")),
+            ],
+            ore: [
+                png(art_png!("items/iron_ore")),
+                png(art_png!("items/copper_ore")),
+                png(art_png!("items/cobalt_ore")),
+                png(art_png!("items/platinum_ore")),
+            ],
+            plate: png(art_png!("items/hull_plating_large")),
+            engine: [
+                png(art_png!("items/engine_fragment_damaged")),
+                png(art_png!("items/engine_section_intact")),
+                png(art_png!("items/turbine_assembly")),
+            ],
+            reactor: [
+                png(art_png!("items/micro_core_low_yield")),
+                png(art_png!("items/standard_core")),
+                png(art_png!("items/advanced_core_high_yield")),
+            ],
+            ingot: [
+                png(art_png!("items/nickel_ore")),
+                png(art_png!("items/iridium_ore")),
+                png(art_png!("items/xenon_crystal")),
+            ],
+            rogue_core: png(art_png!("items/unstable_core")),
+            blackbox: png(art_png!("items/cargo_container_standard")),
+            pod: png(art_png!("items/rare_cargo")),
+            charge: png(art_png!("items/hazardous_material_container")),
+            wrecks: vec![
+                png(art_png!("wrecks/structural_frame")),
+                png(art_png!("wrecks/fuel_tank_leaking")),
+                png(art_png!("wrecks/sensor_array_damaged")),
+                png(art_png!("wrecks/fuel_manifold")),
+                png(art_png!("wrecks/radiator_panel")),
+            ],
+            freighter: png(art_png!("wrecks/derelict_carrier")),
+            carrier: png(art_png!("stations/hub_ship_collection_dropoff")),
+            refinery: png(art_png!("stations/space_mining_vault")),
+        }
+    }
+}
+
+/// Which `PropArt::wrecks` piece draws a wreck: its emergency light's
+/// phase is random per wreck and never changes, so it keeps its look.
+pub fn wreck_art(light: f64, n: usize) -> usize {
+    (light.abs() * 1000.0) as usize % n.max(1)
+}
+
+/// The art for grade `grade` among `n` grades, clamped so a grade the
+/// art doesn't cover falls back to the last one.
+pub fn grade_art(grade: usize, n: usize) -> usize {
+    grade.min(n.saturating_sub(1))
+}
+
 pub struct Look {
     pub fonts: Fonts,
     /// Rock sprites, in `ROCK_ART` order (pick one with `rock_art`).
     pub rocks: Vec<Texture2D>,
     pub ships: ShipArt,
+    pub props: PropArt,
     /// Source × alpha added to the frame: canvas 'lighter'.
     additive: Material,
     /// Glow sprites per (colour, hot), built on first use like the browser's spriteCache.
@@ -339,6 +441,7 @@ impl Look {
             fonts: Fonts::load(),
             rocks: ROCK_ART.iter().map(|(_, _, b)| png(b)).collect(),
             ships: ShipArt::load(),
+            props: PropArt::load(),
             additive,
             sprites: RefCell::new(HashMap::new()),
         }

@@ -273,6 +273,12 @@ pub enum Event {
         r: f64,
         tint: Tint,
     },
+    /// A missile's EMP pulse: a ring out to radius `r`.
+    Emp {
+        x: f64,
+        y: f64,
+        r: f64,
+    },
     /// Fireball (explosionFx).
     Explosion {
         x: f64,

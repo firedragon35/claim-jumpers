@@ -67,7 +67,13 @@ pub struct Fx {
     /// is the same length whether it's updated every step (offline) or
     /// every frame (online).
     pub engine: Vec<std::collections::VecDeque<(f64, f64, f64)>>,
+    /// Explosion flashes lighting the rocks around them: (x, y, reach, rgb,
+    /// seconds left, seconds in all).
+    pub lights: Vec<(f64, f64, f64, u32, f64, f64)>,
 }
+
+/// How far an explosion's flash reaches, as a multiple of its size.
+const LIGHT_REACH: f64 = 3.0;
 
 impl Fx {
     pub fn new(rng: Rng) -> Fx {
@@ -78,7 +84,26 @@ impl Fx {
             beams: Vec::new(),
             trails: Default::default(),
             engine: Vec::new(),
+            lights: Vec::new(),
         }
+    }
+
+    /// The strongest explosion light on a body of radius `r` at (x, y): the
+    /// unit direction toward it, its strength (0..1) and its colour.
+    pub fn light_at(&self, x: f64, y: f64, r: f64) -> Option<(f64, f64, f64, u32)> {
+        let mut best = None;
+        let mut top = 0.0;
+        for &(lx, ly, reach, rgb, life, max) in &self.lights {
+            let (dx, dy) = (lx - x, ly - y);
+            let d = dx.hypot(dy);
+            let k = (life / max) * (1.0 - (d - r).max(0.0) / reach).clamp(0.0, 1.0);
+            if k > top {
+                top = k;
+                let n = d.max(1e-6);
+                best = Some((dx / n, dy / n, k, rgb));
+            }
+        }
+        best
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -280,7 +305,27 @@ impl Fx {
                     speed,
                 } => self.burst(*x, *y, f64::from(*n), tint_rgb(*tint), *speed),
                 Event::Dust { x, y, r, tint } => self.dust(*x, *y, *r, tint_rgb(*tint)),
+                // An EMP pulse: an electric ring out to its reach, and a slower echo.
+                Event::Emp { x, y, r } => {
+                    self.add(*x, *y, 0.0, 0.0, 0.5, col::CABLE, 3.0, *r, Kind::Ring, 0.0);
+                    self.add(
+                        *x,
+                        *y,
+                        0.0,
+                        0.0,
+                        0.9,
+                        col::SHIELD,
+                        2.0,
+                        r * 0.75,
+                        Kind::Ring,
+                        0.0,
+                    );
+                }
                 Event::Explosion { x, y, size, tint } => {
+                    // Bigger blasts light the field for longer.
+                    let life = 0.25 + size / 400.0;
+                    let light = (*x, *y, size * LIGHT_REACH, tint_rgb(*tint), life, life);
+                    self.lights.push(light);
                     self.explosion(*x, *y, *size, tint_rgb(*tint))
                 }
                 Event::Popup { x, y, text, tint } => self.popups.push(Popup {
@@ -448,6 +493,10 @@ impl Fx {
             p.life -= dt;
         }
         self.popups.retain(|p| p.life > 0.0);
+        for l in &mut self.lights {
+            l.4 -= dt;
+        }
+        self.lights.retain(|l| l.4 > 0.0);
         for b in &mut self.beams {
             b.4 -= dt;
         }
@@ -458,6 +507,25 @@ impl Fx {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// An explosion lights rocks within its reach, from its side, and the
+    /// light fades out within a second.
+    #[test]
+    fn explosions_light_nearby_rocks_briefly() {
+        let mut fx = Fx::new(Rng::seeded(3));
+        let boom = Event::Explosion {
+            x: 100.0,
+            y: 0.0,
+            size: 45.0,
+            tint: cj_sim::events::Tint::Hazard,
+        };
+        fx.absorb([&boom]);
+        let (dx, _, k, _) = fx.light_at(0.0, 0.0, 20.0).expect("lit");
+        assert!(dx > 0.99 && k > 0.4, "{dx} {k}");
+        assert!(fx.light_at(1000.0, 0.0, 20.0).is_none());
+        fx.update(1.0);
+        assert!(fx.light_at(0.0, 0.0, 20.0).is_none());
+    }
 
     /// The thruster trail grows while the engine burns, drops points older
     /// than ENGINE_TRAIL_TIME, and clears when the tug is wrecked or the

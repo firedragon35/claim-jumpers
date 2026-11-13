@@ -285,8 +285,19 @@ pub fn draw_tug(look: &Look, f: &Frame, m: &Mods, st: &TugState, rng: &mut Rng) 
 }
 
 /// Shield bubble: faint when full and resting, brighter as it takes hits,
-/// gone when depleted; a rippling dashed ring while it recharges.
-pub fn draw_shield(x: f32, y: f32, shield: f64, max: f64, flash: f64, delay: f64, t: f32) {
+/// gone when depleted; a rippling dashed ring while it recharges. `rgb` is
+/// its colour: a pilot's paint in painted style, else the shield blue.
+#[allow(clippy::too_many_arguments)]
+pub fn draw_shield(
+    x: f32,
+    y: f32,
+    shield: f64,
+    max: f64,
+    flash: f64,
+    delay: f64,
+    t: f32,
+    rgb: u32,
+) {
     if shield <= 0.0 {
         return;
     }
@@ -296,10 +307,10 @@ pub fn draw_shield(x: f32, y: f32, shield: f64, max: f64, flash: f64, delay: f64
         x,
         y,
         34.0,
-        rgba(col::SHIELD, (0.05 + frac * 0.06 + flash * 1.2).min(1.0)),
+        rgba(rgb, (0.05 + frac * 0.06 + flash * 1.2).min(1.0)),
     );
     let ring = circle_pts(vec2(x, y), 34.0, 64);
-    let c = rgba(col::SHIELD, (0.25 + frac * 0.35 + flash * 2.0).min(1.0));
+    let c = rgba(rgb, (0.25 + frac * 0.35 + flash * 2.0).min(1.0));
     if delay <= 0.0 && frac < 1.0 {
         crate::draw::dashed(&ring, true, 6.0, 6.0, -t * 30.0, 1.5, c);
     } else {

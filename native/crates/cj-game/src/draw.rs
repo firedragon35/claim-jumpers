@@ -36,6 +36,11 @@ pub(crate) struct Xf {
 }
 
 impl Xf {
+    /// The frame's turn, radians.
+    pub(crate) fn angle(&self) -> f32 {
+        self.s.atan2(self.c)
+    }
+
     pub(crate) fn new(x: f64, y: f64, angle: f64) -> Xf {
         Xf::scaled(x, y, angle, 1.0)
     }
@@ -396,53 +401,77 @@ const CARRIER_HULL_PTS: [(f32, f32); 14] = [
 
 fn draw_carrier(look: &Look, t: f32, scale: f32) {
     let xf = Xf::new(CARRIER_X, CARRIER_Y, 0.0);
-    let hull = xf.pts(&CARRIER_HULL_PTS);
-    fill_poly(&hull, crate::look::hex(0x121722));
-    glow_stroke(&hull, true, col::HAZARD, 2.0, 1.0);
-    // Panel lines.
-    let mut x = -180.0;
-    while x <= 160.0 {
-        let (a, b) = (xf.p(x, -72.0), xf.p(x, 72.0));
-        draw_line(a.x, a.y, b.x, b.y, 1.0, rgba(col::HAZARD, 0.25));
-        x += 60.0;
-    }
-    // Stencilled name.
-    let c = xf.p(30.0, 0.0);
-    text_centered(
-        "HOLLIS-3",
-        c.x,
-        c.y,
-        46.0,
-        &look.fonts.display,
-        rgba(col::HAZARD, 0.8),
-        scale,
-    );
-    let c = xf.p(30.0, 36.0);
-    text_centered(
-        "SALVAGE CARRIER · BAY ←",
-        c.x,
-        c.y,
-        14.0,
-        &look.fonts.mono,
-        rgba(col::HAZARD, 0.8),
-        scale,
-    );
-    // Blinking running lights on the bay arms.
-    let on = (t * 4.0).sin() > 0.0;
-    for (lx, ly) in [(-440.0, -95.0), (-440.0, 95.0), (270.0, 0.0)] {
-        let p = xf.p(lx, ly);
-        draw_circle(
-            p.x,
-            p.y,
-            6.0,
-            if on {
-                crate::look::hex(col::DANGER)
-            } else {
-                crate::look::hex(0x3a1410)
-            },
+    if crate::look::sprites() {
+        // The hub art over the main hull (its collision circles), with the
+        // carrier's name and the way to the bay under it.
+        let tex = &look.props.carrier;
+        draw_sprite(
+            look,
+            tex,
+            xf.p(15.0, 0.0),
+            long_fit(tex, 500.0),
+            0.0,
+            ship_tint(),
+            None,
         );
+        let c = xf.p(15.0, 128.0);
+        text_centered(
+            "HOLLIS-3 · SALVAGE CARRIER · BAY ←",
+            c.x,
+            c.y,
+            14.0,
+            &look.fonts.mono,
+            rgba(col::HAZARD, 0.8),
+            scale,
+        );
+    } else {
+        let hull = xf.pts(&CARRIER_HULL_PTS);
+        fill_poly(&hull, crate::look::hex(0x121722));
+        glow_stroke(&hull, true, col::HAZARD, 2.0, 1.0);
+        // Panel lines.
+        let mut x = -180.0;
+        while x <= 160.0 {
+            let (a, b) = (xf.p(x, -72.0), xf.p(x, 72.0));
+            draw_line(a.x, a.y, b.x, b.y, 1.0, rgba(col::HAZARD, 0.25));
+            x += 60.0;
+        }
+        // Stencilled name.
+        let c = xf.p(30.0, 0.0);
+        text_centered(
+            "HOLLIS-3",
+            c.x,
+            c.y,
+            46.0,
+            &look.fonts.display,
+            rgba(col::HAZARD, 0.8),
+            scale,
+        );
+        let c = xf.p(30.0, 36.0);
+        text_centered(
+            "SALVAGE CARRIER · BAY ←",
+            c.x,
+            c.y,
+            14.0,
+            &look.fonts.mono,
+            rgba(col::HAZARD, 0.8),
+            scale,
+        );
+        // Blinking running lights on the bay arms.
+        let on = (t * 4.0).sin() > 0.0;
+        for (lx, ly) in [(-440.0, -95.0), (-440.0, 95.0), (270.0, 0.0)] {
+            let p = xf.p(lx, ly);
+            draw_circle(
+                p.x,
+                p.y,
+                6.0,
+                if on {
+                    crate::look::hex(col::DANGER)
+                } else {
+                    crate::look::hex(0x3a1410)
+                },
+            );
+        }
     }
-
     // Bay intake ring.
     let bay = v(BAY_X, BAY_Y);
     let ring = circle_pts(bay, BAY_R as f32, 96);
@@ -460,8 +489,31 @@ fn draw_carrier(look: &Look, t: f32, scale: f32) {
     );
 }
 
-fn draw_wreck(wr: &Wreck, t: f32) {
+fn draw_wreck(look: &Look, wr: &Wreck, t: f32) {
     let xf = Xf::new(wr.b.x, wr.b.y, wr.angle);
+    let r = wr.b.r as f32;
+    if crate::look::sprites() {
+        let art = &look.props;
+        // The freighter is a long derelict hull; other wrecks are debris
+        // about as big as their hull outline.
+        let (tex, size) = if wr.freighter {
+            (&art.freighter, long_fit(&art.freighter, r * 2.7))
+        } else {
+            let tex = &art.wrecks[crate::look::wreck_art(wr.light, art.wrecks.len())];
+            (tex, area_fit(tex, r * 0.95))
+        };
+        draw_sprite(
+            look,
+            tex,
+            xf.o,
+            size,
+            wr.angle as f32,
+            ship_tint(),
+            (wr.flash > 0.0).then_some(0.5),
+        );
+        wreck_damage(&xf, wr, r, t);
+        return;
+    }
     let pts: Vec<Vec2> = wr
         .pts
         .iter()
@@ -488,7 +540,6 @@ fn draw_wreck(wr: &Wreck, t: f32) {
         );
     }
     // Ribs: broken frame lines across the hull.
-    let r = wr.b.r as f32;
     for i in -2..=2 {
         let i = i as f32;
         let (a, b) = (
@@ -504,6 +555,11 @@ fn draw_wreck(wr: &Wreck, t: f32) {
             Color::new(111.0 / 255.0, 163.0 / 255.0, 160.0 / 255.0, 0.4),
         );
     }
+    wreck_damage(&xf, wr, r, t);
+}
+
+/// Cracks that deepen with damage, and a dying emergency light.
+fn wreck_damage(xf: &Xf, wr: &Wreck, r: f32, t: f32) {
     // Cracks deepen with damage.
     let dmg = (1.0 - wr.hp / wr.max_hp) as f32;
     if dmg > 0.2 {
@@ -524,9 +580,14 @@ fn draw_wreck(wr: &Wreck, t: f32) {
 
 /// Rock: dark body, a soft highlight to the upper left that stays put while
 /// it spins, shadowed craters, and the outline.
-fn draw_rock(look: &Look, rk: &Rock) {
+fn draw_rock(look: &Look, rk: &Rock, fx: &Fx) {
+    let light = fx.light_at(rk.b.x, rk.b.y, rk.b.r);
     if !crate::look::sprites() {
-        return draw_rock_vector(look, rk);
+        draw_rock_vector(look, rk);
+        if let Some(l) = light {
+            blast_lit_rock(look, rk, l);
+        }
+        return;
     }
     let tex = &look.rocks[crate::look::rock_art(rk.size, rk.veined, rk.id)];
     let flash = (rk.flash > 0.0).then_some(0.6);
@@ -539,6 +600,42 @@ fn draw_rock(look: &Look, rk: &Rock) {
         rock_tint(rk.veined, 1.0),
         flash,
     );
+    if let Some((dx, dy, k, rgb)) = light {
+        // The painted faces already carry their own shading: wash the whole
+        // rock in the blast's colour, and its near side a little more.
+        let size = area_fit(tex, rk.b.r as f32);
+        let (x, y) = (rk.b.x as f32 - size.x / 2.0, rk.b.y as f32 - size.y / 2.0);
+        let params = DrawTextureParams {
+            dest_size: Some(size),
+            rotation: rk.angle as f32,
+            ..Default::default()
+        };
+        look.additive(|| draw_texture_ex(tex, x, y, rgba(rgb, k as f32 * 0.55), params));
+        let r = rk.b.r as f32;
+        let p = v(rk.b.x + dx * rk.b.r * 0.45, rk.b.y + dy * rk.b.r * 0.45);
+        look.additive(|| look.glow(p.x, p.y, r * 0.6, rgb, false, k as f32 * 0.35));
+    }
+}
+
+/// An explosion's flash on a vector rock: the 1.6.0 lighting turned to
+/// face the blast, a bright rim on the edges toward it and a glow on that
+/// side, in the blast's colour.
+fn blast_lit_rock(look: &Look, rk: &Rock, (dx, dy, k, rgb): (f64, f64, f64, u32)) {
+    let xf = Xf::new(rk.b.x, rk.b.y, rk.angle);
+    let r = rk.b.r as f32;
+    let toward = vec2(dx as f32, dy as f32);
+    let k = k as f32;
+    let p = xf.o + toward * r * 0.35;
+    look.additive(|| look.glow(p.x, p.y, r * 0.75, rgb, false, k * 0.45));
+    let pts = shape_pts(&xf, &rk.shape, rk.b.r);
+    let n = pts.len();
+    for i in 0..n {
+        let (a, b) = (pts[i], pts[(i + 1) % n]);
+        let face = ((a + b) * 0.5 - xf.o).normalize_or_zero().dot(toward);
+        if face > 0.0 {
+            draw_line(a.x, a.y, b.x, b.y, 2.5, rgba(rgb, k * face));
+        }
+    }
 }
 
 /// The original vector rock (Art style: vector).
@@ -621,21 +718,24 @@ fn rock_tint(ore: bool, alpha: f32) -> Color {
 }
 
 /// Ship art is lit brighter than the field: dim it under the bloom
-/// threshold. A paint job (or an online slot's colours) washes it with
-/// the trim colour.
-pub(crate) fn ship_tint(paint: Option<(u32, u32)>) -> Color {
-    let base = Color::new(0.7, 0.72, 0.78, 1.0);
-    match paint {
-        Some((_, trim)) => mix_col(base, crate::look::hex(trim), 0.35),
-        None => base,
-    }
+/// threshold.
+pub(crate) fn ship_tint() -> Color {
+    Color::new(0.7, 0.72, 0.78, 1.0)
 }
 
-/// The player and rival art points up the image; the game's angle 0
-/// points along +x.
 /// A tug sprite's longest side, px (the drawn tug was about 48 long).
 const TUG_LEN: f32 = 52.0;
 
+/// Painted rivals, law, collectors and haulers are drawn this much larger
+/// than their old outlines, so they hold their own next to the tugs.
+pub(crate) const OTHER_SHIP_SCALE: f32 = 1.3;
+
+/// Painted salvage is drawn this much larger than its collision circle,
+/// so pieces are easy to spot against the rocks.
+pub(crate) const ITEM_SCALE: f32 = 1.15;
+
+/// The player and rival art points up the image; the game's angle 0
+/// points along +x.
 pub(crate) const NOSE_UP: f32 = std::f32::consts::FRAC_PI_2;
 
 /// A sprite size whose area matches the circle of radius `r` the
@@ -693,7 +793,86 @@ pub(crate) fn arc_pts(xf: &Xf, cx: f32, cy: f32, r: f32, a0: f32, a1: f32, n: us
         .collect()
 }
 
+/// An item in painted style; false for a type with no art (keycards),
+/// which then draws as vector. Rare pieces sit on a glow of their tint;
+/// the reactor's danger ring and the recorder's beacon still show.
+fn draw_item_sprite(look: &Look, it: &Item, t: f32) -> bool {
+    use crate::look::grade_art;
+    let art = &look.props;
+    let tex = match it.kind {
+        ItemType::Scrap => &art.scrap[grade_art(it.grade, 3)],
+        ItemType::Ore => &art.ore[grade_art(it.grade, 4)],
+        ItemType::Plate => &art.plate,
+        ItemType::Engine => &art.engine[grade_art(it.grade, 3)],
+        ItemType::Reactor => &art.reactor[grade_art(it.grade, 3)],
+        ItemType::Ingot => &art.ingot[grade_art(it.grade, 3)],
+        ItemType::Core => &art.rogue_core,
+        ItemType::Blackbox => &art.blackbox,
+        ItemType::Pod => &art.pod,
+        ItemType::Charge => {
+            let warn = it.fuse > 0.0 || it.hp.is_some_and(|hp| hp < 2.0);
+            crate::foes::charge(look, &Xf::new(it.b.x, it.b.y, it.angle), t, warn);
+            return true;
+        }
+        ItemType::Keycard => return false,
+    };
+    let c = v(it.b.x, it.b.y);
+    let r = it.b.r as f32;
+    if it.rare {
+        let rgb = it.tint.unwrap_or(col::STEEL);
+        look.additive(|| look.glow(c.x, c.y, r * 1.6 * ITEM_SCALE, rgb, false, 0.5));
+    }
+    // Plates have one picture for three grades: wash it in the grade's tint.
+    let mut tint = ship_tint();
+    if it.kind == ItemType::Plate {
+        if let Some(rgb) = it.tint {
+            tint = mix_col(tint, crate::look::hex(rgb), 0.3);
+        }
+    }
+    draw_sprite(
+        look,
+        tex,
+        c,
+        area_fit(tex, r * ITEM_SCALE),
+        it.angle as f32,
+        tint,
+        None,
+    );
+    match it.kind {
+        ItemType::Reactor if it.fuse > 0.0 || it.hp.is_some_and(|hp| hp < 3.0) => {
+            draw_circle_lines(c.x, c.y, r + 6.0, 2.0, crate::look::hex(col::DANGER));
+        }
+        ItemType::Core if (t * 19.0 + it.b.x as f32).sin() > -0.5 => {
+            look.additive(|| {
+                look.glow(
+                    c.x,
+                    c.y,
+                    9.0 + (t * 7.0).sin() * 3.0,
+                    col::DANGER,
+                    true,
+                    0.7,
+                )
+            });
+        }
+        ItemType::Blackbox => {
+            let p = Xf::new(it.b.x, it.b.y, it.angle).p(r * 0.8, -r * 0.7);
+            let lit = (t * 7.0).sin() > 0.3;
+            draw_circle(
+                p.x,
+                p.y,
+                2.5,
+                crate::look::hex(if lit { col::DANGER } else { 0x401510 }),
+            );
+        }
+        _ => {}
+    }
+    true
+}
+
 fn draw_item(look: &Look, it: &Item, t: f32, scale: f32) {
+    if crate::look::sprites() && draw_item_sprite(look, it, t) {
+        return;
+    }
     let xf = Xf::new(it.b.x, it.b.y, it.angle);
     let r = it.b.r as f32;
     match it.kind {
@@ -821,7 +1000,7 @@ fn draw_item(look: &Look, it: &Item, t: f32, scale: f32) {
         }
         ItemType::Charge => {
             let warn = it.fuse > 0.0 || it.hp.is_some_and(|hp| hp < 2.0);
-            crate::foes::charge(&xf, t, warn);
+            crate::foes::charge(look, &xf, t, warn);
         }
         ItemType::Ingot => {
             let c = it.tint.unwrap_or(col::ORE);
@@ -934,9 +1113,9 @@ fn draw_jumper(look: &Look, w: &World, j: &Jumper) {
             look,
             tex,
             v(j.b.x, j.b.y),
-            long_fit(tex, def.r as f32 * 2.4 * k),
+            long_fit(tex, def.r as f32 * 2.4 * k * OTHER_SHIP_SCALE),
             j.angle as f32 + NOSE_UP,
-            ship_tint(None),
+            ship_tint(),
             (j.flash > 0.0).then_some(0.6),
         );
     } else {
@@ -1123,6 +1302,16 @@ fn draw_cable(look: &Look, w: &World, p: usize) {
     }
 }
 
+/// The shield's colour. Painted ships keep their own colours, so the
+/// pilot's paint job (or online slot colour) goes on the shield instead;
+/// vector tugs wear their paint and keep the shield blue.
+fn shield_colour(paint: Option<(u32, u32)>, painted: bool) -> u32 {
+    match paint {
+        Some((_, trim)) if painted => trim,
+        _ => col::SHIELD,
+    }
+}
+
 /// Pilot `p`'s tug (drawTug with its mounted parts) and shield.
 fn draw_ship(look: &Look, w: &World, p: usize, t: f32, rng: &mut Rng, paint: Option<(u32, u32)>) {
     let s = &w.pilots[p].ship;
@@ -1142,6 +1331,7 @@ fn draw_ship(look: &Look, w: &World, p: usize, t: f32, rng: &mut Rng, paint: Opt
         missiles: Some(s.missiles),
         paint,
     };
+    let shield_rgb = shield_colour(paint, crate::look::sprites());
     if crate::look::sprites() {
         // Each pilot slot flies its own model; bought parts show in the shop.
         let art = &look.ships.players[crate::look::player_model(p)];
@@ -1152,7 +1342,7 @@ fn draw_ship(look: &Look, w: &World, p: usize, t: f32, rng: &mut Rng, paint: Opt
             v(s.b.x, s.b.y),
             long_fit(art, TUG_LEN),
             s.angle as f32 + NOSE_UP,
-            ship_tint(paint),
+            ship_tint(),
             st.flash.then_some(0.6),
         );
     } else {
@@ -1166,6 +1356,7 @@ fn draw_ship(look: &Look, w: &World, p: usize, t: f32, rng: &mut Rng, paint: Opt
         s.shield_flash,
         s.shield_delay_t,
         t,
+        shield_rgb,
     );
 }
 
@@ -1569,7 +1760,7 @@ pub fn render(sc: Scene) {
     }
     for wr in &w.wrecks {
         if visible(wr.b.x, wr.b.y, wr.b.r) {
-            draw_wreck(wr, t);
+            draw_wreck(sc.look, wr, t);
             let (x, y) = (wr.b.x as f32, (wr.b.y - wr.b.r * 0.8 - 14.0) as f32);
             if wr.freighter {
                 crate::foes::tag(sc.look, x, y, "DERELICT FREIGHTER", col::ORE, scale);
@@ -1581,7 +1772,7 @@ pub fn render(sc: Scene) {
     }
     for rk in &w.rocks {
         if visible(rk.b.x, rk.b.y, rk.b.r) {
-            draw_rock(sc.look, rk);
+            draw_rock(sc.look, rk, sc.fx);
         }
     }
     if sc.show_tug {
@@ -1845,7 +2036,7 @@ fn draw_partner(look: &Look, w: &World, t: f32, rng: &mut Rng, scale: f32) {
             v(p.b.x, p.b.y),
             long_fit(art, TUG_LEN * 0.8),
             p.angle as f32 + NOSE_UP,
-            ship_tint(None),
+            ship_tint(),
             None,
         );
     } else {
@@ -1883,6 +2074,36 @@ fn draw_pvp_mark(look: &crate::look::Look, w: &World, p: usize, scale: f32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// In painted style the chosen paint's trim colours the shield; with no
+    /// paint, or in vector style, the shield stays the shield colour.
+    #[test]
+    fn paint_colours_the_shield_in_painted_style() {
+        let paint = Some((0x2a2206, 0xffd23d));
+        assert_eq!(shield_colour(paint, true), 0xffd23d);
+        assert_eq!(shield_colour(paint, false), col::SHIELD);
+        assert_eq!(shield_colour(None, true), col::SHIELD);
+    }
+
+    /// Grades map onto their art in order, and a grade beyond the art
+    /// falls back to the last picture instead of panicking.
+    #[test]
+    fn grades_and_wrecks_pick_art_safely() {
+        use crate::look::{grade_art, wreck_art};
+        assert_eq!(
+            (0..4).map(|g| grade_art(g, 4)).collect::<Vec<_>>(),
+            [0, 1, 2, 3]
+        );
+        assert_eq!(grade_art(7, 3), 2);
+        assert_eq!(grade_art(0, 0), 0);
+        // A wreck keeps one piece; different wrecks spread over the set.
+        assert_eq!(wreck_art(1.234, 5), wreck_art(1.234, 5));
+        let seen: std::collections::HashSet<usize> =
+            (0..50).map(|i| wreck_art(i as f64 * 0.137, 5)).collect();
+        assert_eq!(seen.len(), 5);
+        assert!(wreck_art(-3.9, 5) < 5);
+        assert_eq!(wreck_art(2.0, 0), 0);
+    }
 
     /// The first five pilot slots all fly different models, and later
     /// slots take turns with them.
