@@ -106,6 +106,7 @@ enum Voice {
         /// Low-pass cutoff in Hz (0 = none), and its filter.
         cut: f32,
         bq: Biquad,
+        place: Place,
     },
     Noise {
         dur: f32,
@@ -113,7 +114,90 @@ enum Voice {
         t: f32,
         bq: Biquad,
         music: bool,
+        place: Place,
     },
+}
+
+/// Where an effect is heard from: its stereo pan (-1 left .. 1 right) and,
+/// for a distant one, a low-pass cutoff in Hz that muffles it (0 = none).
+#[derive(Clone, Copy, Default)]
+struct Place {
+    pan: f32,
+    muffle: f32,
+    bq: Biquad,
+}
+
+impl Place {
+    /// Equal-power left and right gains, 1 each when centred.
+    fn gains(&self) -> (f32, f32) {
+        let a = (self.pan.clamp(-1.0, 1.0) + 1.0) * std::f32::consts::FRAC_PI_4;
+        (
+            a.cos() * std::f32::consts::SQRT_2,
+            a.sin() * std::f32::consts::SQRT_2,
+        )
+    }
+
+    fn run(&mut self, x: f32) -> f32 {
+        if self.muffle > 0.0 {
+            self.bq.run(x)
+        } else {
+            x
+        }
+    }
+}
+
+/// A stereo feedback echo on the effects bus: a little in open space, more
+/// near the carrier's and the refinery's hulls. The two sides repeat at
+/// different times so the tail spreads wide.
+struct Echo {
+    l: Vec<f32>,
+    r: Vec<f32>,
+    i: usize,
+    dl: usize,
+    dr: usize,
+    /// Wet level and its target.
+    wet: f32,
+    wet_to: f32,
+    /// One-pole low-pass state on each feedback path: repeats get darker.
+    lp: (f32, f32),
+}
+
+/// Seconds before each side's first repeat, and how much each repeat keeps.
+const ECHO_L: f32 = 0.27;
+const ECHO_R: f32 = 0.34;
+const ECHO_FEEDBACK: f32 = 0.38;
+/// The music's level under a radio line.
+const DUCK: f32 = 0.45;
+
+impl Echo {
+    fn new(sr: f32) -> Echo {
+        let n = (sr * 0.5) as usize;
+        Echo {
+            l: vec![0.0; n],
+            r: vec![0.0; n],
+            i: 0,
+            dl: ((sr * ECHO_L) as usize).min(n - 1),
+            dr: ((sr * ECHO_R) as usize).min(n - 1),
+            wet: 0.0,
+            wet_to: 0.0,
+            lp: (0.0, 0.0),
+        }
+    }
+
+    /// Feeds (l, r) in and returns the echo to add to the mix.
+    fn run(&mut self, l: f32, r: f32, dt: f32) -> (f32, f32) {
+        self.wet += (self.wet_to - self.wet) * (1.0 - (-dt / 0.5).exp());
+        let n = self.l.len();
+        let el = self.l[(self.i + n - self.dl) % n];
+        let er = self.r[(self.i + n - self.dr) % n];
+        // Repeats cross sides a little and lose their top end.
+        self.lp.0 += (el - self.lp.0) * 0.35;
+        self.lp.1 += (er - self.lp.1) * 0.35;
+        self.l[self.i] = l + (self.lp.0 * 0.8 + self.lp.1 * 0.2) * ECHO_FEEDBACK;
+        self.r[self.i] = r + (self.lp.1 * 0.8 + self.lp.0 * 0.2) * ECHO_FEEDBACK;
+        self.i = (self.i + 1) % n;
+        (el * self.wet, er * self.wet)
+    }
 }
 
 enum Cmd {
@@ -124,9 +208,13 @@ enum Cmd {
     Mute(bool),
     /// Music bus target gain (glides with a 0.3 s time constant).
     MusicGain(f32),
-    /// Field ambience levels (0 to 1): the energy wall's hum and the
-    /// radiation crackle.
-    Ambience(f32, f32),
+    /// Field ambience levels (0 to 1): the energy wall's hum, the
+    /// radiation crackle, rock scraping on rock, and the carrier's bay drone.
+    Ambience([f32; 4]),
+    /// The player's volume sliders (0 to 1): master, effects, music, voice.
+    Volumes([f32; 4]),
+    /// How much echo the effects get (0 to 1).
+    Echo(f32),
 }
 
 /// RBJ cookbook biquad, configured the way WebAudio's BiquadFilterNode is
@@ -239,17 +327,28 @@ impl Noise {
 /// The field's ambient loops. The energy wall hums: two low saws a little
 /// apart, so they beat, under a low-pass. Radiation crackles: a Geiger
 /// counter's random clicks of high-passed noise, faster the deeper you are.
+/// Rock grinding on rock is band-passed noise broken into grains. The
+/// carrier's bay drones: two low sines on a slow swell.
 #[derive(Default)]
 struct Ambience {
     hum: f32,
     hum_to: f32,
     crackle: f32,
     crackle_to: f32,
+    scrape: f32,
+    scrape_to: f32,
+    bay: f32,
+    bay_to: f32,
     phase: [f32; 3],
+    /// The bay drone's two tones and its swell.
+    bay_phase: [f32; 3],
     hum_bq: Biquad,
     click_bq: Biquad,
+    scrape_bq: Biquad,
     /// The current click's envelope.
     click: f32,
+    /// The scrape's grain envelope: a slow, random wobble.
+    grain: f32,
     ready: bool,
 }
 
@@ -259,10 +358,13 @@ impl Ambience {
         if !self.ready {
             self.hum_bq.set(Filter::Lowpass, 320.0, sr);
             self.click_bq.set(Filter::Highpass, 2400.0, sr);
+            self.scrape_bq.set(Filter::Bandpass, 700.0, sr);
             self.ready = true;
         }
         self.hum += (self.hum_to - self.hum) * (1.0 - (-dt / 0.3).exp());
         self.crackle += (self.crackle_to - self.crackle) * (1.0 - (-dt / 0.15).exp());
+        self.scrape += (self.scrape_to - self.scrape) * (1.0 - (-dt / 0.08).exp());
+        self.bay += (self.bay_to - self.bay) * (1.0 - (-dt / 0.6).exp());
         let mut out = 0.0;
         if self.hum > 1e-4 {
             let mut x = 0.0;
@@ -279,6 +381,19 @@ impl Ambience {
         }
         self.click *= (-dt / 0.003).exp();
         out += self.click_bq.run(noise.next()) * self.click * self.crackle.sqrt() * 0.5;
+        let n = noise.next();
+        if self.scrape > 1e-4 {
+            self.grain += (n.abs() - self.grain) * 0.004;
+            out += self.scrape_bq.run(noise.next()) * self.scrape * (0.3 + 1.4 * self.grain) * 0.3;
+        }
+        if self.bay > 1e-4 {
+            for (p, f) in self.bay_phase.iter_mut().zip([41.2, 61.7, 0.25]) {
+                *p = (*p + f * dt).fract();
+            }
+            let swell = 0.7 + 0.3 * (self.bay_phase[2] * TAU).sin();
+            let x = (self.bay_phase[0] * TAU).sin() + 0.6 * (self.bay_phase[1] * TAU).sin();
+            out += x * swell * self.bay * 0.07;
+        }
         out
     }
 }
@@ -303,12 +418,20 @@ struct Mixer {
     music_gain: f32,
     music_gain_to: f32,
     ambience: Ambience,
+    /// Master, effects, music and voice volume (the sliders).
+    vol: [f32; 4],
+    /// How far the music is ducked under a radio line (1 = not at all).
+    duck: f32,
+    echo: Option<Echo>,
 }
 
 impl Mixer {
-    fn sample(&mut self) -> f32 {
+    /// One stereo frame, (left, right).
+    fn sample(&mut self) -> (f32, f32) {
         let dt = 1.0 / self.sr;
-        let mut s = 0.0;
+        // Effects in stereo; the music and the centred loops mono.
+        let (mut sl, mut sr) = (0.0, 0.0);
+        let mut c = 0.0;
         let mut m = 0.0;
         for v in &mut self.voices {
             match v {
@@ -322,6 +445,7 @@ impl Mixer {
                     music,
                     cut,
                     bq,
+                    place,
                 } => {
                     let lt = *t - o.delay;
                     *t += dt;
@@ -359,7 +483,10 @@ impl Mixer {
                     if *music {
                         m += x * env;
                     } else {
-                        s += x * env;
+                        let x = place.run(x * env);
+                        let (gl, gr) = place.gains();
+                        sl += x * gl;
+                        sr += x * gr;
                     }
                 }
                 Voice::Noise {
@@ -368,6 +495,7 @@ impl Mixer {
                     t,
                     bq,
                     music,
+                    place,
                 } => {
                     let lt = *t - o.delay;
                     *t += dt;
@@ -387,7 +515,10 @@ impl Mixer {
                     if *music {
                         m += x;
                     } else {
-                        s += x;
+                        let x = place.run(x);
+                        let (gl, gr) = place.gains();
+                        sl += x * gl;
+                        sr += x * gr;
                     }
                 }
             }
@@ -406,28 +537,42 @@ impl Mixer {
             self.eng_bq
                 .set(Filter::Lowpass, self.eng_cut.max(20.0), self.sr);
         }
-        s += self.eng_bq.run(self.noise.next()) * self.eng_gain;
-        s += self.ambience.next(&mut self.noise, self.sr);
+        c += self.eng_bq.run(self.noise.next()) * self.eng_gain;
+        c += self.ambience.next(&mut self.noise, self.sr);
+        let [master, sfx, music, voice] = self.vol;
+        // Only one-shot effects echo; the steady loops would turn to mush.
+        let sample_rate = self.sr;
+        let echo = self.echo.get_or_insert_with(|| Echo::new(sample_rate));
+        let (el, er) = echo.run(sl, sr, dt);
+        sl = (sl + el + c) * sfx;
+        sr = (sr + er + c) * sfx;
         self.music_gain += (self.music_gain_to - self.music_gain) * (1.0 - (-dt / 0.3).exp());
-        s += m * self.music_gain;
+        // The music dips under a radio line so the words come through.
+        let duck_to = if self.speech.is_some() { DUCK } else { 1.0 };
+        let tau = if duck_to < self.duck { 0.08 } else { 0.6 };
+        self.duck += (duck_to - self.duck) * (1.0 - (-dt / tau).exp());
+        let mut mid = m * self.music_gain * self.duck * music;
         if let Some(speech) = &mut self.speech {
             match speech.sample(self.sr) {
-                Some(sample) => s += sample,
+                Some(sample) => mid += sample * voice,
                 None => self.speech = None,
             }
         }
 
         if self.muted {
-            return 0.0;
+            return (0.0, 0.0);
         }
-        self.compress(s * MASTER_VOLUME)
+        let g = MASTER_VOLUME * master;
+        self.compress((sl + mid) * g, (sr + mid) * g)
     }
 
     /// DynamicsCompressor(threshold -14 dB, knee 10, ratio 4, attack 3 ms,
     /// release 150 ms), as a simple peak-following compressor.
-    fn compress(&mut self, x: f32) -> f32 {
+    /// Linked across the two sides: the louder one sets the gain for both,
+    /// so the stereo picture doesn't shift as it squashes.
+    fn compress(&mut self, l: f32, r: f32) -> (f32, f32) {
         let (thr, knee, ratio) = (-14.0f32, 10.0f32, 4.0f32);
-        let lvl = 20.0 * x.abs().max(1e-6).log10();
+        let lvl = 20.0 * l.abs().max(r.abs()).max(1e-6).log10();
         let over = lvl - thr;
         let want = if over <= -knee / 2.0 {
             0.0
@@ -439,7 +584,34 @@ impl Mixer {
         };
         let tau = if want > self.comp_db { 0.003 } else { 0.15 };
         self.comp_db += (want - self.comp_db) * (1.0 - (-1.0 / (self.sr * tau)).exp());
-        (x * 10f32.powf(-self.comp_db / 20.0)).clamp(-1.0, 1.0)
+        let g = 10f32.powf(-self.comp_db / 20.0);
+        ((l * g).clamp(-1.0, 1.0), (r * g).clamp(-1.0, 1.0))
+    }
+
+    fn new(sr: f32, rx: Receiver<Cmd>) -> Mixer {
+        let mut eng_bq = Biquad::default();
+        eng_bq.set(Filter::Lowpass, 400.0, sr);
+        Mixer {
+            sr,
+            rx,
+            voices: Vec::new(),
+            speech: None,
+            noise: Noise(0x1234_5678),
+            muted: false,
+            eng_gain: 0.0,
+            eng_gain_to: 0.0,
+            eng_cut: 400.0,
+            eng_cut_to: 400.0,
+            eng_bq,
+            eng_n: 0,
+            comp_db: 0.0,
+            music_gain: 0.0,
+            music_gain_to: 0.0,
+            ambience: Ambience::default(),
+            vol: [1.0; 4],
+            duck: 1.0,
+            echo: None,
+        }
     }
 
     fn drain(&mut self) {
@@ -447,6 +619,10 @@ impl Mixer {
             match cmd {
                 Cmd::Speech(speech) => self.speech = Some(speech),
                 Cmd::Play(mut v) => {
+                    let (Voice::Tone { place, .. } | Voice::Noise { place, .. }) = &mut v;
+                    if place.muffle > 0.0 {
+                        place.bq.set(Filter::Lowpass, place.muffle, self.sr);
+                    }
                     match &mut v {
                         Voice::Noise { o, bq, .. } => bq.set(o.filter, o.freq, self.sr),
                         Voice::Tone { cut, bq, .. } if *cut > 0.0 => {
@@ -457,9 +633,14 @@ impl Mixer {
                     self.voices.push(v);
                 }
                 Cmd::MusicGain(g) => self.music_gain_to = g,
-                Cmd::Ambience(hum, crackle) => {
-                    self.ambience.hum_to = hum;
-                    self.ambience.crackle_to = crackle;
+                Cmd::Volumes(v) => self.vol = v,
+                Cmd::Echo(wet) => {
+                    let sr = self.sr;
+                    self.echo.get_or_insert_with(|| Echo::new(sr)).wet_to = wet;
+                }
+                Cmd::Ambience([hum, crackle, scrape, bay]) => {
+                    let a = &mut self.ambience;
+                    (a.hum_to, a.crackle_to, a.scrape_to, a.bay_to) = (hum, crackle, scrape, bay);
                 }
                 Cmd::Thrust(g, c) => {
                     self.eng_gain_to = g;
@@ -482,10 +663,16 @@ pub struct Audio {
     /// Scale on the next effect's volume (1 normally; less for another
     /// player's sound heard from a distance, see `sfx_at`).
     sfx_scale: f32,
+    /// Where the next effect is heard from (centred normally; see `sfx_from`).
+    place: Place,
+    /// The volume sliders, kept to re-send to a reopened device.
+    volumes: [f32; 4],
     /// Seconds of game time, for rate-limiting the cargo rattle.
     clock: f64,
     last_rattle: f64,
     rng: Noise,
+    /// When the cable last creaked (see `set_field`).
+    last_creak: f64,
     /// Why audio is off, if it is.
     pub error: Option<String>,
 }
@@ -509,8 +696,11 @@ impl Audio {
             reopen_at: 0.0,
             muted: false,
             sfx_scale: 1.0,
+            volumes: [1.0; 4],
+            place: Place::default(),
             clock: 0.0,
             last_rattle: -1.0,
+            last_creak: -1.0,
             rng: Noise(0x9e37_79b9),
             error,
         }
@@ -529,8 +719,10 @@ impl Audio {
             self.tx = Some(tx);
             self._stream = Some(stream);
             self.error = None;
-            // A new mixer starts unmuted. Music and engine levels are re-sent anyway.
+            // A new mixer starts unmuted at full volume. Music and engine
+            // levels are re-sent anyway.
             self.send(Cmd::Mute(self.muted));
+            self.send(Cmd::Volumes(self.volumes));
         }
     }
 
@@ -611,6 +803,7 @@ impl Audio {
             music: false,
             cut: 0.0,
             bq: Biquad::default(),
+            place: self.place,
         }));
     }
 
@@ -633,6 +826,7 @@ impl Audio {
             music: true,
             cut: cutoff,
             bq: Biquad::default(),
+            place: Place::default(),
         }));
     }
 
@@ -657,6 +851,7 @@ impl Audio {
             music: true,
             cut: 0.0,
             bq: Biquad::default(),
+            place: Place::default(),
         }));
     }
 
@@ -674,6 +869,7 @@ impl Audio {
             t: 0.0,
             bq: Biquad::default(),
             music: true,
+            place: Place::default(),
         }));
     }
 
@@ -693,18 +889,40 @@ impl Audio {
             t: 0.0,
             bq: Biquad::default(),
             music: false,
+            place: self.place,
         }));
     }
 
-    /// The field ambience: `hum` for the energy wall and `crackle` for
-    /// radiation, each 0 (silent) to 1 (loudest).
-    pub fn set_ambience(&self, hum: f64, crackle: f64) {
-        let (hum, crackle) = if self.muted {
-            (0.0, 0.0)
+    /// The field's sounds for this frame: its four loops, and now and then
+    /// a creak from a taut cable (more often the harder it pulls).
+    pub fn set_field(&mut self, f: FieldSound) {
+        let levels = if self.muted {
+            [0.0; 4]
         } else {
-            (hum.clamp(0.0, 1.0) as f32, crackle.clamp(0.0, 1.0) as f32)
+            [f.hum, f.crackle, f.scrape, f.bay].map(|x| x.clamp(0.0, 1.0) as f32)
         };
-        self.send(Cmd::Ambience(hum, crackle));
+        self.send(Cmd::Ambience(levels));
+        let taut = ((f.tension - CREAK_TENSION) / (1.0 - CREAK_TENSION)).clamp(0.0, 1.0) as f32;
+        if taut > 0.0
+            && self.clock - self.last_creak > CREAK_GAP
+            && self.rand(0.0, 1.0) < 0.02 + taut * 0.08
+        {
+            self.last_creak = self.clock;
+            let f0 = self.rand(150.0, 210.0);
+            self.tone(
+                f0,
+                0.35,
+                ToneOpts {
+                    wave: Wave::Triangle,
+                    vol: 0.025 + 0.03 * taut,
+                    slide: 0.8,
+                    attack: 0.03,
+                    vib: 25.0,
+                    vib_rate: 11.0,
+                    ..TONE
+                },
+            );
+        }
     }
 
     /// The engine loop: heavy loads lower the pitch; sputters cut out.
@@ -724,6 +942,30 @@ impl Audio {
         self.sfx_scale = gain.clamp(0.0, 1.0);
         self.sfx(s);
         self.sfx_scale = 1.0;
+    }
+
+    /// Play one effect from a place: `pan` from -1 (left) to 1 (right),
+    /// `muffle` a low-pass cutoff in Hz for a distant one (0 = clear), and
+    /// `gain` its volume as in `sfx_at`.
+    pub fn sfx_from(&mut self, s: Sfx, gain: f32, pan: f32, muffle: f32) {
+        self.place = Place {
+            pan,
+            muffle,
+            bq: Biquad::default(),
+        };
+        self.sfx_at(s, gain);
+        self.place = Place::default();
+    }
+
+    /// The volume sliders, each 0 to 1: master, effects, music, voice.
+    pub fn set_volumes(&mut self, v: [f32; 4]) {
+        self.volumes = v.map(|x| x.clamp(0.0, 1.0));
+        self.send(Cmd::Volumes(self.volumes));
+    }
+
+    /// How much echo the effects get, 0 (none) to 1.
+    pub fn set_echo(&self, wet: f32) {
+        self.send(Cmd::Echo(wet.clamp(0.0, 1.0)));
     }
 
     /// Play one effect (Sound.sfx.*).
@@ -1109,6 +1351,42 @@ impl Audio {
                     },
                 );
             }
+            // EMP pulse: an electric zap down the scale; a ship caught in it
+            // answers with its engine winding down.
+            Sfx::Emp(caught) => {
+                self.tone(
+                    2400.0,
+                    0.4,
+                    ToneOpts {
+                        slide: 0.12,
+                        vib: 180.0,
+                        vib_rate: 60.0,
+                        ..t(Sawtooth, 0.05)
+                    },
+                );
+                self.noise(
+                    0.35,
+                    NoiseOpts {
+                        filter: Filter::Bandpass,
+                        sweep_to: 600.0,
+                        ..n(0.16, 4000.0)
+                    },
+                );
+                if caught {
+                    self.tone(
+                        900.0,
+                        1.2,
+                        ToneOpts {
+                            slide: 120.0 / 900.0,
+                            delay: 0.12,
+                            vib: 8.0,
+                            vib_rate: 6.0,
+                            attack: 0.05,
+                            ..t(Sine, 0.06)
+                        },
+                    );
+                }
+            }
             // Sentry drone shot: a small, high "tik".
             Sfx::SentryShot => self.tone(
                 2100.0,
@@ -1303,10 +1581,10 @@ impl Audio {
 /// The hum rises over the same stretch the energy wall brightens (from 900
 /// px to 120 px off the edge); the crackle starts just outside a radiation
 /// cloud and is loudest at its heart.
-pub fn field_ambience(w: &cj_sim::World) -> (f64, f64) {
+pub fn field_ambience(w: &cj_sim::World) -> FieldSound {
     let s = &w.me().ship;
     if !s.alive {
-        return (0.0, 0.0);
+        return FieldSound::default();
     }
     let (x, y) = (s.b.x, s.b.y);
     let edge = (x - w.edge_lo)
@@ -1323,7 +1601,106 @@ pub fn field_ambience(w: &cj_sim::World) -> (f64, f64) {
             (c.t / 3.0).min(1.0) * (1.0 - smoothstep(r * 0.2, r + 120.0, d))
         })
         .fold(0.0, f64::max);
-    (hum, crackle)
+    // Rocks grinding: each touching pair near the tug (and your own cargo
+    // dragging on a rock) adds by how fast the two slide past each other.
+    let touching = |a: &cj_sim::entities::Body, b: &cj_sim::entities::Body| {
+        let d = (a.x - b.x).hypot(a.y - b.y);
+        (d <= a.r + b.r + 2.0).then(|| (a.vx - b.vx).hypot(a.vy - b.vy))
+    };
+    let near: Vec<_> = w
+        .rocks
+        .iter()
+        .filter(|r| !r.dead && (r.b.x - x).hypot(r.b.y - y) < SCRAPE_REACH)
+        .map(|r| r.b)
+        .collect();
+    let mut scrape = 0.0;
+    for (i, a) in near.iter().enumerate() {
+        let fade = 1.0 - (a.x - x).hypot(a.y - y) / SCRAPE_REACH;
+        for b in &near[i + 1..] {
+            scrape += touching(a, b).map_or(0.0, |v| (v / 200.0).min(1.0) * fade);
+        }
+    }
+    let mine = &w.me().chain;
+    for it in w.items.iter().filter(|it| mine.contains(&it.id)) {
+        for r in &near {
+            scrape += touching(&it.b, r).map_or(0.0, |v| (v / 200.0).min(1.0));
+        }
+    }
+    let bay = (cj_sim::consts::CARRIER_X - x).hypot(cj_sim::consts::CARRIER_Y - y);
+    let tension = w
+        .items
+        .iter()
+        .filter(|it| mine.contains(&it.id))
+        .map(|it| it.tension)
+        .fold(0.0, f64::max);
+    FieldSound {
+        hum,
+        crackle,
+        scrape: scrape.min(1.0),
+        bay: 1.0 - smoothstep(300.0, 1400.0, bay),
+        tension,
+    }
+}
+
+/// What the field sounds like at the tug this frame, each 0 to 1 (see
+/// `field_ambience` and `Audio::set_field`).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct FieldSound {
+    /// The energy wall's hum.
+    pub hum: f64,
+    /// Radiation's crackle.
+    pub crackle: f64,
+    /// Rock grinding on rock, or on your cargo.
+    pub scrape: f64,
+    /// The carrier's bay drone.
+    pub bay: f64,
+    /// The tautest link of your cable.
+    pub tension: f64,
+}
+
+/// Rocks further than this from the tug aren't heard scraping, px.
+const SCRAPE_REACH: f64 = 900.0;
+/// Cable tension (0..1) above which it starts to creak, and the least time
+/// between creaks, in seconds.
+const CREAK_TENSION: f64 = 0.6;
+const CREAK_GAP: f64 = 0.45;
+
+/// Where an effect is heard from, as (pan, muffle) for `sfx_from`: panned
+/// by how far left or right of the listener it is, and muffled more the
+/// further away (clear within 500 px). A cannon shot without a place leans
+/// toward its barrel.
+pub fn place_of(s: Sfx, at: Option<(f32, f32)>, me: (f64, f64)) -> (f32, f32) {
+    let Some((x, y)) = at else {
+        return match s {
+            Sfx::Shoot(barrel) => (f32::from(barrel) * 0.15, 0.0),
+            _ => (0.0, 0.0),
+        };
+    };
+    let (dx, dy) = (f64::from(x) - me.0, f64::from(y) - me.1);
+    let pan = (dx / 700.0).clamp(-1.0, 1.0) as f32 * 0.85;
+    let d = dx.hypot(dy);
+    let muffle = if d < 500.0 {
+        0.0
+    } else {
+        // 12 kHz at 500 px down to 1.2 kHz at 2000 px and beyond.
+        let k = ((d - 500.0) / 1500.0).min(1.0);
+        (12_000.0 * (0.1f64).powf(k)) as f32
+    };
+    (pan, muffle)
+}
+
+/// How much echo the effects get where the viewed tug is: a little in
+/// open space, more close to the carrier's and the refinery's hulls.
+pub fn field_echo(w: &cj_sim::World) -> f32 {
+    let s = &w.me().ship.b;
+    let near =
+        |x: f64, y: f64, reach: f64| 1.0 - smoothstep(reach * 0.4, reach, (x - s.x).hypot(y - s.y));
+    let carrier = near(cj_sim::consts::CARRIER_X, cj_sim::consts::CARRIER_Y, 1100.0);
+    let refinery = w
+        .refinery
+        .as_ref()
+        .map_or(0.0, |r| near(r.b.x, r.b.y, 900.0));
+    (0.15 + 0.3 * carrier.max(refinery)) as f32
 }
 
 fn smoothstep(a: f64, b: f64, x: f64) -> f64 {
@@ -1345,24 +1722,7 @@ fn open(failed: &Arc<AtomicBool>) -> Result<(Sender<Cmd>, cpal::Stream), String>
     let format = supported.sample_format();
     let config: cpal::StreamConfig = supported.into();
     let (tx, rx) = channel();
-    let mixer = Mixer {
-        sr: config.sample_rate as f32,
-        rx,
-        voices: Vec::new(),
-        speech: None,
-        noise: Noise(0x1234_5678),
-        muted: false,
-        eng_gain: 0.0,
-        eng_gain_to: 0.0,
-        eng_cut: 400.0,
-        eng_cut_to: 400.0,
-        eng_bq: Biquad::default(),
-        eng_n: 0,
-        comp_db: 0.0,
-        music_gain: 0.0,
-        music_gain_to: 0.0,
-        ambience: Ambience::default(),
-    };
+    let mixer = Mixer::new(config.sample_rate as f32, rx);
     let stream = match format {
         cpal::SampleFormat::F32 => build::<f32>(&device, &config, mixer, failed.clone()),
         cpal::SampleFormat::I16 => build::<i16>(&device, &config, mixer, failed.clone()),
@@ -1383,16 +1743,28 @@ where
     T: cpal::SizedSample + cpal::FromSample<f32>,
 {
     let channels = usize::from(config.channels);
-    mixer.eng_bq.set(Filter::Lowpass, 400.0, mixer.sr);
     device
         .build_output_stream(
             *config,
             move |data: &mut [T], _| {
                 mixer.drain();
                 for frame in data.chunks_mut(channels) {
-                    let v = T::from_sample(mixer.sample());
-                    for out in frame.iter_mut() {
-                        *out = v;
+                    let (l, r) = mixer.sample();
+                    // Mono devices get both sides; extra channels (surround) the
+                    // mix of the two.
+                    let (l, r, both) = if channels == 1 {
+                        let m = T::from_sample((l + r) * 0.5);
+                        (m, m, m)
+                    } else {
+                        let both = T::from_sample((l + r) * 0.5);
+                        (T::from_sample(l), T::from_sample(r), both)
+                    };
+                    for (k, out) in frame.iter_mut().enumerate() {
+                        *out = match k {
+                            0 => l,
+                            1 => r,
+                            _ => both,
+                        };
                     }
                 }
             },
@@ -1410,6 +1782,138 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Rocks sliding against each other near the tug scrape; apart or far
+    /// away they don't. The carrier's bay drones close to it, and the
+    /// tautest link of your own cable is what creaks.
+    #[test]
+    fn rocks_scrape_the_bay_drones_and_the_cable_reports_its_tension() {
+        use cj_sim::entities::make_rock;
+        let mut w = cj_sim::World::new_shift(cj_sim::rng::Rng::seeded(5), (1280.0, 720.0));
+        w.rocks.clear();
+        w.clouds.clear();
+        let mid = (w.edge_lo + w.edge_hi) / 2.0;
+        let pl = w.view_pilot;
+        w.pilots[pl].ship.alive = true;
+        w.pilots[pl].ship.b.x = mid;
+        w.pilots[pl].ship.b.y = mid;
+        let mut rng = cj_sim::rng::Rng::seeded(6);
+        let mut a = make_rock(&mut rng, 2, mid + 200.0, mid, 60.0, 0.0, false);
+        let mut b = make_rock(&mut rng, 2, mid + 200.0, mid, -60.0, 0.0, false);
+        b.b.x = a.b.x + a.b.r + b.b.r;
+        w.rocks.push(a.clone());
+        w.rocks.push(b.clone());
+        let f = field_ambience(&w);
+        assert!(f.scrape > 0.3, "touching rocks scrape: {}", f.scrape);
+        // Pulled apart: silent.
+        a.b.x -= 50.0;
+        w.rocks[0] = a;
+        assert_eq!(field_ambience(&w).scrape, 0.0);
+        // Far beyond hearing: silent too.
+        w.rocks[0].b.x = b.b.x - b.b.r - w.rocks[0].b.r + 2.0 + 5_000.0;
+        w.rocks[1].b.x += 5_000.0;
+        assert_eq!(field_ambience(&w).scrape, 0.0);
+        // The bay drone near the carrier, none well away from it.
+        w.pilots[pl].ship.b.x = cj_sim::consts::CARRIER_X + 2000.0;
+        w.pilots[pl].ship.b.y = cj_sim::consts::CARRIER_Y;
+        assert!(field_ambience(&w).bay < 0.01);
+        w.pilots[pl].ship.b.x = cj_sim::consts::CARRIER_X;
+        w.pilots[pl].ship.b.y = cj_sim::consts::CARRIER_Y + 200.0;
+        assert!(field_ambience(&w).bay > 0.95);
+        // Cable tension comes from your own chain only.
+        let mut it = w.new_item(cj_sim::items::ItemType::Ore, mid, mid, 0.0, 0.0);
+        it.tension = 0.8;
+        let id = it.id;
+        w.items.push(it);
+        assert_eq!(field_ambience(&w).tension, 0.0);
+        w.pilots[pl].chain.push(id);
+        assert_eq!(field_ambience(&w).tension, 0.8);
+    }
+
+    /// The music dips while a radio line plays and comes back after it.
+    #[test]
+    fn music_ducks_under_a_radio_line() {
+        let (_tx, rx) = channel();
+        let sr = 8_000.0;
+        let mut m = Mixer::new(sr, rx);
+        assert_eq!(m.duck, 1.0);
+        // Half a second of (silent) speech at 24 kHz.
+        let generation = Arc::new(std::sync::atomic::AtomicU64::new(1));
+        m.speech = Some(crate::recordings::Playback::new(
+            vec![0.0; 12_000],
+            generation,
+            1,
+        ));
+        for _ in 0..(sr * 0.3) as usize {
+            m.sample();
+        }
+        assert!(m.duck < DUCK + 0.02, "ducked: {}", m.duck);
+        for _ in 0..(sr * 3.0) as usize {
+            m.sample();
+        }
+        assert!(m.speech.is_none() && m.duck > 0.98, "back: {}", m.duck);
+    }
+
+    /// A sound to the right pans right and one to the left pans left; far
+    /// ones are muffled, near ones clear; a placeless cannon shot leans
+    /// toward its barrel.
+    #[test]
+    fn placed_sounds_pan_by_side_and_muffle_with_distance() {
+        let me = (1000.0, 1000.0);
+        let (right, near) = place_of(Sfx::Boom, Some((1300.0, 1000.0)), me);
+        let (left, _) = place_of(Sfx::Boom, Some((700.0, 1000.0)), me);
+        assert!(
+            right > 0.3 && left < -0.3 && near == 0.0,
+            "{right} {left} {near}"
+        );
+        let (_, mid) = place_of(Sfx::Boom, Some((2000.0, 1000.0)), me);
+        let (_, far) = place_of(Sfx::Boom, Some((4000.0, 1000.0)), me);
+        assert!(mid > far && far >= 1199.0, "{mid} {far}");
+        assert_eq!(place_of(Sfx::Boom, None, me), (0.0, 0.0));
+        assert!(place_of(Sfx::Shoot(1), None, me).0 > 0.0);
+        assert!(place_of(Sfx::Shoot(-1), None, me).0 < 0.0);
+    }
+
+    /// Centred is full level both sides; hard left is silent on the right;
+    /// the power stays constant across the sweep.
+    #[test]
+    fn panning_keeps_equal_power() {
+        let g = |pan| {
+            Place {
+                pan,
+                ..Place::default()
+            }
+            .gains()
+        };
+        let (l, r) = g(0.0);
+        assert!((l - 1.0).abs() < 1e-5 && (r - 1.0).abs() < 1e-5);
+        let (l, r) = g(-1.0);
+        assert!(r.abs() < 1e-5 && (l * l - 2.0).abs() < 1e-4);
+        for p in [-0.7, -0.2, 0.4, 0.9] {
+            let (l, r) = g(p);
+            assert!((l * l + r * r - 2.0).abs() < 1e-4, "{p}");
+        }
+    }
+
+    /// A click comes back from the echo after each side's delay, darker and
+    /// quieter, and the echo stays silent when its level is zero.
+    #[test]
+    fn the_echo_repeats_a_click_on_each_side() {
+        let sr = 8_000.0;
+        let mut e = Echo::new(sr);
+        e.wet = 1.0;
+        e.wet_to = 1.0;
+        let out: Vec<(f32, f32)> = (0..8_000)
+            .map(|i| e.run(if i == 0 { 1.0 } else { 0.0 }, 0.0, 1.0 / sr))
+            .collect();
+        let first = |side: fn(&(f32, f32)) -> f32| out.iter().position(|o| side(o).abs() > 1e-3);
+        assert_eq!(first(|o| o.0), Some((sr * ECHO_L) as usize));
+        assert!(first(|o| o.1).unwrap() > (sr * ECHO_L) as usize);
+        assert!(out.iter().all(|o| o.0.abs() <= 1.0 && o.1.abs() <= 1.0));
+        let mut quiet = Echo::new(sr);
+        assert!((0..2_000)
+            .all(|i| quiet.run(if i == 0 { 1.0 } else { 0.0 }, 0.0, 1.0 / sr) == (0.0, 0.0)));
+    }
 
     /// The ambient loops are silent at zero and stay well inside full
     /// scale at full level.
@@ -1433,11 +1937,14 @@ mod tests {
         let mut w = cj_sim::World::new_shift(cj_sim::rng::Rng::seeded(4), (1280.0, 720.0));
         w.clouds.clear();
         let mid = (w.edge_lo + w.edge_hi) / 2.0;
+        // Clear of rocks and the carrier, so only the wall and radiation count.
+        w.rocks.clear();
         let at = |w: &mut cj_sim::World, x: f64| {
             w.pilots[w.view_pilot].ship.alive = true;
             w.pilots[w.view_pilot].ship.b.x = x;
             w.pilots[w.view_pilot].ship.b.y = mid;
-            field_ambience(w)
+            let f = field_ambience(w);
+            (f.hum, f.crackle)
         };
         assert_eq!(at(&mut w, mid), (0.0, 0.0));
         let hi = w.edge_hi;
@@ -1465,8 +1972,11 @@ mod tests {
             reopen_at: 0.0,
             muted: false,
             sfx_scale: 1.0,
+            volumes: [1.0; 4],
+            place: Place::default(),
             clock: 0.0,
             last_rattle: -1.0,
+            last_creak: -1.0,
             rng: Noise(1),
             error: None,
         };
@@ -1510,8 +2020,11 @@ mod tests {
             reopen_at: 0.0,
             muted: false,
             sfx_scale: 1.0,
+            volumes: [1.0; 4],
+            place: Place::default(),
             clock: 0.0,
             last_rattle: -1.0,
+            last_creak: -1.0,
             rng: Noise(1),
             error: None,
         };
@@ -1555,28 +2068,12 @@ mod tests {
     #[test]
     fn compressor_holds_a_loud_signal_under_full_scale() {
         let (_tx, rx) = channel();
-        let mut m = Mixer {
-            sr: 48_000.0,
-            rx,
-            voices: Vec::new(),
-            speech: None,
-            noise: Noise(1),
-            muted: false,
-            eng_gain: 0.0,
-            eng_gain_to: 0.0,
-            eng_cut: 400.0,
-            eng_cut_to: 400.0,
-            eng_bq: Biquad::default(),
-            eng_n: 0,
-            comp_db: 0.0,
-            music_gain: 0.0,
-            music_gain_to: 0.0,
-            ambience: Ambience::default(),
-        };
+        let mut m = Mixer::new(48_000.0, rx);
         let mut last = 0.0;
         for i in 0..48_000 {
             let x = (i as f32 * 440.0 / 48_000.0 * TAU).sin() * 3.0;
-            last = m.compress(x).abs().max(last * 0.999);
+            let (l, r) = m.compress(x, x * 0.5);
+            last = l.abs().max(r.abs()).max(last * 0.999);
         }
         assert!(last <= 1.0);
         assert!(m.comp_db > 6.0, "it is reducing gain: {} dB", m.comp_db);

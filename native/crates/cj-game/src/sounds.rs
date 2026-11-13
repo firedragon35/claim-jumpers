@@ -62,6 +62,8 @@ pub fn groups() -> Vec<(&'static str, Vec<Item>)> {
                 it("Salvage grinder", 0.8, one(Cue::Sfx(Sfx::Grind))),
                 it("Missile launch", 0.7, one(Cue::Sfx(Sfx::Missile))),
                 it("Missile hit", 0.7, one(Cue::Sfx(Sfx::MissileHit))),
+                it("EMP pulse", 0.6, one(Cue::Sfx(Sfx::Emp(false)))),
+                it("EMP, engines down", 1.5, one(Cue::Sfx(Sfx::Emp(true)))),
                 it(
                     "Sentry drones firing",
                     1.0,

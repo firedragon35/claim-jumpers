@@ -7,6 +7,27 @@ and the port uses [Semantic Versioning](https://semver.org/) as defined in
 
 ## [Unreleased]
 
+## [1.14.0] - 2026-11-13
+
+### Added
+- Sound comes from where it happens. Effects in the field are placed left or right of your tug, and distant ones are quieter and muffled. Online play hears the same.
+- Settings: volume for master, effects, music and voice (100, 75, 50, 25 or 0%), in a new Sound column. Saved in settings.json; older settings files load with everything at 100%.
+- An EMP pulse has its own electric zap, and a falling engine whine when it knocks out a ship's engines. Both are in the sound test.
+- The music dips while Marge or the cockpit is speaking, so the words come through.
+- More music: the field music moves through four chord progressions, eight bars each, and every belt plays in its own key. The menus have a calmer theme of their own. Short stings mark banking a load, a jackpot, a new wanted star and a boss crew arriving.
+- Space echo: effects ring a little in open space and more near the carrier's and the refinery's hulls.
+- Field sounds: rocks grinding against each other (and against your cargo), the carrier's bay drone as you come in, and a taut cable creaking.
+- Painted rocks and ships are lit in the world: a steady light from the upper left stays put while they turn, and an explosion now lights only the side of a painted rock that faces it.
+- A shockwave ripples out from big explosions and EMP pulses, bending the picture as it passes (with effects on; off with reduced motion).
+- Quiet Drift has ice and blue crystal rocks, and the Frontier exotic crystal rocks, among the usual ones. Ore-bearing rock keeps its own look.
+- Painted ships show their damage below 40% hull: the paint darkens, smoke drifts off them and sparks spit from the hull. Your tug and rivals both show it.
+- The keycard is painted to match the rest of the field.
+- A deeper, fainter layer of stars, and dust drifting just behind the field.
+- The tug's burning engine lights the stern of its painted hull.
+
+### Changed
+- Painted art is sharper when drawn small (it is now mipmapped), with less shimmer as it turns.
+
 ## [1.13.0] - 2026-11-13
 
 ### Changed

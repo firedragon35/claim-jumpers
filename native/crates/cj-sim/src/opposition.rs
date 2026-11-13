@@ -941,7 +941,7 @@ impl World {
         self.explosion_fx(mx, my, 200.0, Tint::Danger);
         self.shake = 18.0;
         self.emit(Event::HitStop(HITSTOP_BOSS));
-        self.sfx(Sfx::Boom);
+        self.sfx_from(Sfx::Boom, mx, my);
         self.emit(Event::Highlight {
             score: 1500.0,
             text: "Wrecked the Kessler jaws".to_owned(),
@@ -1090,7 +1090,7 @@ impl World {
         }
         for (x, y, t) in eats {
             self.burst(x, y, 12, t, 180.0);
-            self.sfx(Sfx::Crunch);
+            self.sfx_from(Sfx::Crunch, x, y);
         }
     }
 
@@ -1175,7 +1175,7 @@ impl World {
                 dmg: EBULLET_DAMAGE,
                 ..Bullet::default()
             });
-            self.sfx(Sfx::EnemyShot(dist.min(65535.0) as u16));
+            self.sfx_from(Sfx::EnemyShot(dist.min(65535.0) as u16), db.x, db.y);
             self.under_attack(p);
         }
     }
@@ -1198,7 +1198,7 @@ impl World {
         let it = self.new_item(ItemType::Scrap, b.x, b.y, vx, vy);
         self.items.push(it);
         self.explosion_fx(b.x, b.y, 70.0, Tint::Danger);
-        self.sfx(Sfx::Boom);
+        self.sfx_from(Sfx::Boom, b.x, b.y);
         self.count_kill(|k| k.drone += 1);
         self.radio(Radio::DroneKill, false, false);
     }
@@ -1468,7 +1468,7 @@ impl World {
                         spin: 0.0,
                         owner: id,
                     });
-                    self.sfx(Sfx::NetFire);
+                    self.sfx_from(Sfx::NetFire, cb.x, cb.y);
                     self.under_attack(p);
                 }
             }
@@ -1596,7 +1596,7 @@ impl World {
         let it = self.new_item(ItemType::Scrap, b.x, b.y, vx, vy);
         self.items.push(it);
         self.explosion_fx(b.x, b.y, 115.0, Tint::Collector);
-        self.sfx(Sfx::Boom);
+        self.sfx_from(Sfx::Boom, b.x, b.y);
         let Some(by) = self.blamed().filter(|_| !by_jaws) else {
             return;
         };
@@ -1988,7 +1988,7 @@ impl World {
                         swat,
                         ..Bullet::default()
                     });
-                    self.sfx(Sfx::StunShot(d.min(65535.0) as u16));
+                    self.sfx_from(Sfx::StunShot(d.min(65535.0) as u16), b.x, b.y);
                     self.under_attack(p);
                 }
                 // Cuffing: stay out of reach. The meter drains once clear.
@@ -2088,7 +2088,7 @@ impl World {
             self.items.push(it);
         }
         self.explosion_fx(b.x, b.y, 120.0, Tint::Law);
-        self.sfx(Sfx::Boom);
+        self.sfx_from(Sfx::Boom, b.x, b.y);
         // The department sends someone else, quickly.
         self.patrol_t = self.rng.range(25.0, 45.0);
         let Some(by) = self.blamed().filter(|_| !by_jaws) else {
@@ -2580,7 +2580,7 @@ impl World {
         }
         self.explosion_fx(mx, my, TORPEDO_SPLASH, Tint::Hazard);
         self.shake = (self.shake + 6.0).min(14.0);
-        self.sfx(Sfx::Boom);
+        self.sfx_from(Sfx::Boom, mx, my);
     }
 
     fn missile_blast(&mut self, k: usize) {
@@ -2593,7 +2593,7 @@ impl World {
             MISSILE_EMP_R
         };
         self.explosion_fx(x, y, 45.0, Tint::Hazard);
-        self.sfx(Sfx::MissileHit);
+        self.sfx_from(Sfx::MissileHit, x, y);
         self.emp_pulse(x, y, r);
     }
 
@@ -2601,6 +2601,7 @@ impl World {
     /// missile's own targets list is what counts as hostile, so the pilots'
     /// tugs, partners, the hauler and calm law or miners are never caught.
     pub(crate) fn emp_pulse(&mut self, x: f64, y: f64, r: f64) {
+        let mut caught = false;
         for t in self.missile_targets() {
             let Some(b) = self.target_body(t) else {
                 continue;
@@ -2638,9 +2639,11 @@ impl World {
             };
             if let Some(emp) = emp {
                 *emp = EMP_TIME;
+                caught = true;
             }
         }
         self.emit(Event::Emp { x, y, r });
+        self.sfx_from(Sfx::Emp(caught), x, y);
     }
 
     /* ------------------------------ Sentries ------------------------------ */
@@ -2824,7 +2827,7 @@ impl World {
                 owner: Some(id),
                 ..Bullet::default()
             });
-            self.sfx(Sfx::SentryShot);
+            self.sfx_from(Sfx::SentryShot, dx, dy);
         }
     }
 
@@ -2887,7 +2890,7 @@ impl World {
                 sentry: true,
                 ..Bullet::default()
             });
-            self.sfx(Sfx::SentryShot);
+            self.sfx_from(Sfx::SentryShot, dx, dy);
         }
     }
 
@@ -2905,7 +2908,7 @@ impl World {
         d.dead = true;
         let (x, y, rogue) = (d.x, d.y, d.rogue);
         self.explosion_fx(x, y, 40.0, Tint::Cable);
-        self.sfx(Sfx::MissileHit);
+        self.sfx_from(Sfx::MissileHit, x, y);
         let (vx, vy) = (self.rng.range(-40.0, 40.0), self.rng.range(-40.0, 40.0));
         let it = self.new_item(ItemType::Scrap, x, y, vx, vy);
         self.items.push(it);
@@ -3110,7 +3113,7 @@ impl World {
         let it = self.new_item(ItemType::Scrap, b.x, b.y, vx, vy);
         self.items.push(it);
         self.explosion_fx(b.x, b.y, 75.0, Tint::Miner);
-        self.sfx(Sfx::Boom);
+        self.sfx_from(Sfx::Boom, b.x, b.y);
         self.count_kill(|k| k.miner += 1);
         self.radio(Radio::MinerKill, false, false);
     }

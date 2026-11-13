@@ -27,7 +27,7 @@ impl World {
         cr.dead = true;
         let (x, y) = (cr.x, cr.y);
         self.burst(x, y, 10, Tint::Crab, 140.0);
-        self.sfx(Sfx::Chip);
+        self.sfx_from(Sfx::Chip, x, y);
     }
 
     /// Knock a crab loose with a velocity; it is dazed for a moment.

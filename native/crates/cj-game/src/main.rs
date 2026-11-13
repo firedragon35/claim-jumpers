@@ -874,6 +874,10 @@ impl App {
                 self.settings.hud_pct = self.settings.next_hud();
                 self.save_settings();
             }
+            Act::CycleVolume(k) => {
+                self.settings.volume[k] = self.settings.next_volume(k);
+                self.save_settings();
+            }
             Act::CycleCoop => {
                 self.settings.coop = self.settings.coop.next();
                 self.save_settings();
@@ -1310,6 +1314,7 @@ async fn main() {
             look::set_colorblind(app.settings.colorblind);
             look::set_sprites(app.settings.sprites);
             look::set_reduce_motion(app.settings.reduce_motion);
+            audio.set_volumes(app.settings.volume_gains());
             app.music.enabled = app.settings.music;
             controls.bind(&app.settings);
         }
@@ -1426,12 +1431,18 @@ async fn main() {
         }
 
         // The field's ambience plays only while flying.
-        let (hum, crackle) = if app.screen == Screen::Play {
+        let field = if app.screen == Screen::Play {
             audio::field_ambience(&app.world)
         } else {
-            (0.0, 0.0)
+            audio::FieldSound::default()
         };
-        audio.set_ambience(hum, crackle);
+        audio.set_field(field);
+        let echo = if app.screen == Screen::Play {
+            audio::field_echo(&app.world)
+        } else {
+            0.0
+        };
+        audio.set_echo(echo);
 
         // Draw the field, then the HUD or the screen's card.
         let dpi = screen_dpi_scale();
@@ -1783,17 +1794,28 @@ fn handle_events(
         }),
         _ => 1.0,
     };
-    let heard: Vec<(f32, Event)> = app
+    let heard: Vec<_> = app
         .world
         .events
         .iter()
-        .map(|n| (gain(n.to), n.event.clone()))
+        .map(|n| (gain(n.to), n.event.clone(), n.at))
         .collect();
-    for (g, e) in &heard {
+    for (g, e, at) in &heard {
         match e {
             Event::Sfx(s) => {
-                audio.sfx_at(*s, *g);
+                let (pan, muffle) = audio::place_of(*s, *at, (me.x, me.y));
+                audio.sfx_from(*s, *g, pan, muffle);
                 sm.sfx += 1;
+                // Your own milestones get a musical sting too.
+                let sting = match s {
+                    Sfx::Bank => Some(music::Sting::Bank),
+                    Sfx::Jackpot => Some(music::Sting::Jackpot),
+                    Sfx::WantedUp => Some(music::Sting::Wanted),
+                    _ => None,
+                };
+                if let Some(st) = sting.filter(|_| *g >= 1.0) {
+                    app.music.sting(audio, st);
+                }
             }
             Event::Thrust {
                 level,
@@ -1805,16 +1827,21 @@ fn handle_events(
                 force,
                 once,
                 text,
-            } => app.radio.line(
-                *key,
-                *force,
-                *once,
-                text.as_deref(),
-                app.world.t,
-                rng,
-                audio,
-                &mut app.voice,
-            ),
+            } => {
+                if *key == cj_sim::events::Radio::Boss {
+                    app.music.sting(audio, music::Sting::Boss);
+                }
+                app.radio.line(
+                    *key,
+                    *force,
+                    *once,
+                    text.as_deref(),
+                    app.world.t,
+                    rng,
+                    audio,
+                    &mut app.voice,
+                )
+            }
             // Online, nobody else's world freezes, so neither does yours.
             Event::HitStop(s) if !online => app.hitstop_t = app.hitstop_t.max(*s),
             Event::SlowMo(s) if !online => app.slow_t = app.slow_t.max(*s),

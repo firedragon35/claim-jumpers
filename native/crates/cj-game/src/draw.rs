@@ -296,10 +296,25 @@ struct Layer {
     stars: Vec<Star>,
 }
 
-/// Three parallax layers of twinkling stars over slow nebula clouds.
+/// Four parallax layers of twinkling stars over slow nebula clouds, and
+/// a sheet of dust drifting just behind the field.
 pub struct Stars {
     layers: Vec<Layer>,
+    /// Dust motes; `tw` is each one's drift speed, `ph` its drift heading.
+    dust: Vec<Star>,
 }
+
+/// Star layers, far to near: (parallax, size px, alpha, count). The far
+/// one is many faint pinpricks that barely move, for depth.
+const STAR_LAYERS: [(f32, f32, f32, usize); 4] = [
+    (0.03, 0.55, 0.22, 170),
+    (0.08, 0.7, 0.35, 130),
+    (0.2, 1.25, 0.6, 100),
+    (0.45, 1.8, 0.85, 70),
+];
+/// Dust parallax: just behind the field, so it slides past almost with it.
+const DUST_PARALLAX: f32 = 0.75;
+const DUST_COUNT: usize = 40;
 
 const STAR_TINTS: [u32; 6] = [0xdde5f3, 0xdde5f3, 0xdde5f3, 0xbcd4ff, 0xffe2b8, 0xffd0e4];
 const NEBULAE: [(f32, f32, f32, u32); 4] = [
@@ -311,26 +326,37 @@ const NEBULAE: [(f32, f32, f32, u32); 4] = [
 
 impl Stars {
     pub fn new(rng: &mut Rng) -> Stars {
-        let layers = [0.08f32, 0.2, 0.45]
+        let near = STAR_LAYERS.len() - 1;
+        let layers = STAR_LAYERS
             .iter()
             .enumerate()
-            .map(|(li, &f)| Layer {
+            .map(|(li, &(f, size, alpha, n))| Layer {
                 f,
-                size: 0.7 + li as f32 * 0.55,
-                alpha: 0.35 + li as f32 * 0.25,
-                stars: (0..130 - li * 30)
+                size,
+                alpha,
+                stars: (0..n)
                     .map(|_| Star {
                         x: rng.next() as f32,
                         y: rng.next() as f32,
                         rgb: STAR_TINTS[rng.index(STAR_TINTS.len())],
                         tw: rng.range(0.6, 2.2) as f32,
                         ph: rng.range(0.0, std::f64::consts::TAU) as f32,
-                        bright: li == 2 && rng.chance(0.12),
+                        bright: li == near && rng.chance(0.12),
                     })
                     .collect(),
             })
             .collect();
-        Stars { layers }
+        let dust = (0..DUST_COUNT)
+            .map(|_| Star {
+                x: rng.next() as f32,
+                y: rng.next() as f32,
+                rgb: if rng.chance(0.5) { 0x8a8478 } else { 0x6a7488 },
+                tw: rng.range(4.0, 12.0) as f32,
+                ph: rng.range(0.0, std::f64::consts::TAU) as f32,
+                bright: false,
+            })
+            .collect();
+        Stars { layers, dust }
     }
 
     /// Draw in screen space (logical pixels). `nebulae` draws the sprite
@@ -358,6 +384,16 @@ impl Stars {
                     });
                 }
             }
+        }
+        // Dust: soft motes drifting slowly on their own (held still with
+        // reduced motion), wrapping a margin beyond the view so they never pop.
+        let drift = if crate::look::reduce_motion() { 0.0 } else { t };
+        let m = 40.0;
+        for d in &self.dust {
+            let (dx, dy) = (d.ph.cos() * d.tw * drift, d.ph.sin() * d.tw * drift);
+            let x = (d.x * (w + m) * 3.0 - cam.x * DUST_PARALLAX + dx).rem_euclid(w + m) - m / 2.0;
+            let y = (d.y * (h + m) * 3.0 - cam.y * DUST_PARALLAX + dy).rem_euclid(h + m) - m / 2.0;
+            look.glow(x, y, 3.0 + d.tw * 0.5, d.rgb, false, 0.16);
         }
     }
 }
@@ -580,7 +616,7 @@ fn wreck_damage(xf: &Xf, wr: &Wreck, r: f32, t: f32) {
 
 /// Rock: dark body, a soft highlight to the upper left that stays put while
 /// it spins, shadowed craters, and the outline.
-fn draw_rock(look: &Look, rk: &Rock, fx: &Fx) {
+fn draw_rock(look: &Look, rk: &Rock, fx: &Fx, belt: cj_sim::field::Belt) {
     let light = fx.light_at(rk.b.x, rk.b.y, rk.b.r);
     if !crate::look::sprites() {
         draw_rock_vector(look, rk);
@@ -589,9 +625,14 @@ fn draw_rock(look: &Look, rk: &Rock, fx: &Fx) {
         }
         return;
     }
-    let tex = &look.rocks[crate::look::rock_art(rk.size, rk.veined, rk.id)];
+    let tex = match crate::look::belt_rock_art(belt, rk.size, rk.veined, rk.id) {
+        Some(i) => &look.belt_rocks[i],
+        None => &look.rocks[crate::look::rock_art(rk.size, rk.veined, rk.id)],
+    };
     let flash = (rk.flash > 0.0).then_some(0.6);
-    draw_sprite(
+    // The lit shader lights the side facing the blast; a soft glow on that
+    // side spills a little light past the rock's edge.
+    draw_sprite_lit(
         look,
         tex,
         v(rk.b.x, rk.b.y),
@@ -599,21 +640,12 @@ fn draw_rock(look: &Look, rk: &Rock, fx: &Fx) {
         rk.angle as f32,
         rock_tint(rk.veined, 1.0),
         flash,
+        light,
     );
     if let Some((dx, dy, k, rgb)) = light {
-        // The painted faces already carry their own shading: wash the whole
-        // rock in the blast's colour, and its near side a little more.
-        let size = area_fit(tex, rk.b.r as f32);
-        let (x, y) = (rk.b.x as f32 - size.x / 2.0, rk.b.y as f32 - size.y / 2.0);
-        let params = DrawTextureParams {
-            dest_size: Some(size),
-            rotation: rk.angle as f32,
-            ..Default::default()
-        };
-        look.additive(|| draw_texture_ex(tex, x, y, rgba(rgb, k as f32 * 0.55), params));
         let r = rk.b.r as f32;
-        let p = v(rk.b.x + dx * rk.b.r * 0.45, rk.b.y + dy * rk.b.r * 0.45);
-        look.additive(|| look.glow(p.x, p.y, r * 0.6, rgb, false, k as f32 * 0.35));
+        let p = v(rk.b.x + dx * rk.b.r * 0.6, rk.b.y + dy * rk.b.r * 0.6);
+        look.additive(|| look.glow(p.x, p.y, r * 0.5, rgb, false, k as f32 * 0.25));
     }
 }
 
@@ -723,6 +755,42 @@ pub(crate) fn ship_tint() -> Color {
     Color::new(0.7, 0.72, 0.78, 1.0)
 }
 
+/// Hull left (0..1) below which a painted ship shows its damage.
+const HURT_AT: f64 = 0.4;
+
+/// How badly a ship with `hull` (0..1) of its hull left shows its damage:
+/// 0 at `HURT_AT` and above, rising to 1 as the hull runs out.
+pub(crate) fn hurt(hull: f64) -> f32 {
+    (1.0 - hull.clamp(0.0, 1.0) / HURT_AT).max(0.0) as f32
+}
+
+/// A hurt ship's paint, scorched darker.
+fn hurt_tint(c: Color, hurt: f32) -> Color {
+    let k = 1.0 - 0.35 * hurt;
+    Color::new(c.r * k, c.g * k, c.b * k, c.a)
+}
+
+/// Smoke drifting off a hurt ship, and now and then a spark from its hull.
+/// `seed` keeps each ship's smoke out of step with the others'.
+fn draw_hurt(look: &Look, c: Vec2, len: f32, hurt: f32, t: f32, seed: u32) {
+    if hurt <= 0.0 {
+        return;
+    }
+    let s = seed as f32 * 1.618;
+    for i in 0..3 {
+        let p = (t * 0.7 + i as f32 / 3.0 + s).fract();
+        let a = s * 2.4 + i as f32 * 2.1;
+        let at = c + vec2(a.cos(), a.sin()) * len * (0.1 + 0.55 * p);
+        let r = len * (0.12 + 0.22 * p);
+        look.glow(at.x, at.y, r, 0x3a3f46, false, (1.0 - p) * 0.55 * hurt);
+    }
+    if (t * 6.0 + s).fract() < 0.12 + 0.2 * hurt {
+        let a = (t * 13.0 + s).floor() * 2.39;
+        let at = c + vec2(a.cos(), a.sin()) * len * 0.22;
+        look.additive(|| look.glow(at.x, at.y, len * 0.18, col::HAZARD, true, 0.9));
+    }
+}
+
 /// A tug sprite's longest side, px (the drawn tug was about 48 long).
 const TUG_LEN: f32 = 52.0;
 
@@ -760,16 +828,66 @@ pub(crate) fn draw_sprite(
     tint: Color,
     flash: Option<f32>,
 ) {
+    draw_sprite_lit(look, tex, c, size, angle, tint, flash, None);
+}
+
+/// [`draw_sprite`] with a blast's light on it too (see `Fx::light_at`).
+#[allow(clippy::too_many_arguments)]
+fn draw_sprite_lit(
+    look: &Look,
+    tex: &Texture2D,
+    c: Vec2,
+    size: Vec2,
+    angle: f32,
+    tint: Color,
+    flash: Option<f32>,
+    blast: Option<(f64, f64, f64, u32)>,
+) {
     let params = DrawTextureParams {
         dest_size: Some(size),
         rotation: angle,
         ..Default::default()
     };
     let (x, y) = (c.x - size.x / 2.0, c.y - size.y / 2.0);
-    draw_texture_ex(tex, x, y, tint, params.clone());
+    look.lit(angle, blast, || {
+        draw_texture_ex(tex, x, y, tint, params.clone())
+    });
     if let Some(a) = flash {
         look.additive(|| draw_texture_ex(tex, x, y, Color::new(1.0, 1.0, 1.0, a), params));
     }
+}
+
+/// The strongest shockwaves on screen for the composite: centre in 0..1
+/// of the view, ring radius and push in view heights. None with reduced motion.
+fn ripples(
+    fx: &Fx,
+    centre: Vec2,
+    z: f32,
+    (vw, vh): (f32, f32),
+) -> [[f32; 4]; crate::post::RIPPLES] {
+    let mut out = [[0.0; 4]; crate::post::RIPPLES];
+    if crate::look::reduce_motion() {
+        return out;
+    }
+    let mut waves: Vec<[f32; 4]> = fx
+        .ripples
+        .iter()
+        .map(|&(x, y, reach, life, max)| {
+            let (r, k) = crate::fx::ripple(reach, life, max);
+            let p = (v(x, y) - centre) * z;
+            [
+                0.5 + p.x / vw,
+                0.5 + p.y / vh,
+                r as f32 * z / vh,
+                k as f32 * 0.012,
+            ]
+        })
+        .collect();
+    waves.sort_by(|a, b| b[3].total_cmp(&a[3]));
+    for (o, w) in out.iter_mut().zip(waves) {
+        *o = w;
+    }
+    out
 }
 
 /// Fill a convex closed path (a rectangle, a box) as a triangle fan.
@@ -793,8 +911,8 @@ pub(crate) fn arc_pts(xf: &Xf, cx: f32, cy: f32, r: f32, a0: f32, a1: f32, n: us
         .collect()
 }
 
-/// An item in painted style; false for a type with no art (keycards),
-/// which then draws as vector. Rare pieces sit on a glow of their tint;
+/// An item in painted style; false for a type with no art, which then
+/// draws as vector. Rare pieces sit on a glow of their tint;
 /// the reactor's danger ring and the recorder's beacon still show.
 fn draw_item_sprite(look: &Look, it: &Item, t: f32) -> bool {
     use crate::look::grade_art;
@@ -814,7 +932,13 @@ fn draw_item_sprite(look: &Look, it: &Item, t: f32) -> bool {
             crate::foes::charge(look, &Xf::new(it.b.x, it.b.y, it.angle), t, warn);
             return true;
         }
-        ItemType::Keycard => return false,
+        ItemType::Keycard => {
+            // Blinking so it can be spotted, under the card.
+            let p = v(it.b.x, it.b.y);
+            let pulse = 10.0 + 5.0 * (t * 4.0).sin().abs();
+            look.additive(|| look.glow(p.x, p.y, pulse, col::CABLE, true, 1.0));
+            &art.keycard
+        }
     };
     let c = v(it.b.x, it.b.y);
     let r = it.b.r as f32;
@@ -1109,15 +1233,20 @@ fn draw_jumper(look: &Look, w: &World, j: &Jumper) {
             Variant::Gunship => &art.gunship,
             Variant::Brute => &art.brute,
         };
+        let len = def.r as f32 * 2.4 * k * OTHER_SHIP_SCALE;
+        // shortcut: a boss's extra hull isn't known here, so it smokes only
+        // below 40% of its variant's base hull; pass the real max if bosses get one.
+        let hurt = hurt(j.hp / def.hp);
         draw_sprite(
             look,
             tex,
             v(j.b.x, j.b.y),
-            long_fit(tex, def.r as f32 * 2.4 * k * OTHER_SHIP_SCALE),
+            long_fit(tex, len),
             j.angle as f32 + NOSE_UP,
-            ship_tint(),
+            hurt_tint(ship_tint(), hurt),
             (j.flash > 0.0).then_some(0.6),
         );
+        draw_hurt(look, v(j.b.x, j.b.y), len, hurt, w.t as f32, j.id);
     } else {
         let edge = if j.flash > 0.0 {
             col::TEXT
@@ -1336,15 +1465,18 @@ fn draw_ship(look: &Look, w: &World, p: usize, t: f32, rng: &mut Rng, paint: Opt
         // Each pilot slot flies its own model; bought parts show in the shop.
         let art = &look.ships.players[crate::look::player_model(p)];
         tug::draw_flame(look, &f, &st, rng);
+        let hurt = hurt(s.hp / w.pilots[p].mods.max_hp);
         draw_sprite(
             look,
             art,
             v(s.b.x, s.b.y),
             long_fit(art, TUG_LEN),
             s.angle as f32 + NOSE_UP,
-            ship_tint(),
+            hurt_tint(ship_tint(), hurt),
             st.flash.then_some(0.6),
         );
+        tug::nozzle_glow(look, &f, &st);
+        draw_hurt(look, v(s.b.x, s.b.y), TUG_LEN, hurt, t, p as u32);
     } else {
         tug::draw_tug(look, &f, &w.pilots[p].mods, &st, rng);
     }
@@ -1772,7 +1904,7 @@ pub fn render(sc: Scene) {
     }
     for rk in &w.rocks {
         if visible(rk.b.x, rk.b.y, rk.b.r) {
-            draw_rock(sc.look, rk, sc.fx);
+            draw_rock(sc.look, rk, sc.fx, w.belt);
         }
     }
     if sc.show_tug {
@@ -1875,7 +2007,8 @@ pub fn render(sc: Scene) {
     } else {
         (t * 60.0).floor() % 97.0
     };
-    sc.post.finish(sc.view, seed);
+    sc.post
+        .finish(sc.view, seed, ripples(sc.fx, centre, z, sc.view));
 
     // Screen-space overlays.
     screen_camera(sc.view);
@@ -2083,6 +2216,70 @@ mod tests {
         assert_eq!(shield_colour(paint, true), 0xffd23d);
         assert_eq!(shield_colour(paint, false), col::SHIELD);
         assert_eq!(shield_colour(None, true), col::SHIELD);
+    }
+
+    /// The star layers run far to near, each moving more and showing
+    /// fewer, bigger stars; the dust moves more than any star but less than
+    /// the field.
+    #[test]
+    fn star_layers_deepen_and_dust_sits_behind_the_field() {
+        let stars = Stars::new(&mut Rng::seeded(5));
+        for pair in stars.layers.windows(2) {
+            assert!(pair[0].f < pair[1].f && pair[0].size < pair[1].size);
+            assert!(pair[0].stars.len() > pair[1].stars.len());
+        }
+        let nearest = stars.layers.last().expect("layers").f;
+        assert!(nearest < DUST_PARALLAX && DUST_PARALLAX < 1.0);
+        assert_eq!(stars.dust.len(), DUST_COUNT);
+    }
+
+    /// Ships show no damage down to 40% hull, then more and more of it.
+    #[test]
+    fn ships_show_damage_below_forty_percent_hull() {
+        assert_eq!(hurt(1.0), 0.0);
+        assert_eq!(hurt(HURT_AT), 0.0);
+        assert!(hurt(0.3) > 0.0 && hurt(0.3) < hurt(0.1));
+        assert_eq!(hurt(0.0), 1.0);
+        assert_eq!(hurt(-5.0), 1.0);
+        assert!(hurt_tint(WHITE, 1.0).r < hurt_tint(WHITE, 0.0).r);
+    }
+
+    /// Quiet Drift and the Frontier draw some plain rocks with their own
+    /// art, always the same art for a rock, every size; ore-bearing rocks
+    /// and the other belts keep the usual art.
+    #[test]
+    fn some_belts_have_their_own_rocks() {
+        use crate::look::belt_rock_art;
+        use cj_sim::field::Belt;
+        for belt in [Belt::Quiet, Belt::Frontier] {
+            for size in 1..=3 {
+                let own = (0..40)
+                    .filter_map(|id| belt_rock_art(belt, size, false, id))
+                    .count();
+                assert_eq!(own, 20, "{belt:?} {size}");
+                assert_eq!(
+                    belt_rock_art(belt, size, false, 6),
+                    belt_rock_art(belt, size, false, 6)
+                );
+                assert!((0..40).all(|id| belt_rock_art(belt, size, true, id).is_none()));
+            }
+        }
+        for belt in [Belt::Hollis, Belt::Kessler, Belt::Cinder] {
+            assert!((0..40).all(|id| belt_rock_art(belt, 2, false, id).is_none()));
+        }
+    }
+
+    /// The painted keycard is a card: clear in its rounded corners, solid
+    /// in its middle, with a gold chip.
+    #[test]
+    fn the_keycard_is_painted_with_clear_corners() {
+        let img = crate::look::keycard_image();
+        assert_eq!((img.width, img.height), (128, 84));
+        assert_eq!(img.get_pixel(0, 0).a, 0.0);
+        assert_eq!(img.get_pixel(127, 83).a, 0.0);
+        assert_eq!(img.get_pixel(64, 50).a, 1.0);
+        let chip = img.get_pixel(25, 52);
+        assert!(chip.r > chip.b, "{chip:?}");
     }
 
     /// Grades map onto their art in order, and a grade beyond the art

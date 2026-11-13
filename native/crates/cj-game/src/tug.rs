@@ -98,6 +98,18 @@ pub fn draw_flame(look: &Look, f: &Frame, st: &TugState, rng: &mut Rng) {
     }
 }
 
+/// The burning engine lighting the painted hull's stern from over the
+/// sprite (the flame itself is drawn under it).
+pub fn nozzle_glow(look: &Look, f: &Frame, st: &TugState) {
+    if st.thrust <= 0.0 || st.sputtering {
+        return;
+    }
+    let flame = if st.burn { col::CABLE } else { col::HAZARD };
+    let g = f.p(-17.0, 0.0);
+    let a = 0.35 + 0.35 * st.thrust.min(1.0);
+    look.additive(|| look.glow(g.x, g.y, 13.0 * f.k, flame, false, a));
+}
+
 pub fn draw_tug(look: &Look, f: &Frame, m: &Mods, st: &TugState, rng: &mut Rng) {
     let k = f.k;
     let t = st.t;

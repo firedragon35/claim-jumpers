@@ -56,6 +56,8 @@ pub enum Act {
     SetEffects,
     SetSprites,
     CycleHud,
+    /// Step one Sound row's volume (index into `Settings::volume`).
+    CycleVolume(usize),
     CycleCoop,
     Rebind(crate::settings::Bind),
     ResetKeys,
@@ -2866,6 +2868,18 @@ pub fn settings(
         }
         // Tight spacing: eight rows must clear the Back button.
         ty += br.h + 4.0;
+    }
+    // Sound: the four volumes, between the toggles and the key map.
+    let (sx, mut sy) = (r.x + 330.0, y);
+    section(look, u, "Sound", sx, &mut sy);
+    for (k, (name, _)) in crate::settings::VOLUMES.iter().enumerate() {
+        let id = format!("set-vol-{k}");
+        let lbl = format!("{name}: {}%", s.volume[k]);
+        let (p, br) = u.button_at(look, &id, sx, sy, Style::Ghost, &lbl, true);
+        if p {
+            act = Some(Act::CycleVolume(k));
+        }
+        sy += br.h + 4.0;
     }
     let kx = r.x + 520.0;
     let kw = r.x + r.w - 36.0 - kx;

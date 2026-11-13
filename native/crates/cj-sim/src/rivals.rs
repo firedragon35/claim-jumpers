@@ -115,7 +115,11 @@ impl World {
                 ..Bullet::default()
             });
         }
-        self.sfx(Sfx::EnemyShot(d.min(f64::from(u16::MAX)) as u16));
+        self.sfx_from(
+            Sfx::EnemyShot(d.min(f64::from(u16::MAX)) as u16),
+            jb.x,
+            jb.y,
+        );
         if at_ship {
             self.under_attack(p);
         }

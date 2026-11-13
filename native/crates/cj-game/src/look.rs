@@ -2,6 +2,7 @@
 //! pieces the browser builds its look from (src/js/02-utilities.js and the
 //! top of src/js/17-rendering.js).
 
+use cj_sim::field::Belt;
 use macroquad::miniquad::{BlendFactor, BlendState, BlendValue, Equation};
 use macroquad::prelude::*;
 use std::cell::RefCell;
@@ -198,6 +199,39 @@ void main() {
     gl_FragColor = color * texture2D(Texture, uv);
 }"#;
 
+// Painted sprites lit in the world, not in the art: the sprite's own
+// turn puts each texel back in world space, so a steady key light from the
+// upper left stays put while the rock spins, and a blast lights only the
+// side that faces it.
+const LIT_FRAGMENT: &str = r#"#version 100
+precision mediump float;
+varying lowp vec4 color;
+varying lowp vec2 uv;
+uniform sampler2D Texture;
+uniform float Turn;
+uniform vec4 Key;
+uniform vec4 Blast;
+uniform vec4 BlastColor;
+void main() {
+    vec4 c = color * texture2D(Texture, uv);
+    vec2 o = (uv - 0.5) * 2.0;
+    float s = sin(Turn);
+    float k = cos(Turn);
+    vec2 w = vec2(o.x * k - o.y * s, o.x * s + o.y * k);
+    vec3 rgb = c.rgb * (1.0 + Key.z * dot(w, Key.xy));
+    float face = clamp(dot(w, Blast.xy) * 0.7 + 0.35, 0.0, 1.0);
+    rgb += (c.rgb * 1.6 + 0.25) * BlastColor.rgb * Blast.z * face;
+    gl_FragColor = vec4(rgb, c.a);
+}"#;
+
+/// The key light: toward the upper left (screen y points down), and how
+/// much brighter the lit edge is than the middle (the far edge as much darker).
+const KEY_LIGHT: [f32; 3] = [
+    -std::f32::consts::FRAC_1_SQRT_2,
+    -std::f32::consts::FRAC_1_SQRT_2,
+    0.22,
+];
+
 // Rock art from the owner's asset pack (see assets/sprites/README.md).
 macro_rules! rock_png {
     ($name:literal) => {
@@ -240,6 +274,32 @@ const ROCK_ART: [(u8, bool, &[u8]); 27] = [
 
 /// Which `Look::rocks` sprite draws a rock of this size and kind. The id
 /// picks among the variants, so a rock keeps its look as it tumbles.
+/// Rocks only some belts have: Quiet Drift's ice and blue crystal, the
+/// Frontier's exotic crystal. (Belt, size, PNG), sizes as in `ROCK_ART`.
+const BELT_ROCK_ART: [(Belt, u8, &[u8]); 7] = [
+    (Belt::Quiet, 3, rock_png!("large_d_ice_crystal")),
+    (Belt::Quiet, 2, rock_png!("medium_08_ice")),
+    (Belt::Quiet, 2, rock_png!("medium_04_blue_crystal")),
+    (Belt::Quiet, 1, rock_png!("small_05_blue_crystal")),
+    (Belt::Frontier, 3, rock_png!("large_e_exotic_crystal")),
+    (Belt::Frontier, 2, rock_png!("medium_05_exotic_crystal")),
+    (Belt::Frontier, 1, rock_png!("small_06_exotic_crystal")),
+];
+
+/// The belt's own art for a rock, if it gets some: every other plain rock
+/// in a belt that has its own; ore-bearing rock keeps its ore art so its
+/// value still reads at a glance. An index into `Look::belt_rocks`.
+pub fn belt_rock_art(belt: Belt, size: u8, ore: bool, id: u32) -> Option<usize> {
+    let size = size.clamp(1, 3);
+    if ore || id % 2 == 1 {
+        return None;
+    }
+    let fits: Vec<usize> = (0..BELT_ROCK_ART.len())
+        .filter(|&i| BELT_ROCK_ART[i].0 == belt && BELT_ROCK_ART[i].1 == size)
+        .collect();
+    (!fits.is_empty()).then(|| fits[(id / 2) as usize % fits.len()])
+}
+
 pub fn rock_art(size: u8, ore: bool, id: u32) -> usize {
     let size = size.clamp(1, 3);
     let fits =
@@ -285,8 +345,28 @@ pub struct ShipArt {
     pub hauler: Texture2D,
 }
 
+/// A painted sprite, with mipmaps: the art is ~512 px but drawn at ~50,
+/// and plain linear filtering would sample it too sparsely and shimmer.
 fn png(bytes: &[u8]) -> Texture2D {
-    Texture2D::from_file_with_format(bytes, Some(ImageFormat::Png))
+    mipmapped(Texture2D::from_file_with_format(
+        bytes,
+        Some(ImageFormat::Png),
+    ))
+}
+
+/// Gives `tex` mipmaps and trilinear filtering (see `png`).
+fn mipmapped(tex: Texture2D) -> Texture2D {
+    let id = tex.raw_miniquad_id();
+    // SAFETY: called on the main thread after the window exists, like every
+    // other texture call here; the id is this texture's own.
+    let gl = unsafe { get_internal_gl() };
+    gl.quad_context.texture_generate_mipmaps(id);
+    gl.quad_context.texture_set_min_filter(
+        id,
+        FilterMode::Linear,
+        macroquad::miniquad::MipmapFilterMode::Linear,
+    );
+    tex
 }
 
 impl ShipArt {
@@ -312,7 +392,58 @@ macro_rules! art_png {
 
 /// Sprites for everything besides rocks and ships: drones, cargo, wrecks
 /// and the two stations. Arrays run in grade order (see cj_sim::items).
+/// The keycard, painted in code (the pack has none): a teal card with a
+/// bevelled edge, a gold chip, a dark magnetic stripe and a lit status bar,
+/// lying along x. Fine grain keeps it from looking flat next to the art.
+pub fn keycard_image() -> Image {
+    let (w, h) = (128u16, 84u16);
+    let mut img = Image::gen_image_color(w, h, Color::new(0.0, 0.0, 0.0, 0.0));
+    let (fw, fh) = (f32::from(w), f32::from(h));
+    let corner = 12.0;
+    let teal = |k: f32| Color::new(0.07 + 0.08 * k, 0.2 + 0.14 * k, 0.26 + 0.14 * k, 1.0);
+    for y in 0..h {
+        for x in 0..w {
+            let (px, py) = (f32::from(x) + 0.5, f32::from(y) + 0.5);
+            // Distance outside the rounded rectangle (negative inside).
+            let qx = (px - fw / 2.0).abs() - (fw / 2.0 - corner);
+            let qy = (py - fh / 2.0).abs() - (fh / 2.0 - corner);
+            let out = qx.max(0.0).hypot(qy.max(0.0)) + qx.max(qy).min(0.0) - corner + 1.0;
+            if out > 1.0 {
+                continue;
+            }
+            let (u, v) = (px / fw, py / fh);
+            let mut c = teal(1.0 - v);
+            // Bevel: lit along the top and left, shaded along the bottom and right.
+            if out > -3.0 {
+                let lift = if u < 0.5 && v < 0.5 { 0.25 } else { -0.2 };
+                c = Color::new(c.r + lift, c.g + lift, c.b + lift, 1.0);
+            }
+            if (0.2..0.36).contains(&v) {
+                c = Color::new(0.04, 0.05, 0.06, 1.0);
+            }
+            if (0.12..0.34).contains(&u) && (0.48..0.76).contains(&v) {
+                let line = ((u - 0.12) * 40.0).fract() < 0.18 || ((v - 0.48) * 30.0).fract() < 0.2;
+                let gold = if line { 0.7 } else { 1.0 };
+                c = Color::new(0.85 * gold, 0.66 * gold, 0.28 * gold, 1.0);
+            }
+            if (0.45..0.86).contains(&u) && (0.8..0.87).contains(&v) {
+                c = Color::new(0.35, 0.95, 1.0, 1.0);
+            }
+            let grain = (((px * 12.9898 + py * 78.233).sin() * 43758.547).fract() - 0.5) * 0.04;
+            let a = (1.0 - out).clamp(0.0, 1.0);
+            img.set_pixel(
+                u32::from(x),
+                u32::from(y),
+                Color::new(c.r + grain, c.g + grain, c.b + grain, a),
+            );
+        }
+    }
+    img
+}
+
 pub struct PropArt {
+    /// Painted in code (see `keycard_image`).
+    pub keycard: Texture2D,
     pub security_drone: Texture2D,
     pub mining_drone: Texture2D,
     pub sentry: Texture2D,
@@ -379,6 +510,7 @@ impl PropArt {
             blackbox: png(art_png!("items/cargo_container_standard")),
             pod: png(art_png!("items/rare_cargo")),
             charge: png(art_png!("items/hazardous_material_container")),
+            keycard: mipmapped(Texture2D::from_image(&keycard_image())),
             wrecks: vec![
                 png(art_png!("wrecks/structural_frame")),
                 png(art_png!("wrecks/fuel_tank_leaking")),
@@ -409,10 +541,14 @@ pub struct Look {
     pub fonts: Fonts,
     /// Rock sprites, in `ROCK_ART` order (pick one with `rock_art`).
     pub rocks: Vec<Texture2D>,
+    /// In `BELT_ROCK_ART` order (see `belt_rock_art`).
+    pub belt_rocks: Vec<Texture2D>,
     pub ships: ShipArt,
     pub props: PropArt,
     /// Source × alpha added to the frame: canvas 'lighter'.
     additive: Material,
+    /// Painted sprites under the world's lights (see `LIT_FRAGMENT`).
+    lit: Material,
     /// Glow sprites per (colour, hot), built on first use like the browser's spriteCache.
     sprites: RefCell<HashMap<(u32, bool), Texture2D>>,
 }
@@ -437,14 +573,57 @@ impl Look {
             },
         )
         .expect("additive material compiles (checked in M0)");
+        let lit = load_material(
+            ShaderSource::Glsl {
+                vertex: VERTEX,
+                fragment: LIT_FRAGMENT,
+            },
+            MaterialParams {
+                uniforms: vec![
+                    UniformDesc::new("Turn", UniformType::Float1),
+                    UniformDesc::new("Key", UniformType::Float4),
+                    UniformDesc::new("Blast", UniformType::Float4),
+                    UniformDesc::new("BlastColor", UniformType::Float4),
+                ],
+                // A material starts with blending off; sprites need the usual alpha blend.
+                pipeline_params: PipelineParams {
+                    color_blend: Some(BlendState::new(
+                        Equation::Add,
+                        BlendFactor::Value(BlendValue::SourceAlpha),
+                        BlendFactor::OneMinusValue(BlendValue::SourceAlpha),
+                    )),
+                    ..Default::default()
+                },
+                textures: vec![],
+            },
+        )
+        .expect("lit material compiles");
         Look {
             fonts: Fonts::load(),
             rocks: ROCK_ART.iter().map(|(_, _, b)| png(b)).collect(),
+            belt_rocks: BELT_ROCK_ART.iter().map(|(_, _, b)| png(b)).collect(),
             ships: ShipArt::load(),
             props: PropArt::load(),
             additive,
+            lit,
             sprites: RefCell::new(HashMap::new()),
         }
+    }
+
+    /// Run `f` (one sprite turned by `turn`) under the key light and, if
+    /// given, a blast's light: (direction toward it x, y, strength, colour).
+    pub fn lit(&self, turn: f32, blast: Option<(f64, f64, f64, u32)>, f: impl FnOnce()) {
+        let m = &self.lit;
+        m.set_uniform("Turn", turn);
+        let [kx, ky, kz] = KEY_LIGHT;
+        m.set_uniform("Key", [kx, ky, kz, 0.0]);
+        let (bx, by, bk, rgb) = blast.unwrap_or((0.0, 0.0, 0.0, 0));
+        m.set_uniform("Blast", [bx as f32, by as f32, bk as f32, 0.0]);
+        let c = hex(rgb);
+        m.set_uniform("BlastColor", [c.r, c.g, c.b, 1.0]);
+        gl_use_material(m);
+        f();
+        gl_use_default_material();
     }
 
     /// Run `f` with additive blending.

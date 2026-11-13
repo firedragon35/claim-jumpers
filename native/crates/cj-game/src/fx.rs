@@ -70,6 +70,16 @@ pub struct Fx {
     /// Explosion flashes lighting the rocks around them: (x, y, reach, rgb,
     /// seconds left, seconds in all).
     pub lights: Vec<(f64, f64, f64, u32, f64, f64)>,
+    /// Shockwaves bending the frame (blasts and EMP pulses): (x, y, reach,
+    /// seconds left, seconds in all). See [`ripple`].
+    pub ripples: Vec<(f64, f64, f64, f64, f64)>,
+}
+
+/// A shockwave's ring radius and strength (0..1), `life` of `max` seconds
+/// left: it races out and slows as it reaches `reach`, fading as it goes.
+pub fn ripple(reach: f64, life: f64, max: f64) -> (f64, f64) {
+    let left = (life / max).clamp(0.0, 1.0);
+    (reach * (1.0 - left * left), left * left)
 }
 
 /// How far an explosion's flash reaches, as a multiple of its size.
@@ -85,6 +95,7 @@ impl Fx {
             trails: Default::default(),
             engine: Vec::new(),
             lights: Vec::new(),
+            ripples: Vec::new(),
         }
     }
 
@@ -307,6 +318,7 @@ impl Fx {
                 Event::Dust { x, y, r, tint } => self.dust(*x, *y, *r, tint_rgb(*tint)),
                 // An EMP pulse: an electric ring out to its reach, and a slower echo.
                 Event::Emp { x, y, r } => {
+                    self.ripples.push((*x, *y, *r, 0.6, 0.6));
                     self.add(*x, *y, 0.0, 0.0, 0.5, col::CABLE, 3.0, *r, Kind::Ring, 0.0);
                     self.add(
                         *x,
@@ -326,6 +338,10 @@ impl Fx {
                     let life = 0.25 + size / 400.0;
                     let light = (*x, *y, size * LIGHT_REACH, tint_rgb(*tint), life, life);
                     self.lights.push(light);
+                    // Only real blasts bend space, not every little pop.
+                    if *size >= 25.0 {
+                        self.ripples.push((*x, *y, size * 2.5, 0.45, 0.45));
+                    }
                     self.explosion(*x, *y, *size, tint_rgb(*tint))
                 }
                 Event::Popup { x, y, text, tint } => self.popups.push(Popup {
@@ -497,6 +513,10 @@ impl Fx {
             l.4 -= dt;
         }
         self.lights.retain(|l| l.4 > 0.0);
+        for r in &mut self.ripples {
+            r.3 -= dt;
+        }
+        self.ripples.retain(|r| r.3 > 0.0);
         for b in &mut self.beams {
             b.4 -= dt;
         }
@@ -525,6 +545,40 @@ mod tests {
         assert!(fx.light_at(1000.0, 0.0, 20.0).is_none());
         fx.update(1.0);
         assert!(fx.light_at(0.0, 0.0, 20.0).is_none());
+    }
+
+    /// A big blast and an EMP pulse each send out a shockwave that grows
+    /// to its reach while fading, then goes; a small pop sends none.
+    #[test]
+    fn blasts_and_emp_pulses_ripple_outward_and_fade() {
+        let mut fx = Fx::new(Rng::seeded(3));
+        let boom = |size| Event::Explosion {
+            x: 0.0,
+            y: 0.0,
+            size,
+            tint: cj_sim::events::Tint::Hazard,
+        };
+        fx.absorb([&boom(10.0)]);
+        assert!(fx.ripples.is_empty());
+        fx.absorb([
+            &boom(45.0),
+            &Event::Emp {
+                x: 0.0,
+                y: 0.0,
+                r: 160.0,
+            },
+        ]);
+        assert_eq!(fx.ripples.len(), 2);
+        let (r0, s0) = ripple(100.0, 0.5, 0.5);
+        let (r1, s1) = ripple(100.0, 0.25, 0.5);
+        let (r2, s2) = ripple(100.0, 0.0, 0.5);
+        assert!(
+            r0 < r1 && r1 < r2 && (r2 - 100.0).abs() < 1e-9,
+            "{r0} {r1} {r2}"
+        );
+        assert!(s0 > s1 && s1 > s2 && s2 == 0.0);
+        fx.update(1.0);
+        assert!(fx.ripples.is_empty());
     }
 
     /// The thruster trail grows while the engine burns, drops points older

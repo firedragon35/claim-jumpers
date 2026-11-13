@@ -426,7 +426,7 @@ impl World {
         self.wrecks[i].dead = true;
         self.explosion_fx(w.x, w.y, 160.0, Tint::Wreck);
         self.shake = 12.0;
-        self.sfx(Sfx::Boom);
+        self.sfx_from(Sfx::Boom, w.x, w.y);
     }
 
     /// Damage a rival. `by_item` is the mass of the cargo that hit it, if
@@ -563,7 +563,7 @@ impl World {
             self.items.push(it);
         }
         self.explosion_fx(x, y, 85.0, Tint::Jumper);
-        self.sfx(Sfx::Boom);
+        self.sfx_from(Sfx::Boom, x, y);
         if smashed {
             self.popup(x, y - 24.0, "SMASHED".to_owned(), Tint::Cable);
             self.radio(Radio::Smash, true, false);
@@ -774,7 +774,7 @@ impl World {
         }
         self.explosion_fx(x, y, radius, Tint::Reactor);
         self.shake = 22.0;
-        self.sfx(Sfx::Boom);
+        self.sfx_from(Sfx::Boom, x, y);
         self.emit(Event::Rumble {
             strength: 1.0,
             ms: 400.0,

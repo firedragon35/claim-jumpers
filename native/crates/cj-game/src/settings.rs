@@ -211,6 +211,9 @@ pub struct Settings {
     pub sprites: bool,
     /// HUD size in percent: one of HUD_SIZES.
     pub hud_pct: u16,
+    /// Master, effects, music and voice volume in percent: each one of
+    /// VOLUME_STEPS.
+    pub volume: [u8; 4],
     pub coop: Coop,
     pub voice: bool,
     /// Primary-key overrides by action, as codes.
@@ -226,6 +229,7 @@ impl Default for Settings {
             effects: true,
             sprites: true,
             hud_pct: 100,
+            volume: [100; 4],
             coop: Coop::Off,
             voice: true,
             keys: Vec::new(),
@@ -236,10 +240,37 @@ impl Default for Settings {
 /// The HUD sizes the Settings row cycles through, in percent.
 pub const HUD_SIZES: [u16; 3] = [100, 125, 150];
 
+/// The volume levels each Sound row cycles through, in percent: down from
+/// full, then back round.
+pub const VOLUME_STEPS: [u8; 5] = [100, 75, 50, 25, 0];
+
+/// The volume sliders' names, in `Settings::volume` order, and their keys
+/// in settings.json.
+pub const VOLUMES: [(&str, &str); 4] = [
+    ("Master", "volMaster"),
+    ("Effects", "volEffects"),
+    ("Music", "volMusic"),
+    ("Voice", "volVoice"),
+];
+
 impl Settings {
     /// The HUD's magnification (1.0 at 100%).
     pub fn hud_scale(&self) -> f32 {
         f32::from(self.hud_pct) / 100.0
+    }
+
+    /// Volume `k`'s next level, wrapping back to full.
+    pub fn next_volume(&self, k: usize) -> u8 {
+        let i = VOLUME_STEPS
+            .iter()
+            .position(|&p| p == self.volume[k])
+            .unwrap_or(0);
+        VOLUME_STEPS[(i + 1) % VOLUME_STEPS.len()]
+    }
+
+    /// The volumes as gains from 0 to 1, for `Audio::set_volumes`.
+    pub fn volume_gains(&self) -> [f32; 4] {
+        self.volume.map(|p| f32::from(p) / 100.0)
     }
 
     /// The next HUD size, wrapping back to 100%.
@@ -274,6 +305,16 @@ impl Settings {
             s.hud_pct = p;
         }
         s.voice = flag("voice").unwrap_or(s.voice);
+        for (k, (_, key)) in VOLUMES.iter().enumerate() {
+            if let Some(p) = raw
+                .get(*key)
+                .and_then(Value::as_u64)
+                .and_then(|p| u8::try_from(p).ok())
+                .filter(|p| VOLUME_STEPS.contains(p))
+            {
+                s.volume[k] = p;
+            }
+        }
         if let Some(c) = raw
             .get("coop")
             .and_then(Value::as_str)
@@ -328,7 +369,7 @@ impl Settings {
             .iter()
             .map(|(b, c)| (def(*b).1.to_owned(), Value::from(c.as_str())))
             .collect();
-        json!({
+        let mut out = json!({
             "music": self.music,
             "reduceMotion": self.reduce_motion,
             "colorblind": self.colorblind,
@@ -338,8 +379,11 @@ impl Settings {
             "coop": self.coop.key(),
             "voice": self.voice,
             "keys": keys,
-        })
-        .to_string()
+        });
+        for (k, (_, key)) in VOLUMES.iter().enumerate() {
+            out[*key] = Value::from(self.volume[k]);
+        }
+        out.to_string()
     }
 
     /// codesFor: the codes bound to an action, primary first.
@@ -447,6 +491,28 @@ mod tests {
     }
 
     /// The HUD row cycles 100 -> 125 -> 150 -> 100, and its scale follows.
+    #[test]
+    fn volumes_cycle_round_trip_and_refuse_odd_values() {
+        let mut s = Settings::default();
+        assert_eq!(s.volume, [100; 4]);
+        let mut seen = Vec::new();
+        for _ in 0..VOLUME_STEPS.len() {
+            seen.push(s.volume[2]);
+            s.volume[2] = s.next_volume(2);
+        }
+        assert_eq!(seen, VOLUME_STEPS);
+        assert_eq!(s.volume[2], 100);
+        s.volume = [75, 50, 25, 0];
+        assert_eq!(
+            Settings::from_json(Some(&s.to_json())).volume,
+            [75, 50, 25, 0]
+        );
+        assert_eq!(s.volume_gains(), [0.75, 0.5, 0.25, 0.0]);
+        // A hand-edited odd value falls back to full.
+        let odd = Settings::from_json(Some(r#"{"volMusic":33,"volVoice":"loud"}"#));
+        assert_eq!(odd.volume, [100; 4]);
+    }
+
     #[test]
     fn hud_size_cycles_and_scales() {
         let mut s = Settings::default();

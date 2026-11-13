@@ -97,11 +97,26 @@ uniform sampler2D Bloom2;
 uniform sampler2D Bloom3;
 uniform float Strength;
 uniform float Seed;
+uniform float Aspect;
+// Shockwaves: centre (x, y in 0..1 of the view), ring radius and strength,
+// both in view heights; strength 0 is none.
+uniform vec4 Ripples[4];
 void main() {
-    vec3 c = texture2D(Texture, uv).rgb;
-    vec3 glow = texture2D(Bloom1, uv).rgb * 0.9
-              + texture2D(Bloom2, uv).rgb * 0.8
-              + texture2D(Bloom3, uv).rgb * 0.7;
+    vec2 at = uv;
+    for (int i = 0; i < 4; i++) {
+        vec4 r = Ripples[i];
+        vec2 d = (uv - r.xy) * vec2(Aspect, 1.0);
+        float len = length(d);
+        float band = (len - r.z) / 0.035;
+        // A thin ring that pushes the picture outward on its front edge
+        // and pulls it in just behind.
+        float push = band * exp(-band * band) * r.w;
+        at -= d / max(len, 1e-4) * push * vec2(1.0 / Aspect, 1.0);
+    }
+    vec3 c = texture2D(Texture, at).rgb;
+    vec3 glow = texture2D(Bloom1, at).rgb * 0.9
+              + texture2D(Bloom2, at).rgb * 0.8
+              + texture2D(Bloom3, at).rgb * 0.7;
     c += glow * Strength;
     float l = dot(c, vec3(0.299, 0.587, 0.114));
     c += vec3(-0.004, 0.006, 0.014) * (1.0 - l);
@@ -230,6 +245,8 @@ void main() {
 
 /// How much of the blurred glow is added back to the frame.
 const BLOOM_STRENGTH: f32 = 0.85;
+/// Shockwaves the composite bends the frame with at once (`Ripples[4]`).
+pub const RIPPLES: usize = 4;
 /// Brightness (0–1, brightest channel) where glow starts.
 const BLOOM_THRESHOLD: f32 = 0.42;
 /// How far the nebula drifts per world unit the camera moves: matches
@@ -270,14 +287,22 @@ impl Mats {
                 MaterialParams {
                     uniforms: uniforms
                         .iter()
-                        .map(|&(n, t)| UniformDesc::new(n, t))
+                        .map(|&(n, t)| {
+                            // The one array uniform.
+                            let d = UniformDesc::new(n, t);
+                            if n == "Ripples" {
+                                d.array(RIPPLES)
+                            } else {
+                                d
+                            }
+                        })
                         .collect(),
                     textures: textures.iter().map(|&t| t.to_owned()).collect(),
                     pipeline_params,
                 },
             )
         };
-        use UniformType::{Float1, Float2, Float3};
+        use UniformType::{Float1, Float2, Float3, Float4};
         Ok(Mats {
             down: mat(
                 DOWN,
@@ -288,7 +313,12 @@ impl Mats {
             blur: mat(BLUR, &[("Dir", Float2)], &[], PipelineParams::default())?,
             composite: mat(
                 COMPOSITE,
-                &[("Strength", Float1), ("Seed", Float1)],
+                &[
+                    ("Strength", Float1),
+                    ("Seed", Float1),
+                    ("Aspect", Float1),
+                    ("Ripples", Float4),
+                ],
                 &["Bloom1", "Bloom2", "Bloom3"],
                 PipelineParams::default(),
             )?,
@@ -489,7 +519,8 @@ impl Post {
     /// End the field: blur its bright parts and composite it onto the
     /// window, then hand the cameras back to the window. `seed` moves the
     /// grain; a constant seed holds it still.
-    pub fn finish(&mut self, view: (f32, f32), seed: f32) {
+    /// `ripples` are up to four shockwaves (see `COMPOSITE`'s `Ripples`).
+    pub fn finish(&mut self, view: (f32, f32), seed: f32, ripples: [[f32; 4]; RIPPLES]) {
         set_target(None);
         if !self.active {
             return;
@@ -520,6 +551,8 @@ impl Post {
         c.set_texture("Bloom3", t.levels[2].img.texture.clone());
         c.set_uniform("Strength", BLOOM_STRENGTH);
         c.set_uniform("Seed", seed);
+        c.set_uniform("Aspect", view.0 / view.1.max(1.0));
+        c.set_uniform_array("Ripples", &ripples.map(|r| vec4(r[0], r[1], r[2], r[3])));
         crate::draw::screen_camera(view);
         gl_use_material(c);
         draw_texture_ex(

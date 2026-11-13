@@ -60,7 +60,8 @@ Menus: arrow keys, D-pad or left stick to move; Enter, Space or A to press;
 LB / RB to switch tabs. The mouse works too.
 
 The flight keys can be changed under Settings on the title screen. Settings
-also has the music, reduced shake and flashing, a colorblind-safe palette,
+also has the music, volume for master, effects, music and voice, reduced
+shake and flashing, a colorblind-safe palette,
 glow and effects, the art style (painted sprites or the original vector
 outlines), the HUD size, and local co-op: a second player flies a partner tug from the numpad
 (8 thrust, 4 / 6 turn, 5 brake, 0 fire, Enter latch) or a second gamepad.
@@ -161,8 +162,8 @@ Delete this folder. To remove your saves too, delete %APPDATA%\ClaimJumpers.
 
 TROUBLESHOOTING
 ---------------
-- No sound: check the Windows volume mixer, and that the game isn't muted
-  (M). The game uses your default sound device when it starts.
+- No sound: check the Windows volume mixer, that the game isn't muted
+  (M), and that the volumes under Settings aren't at 0%. The game uses your default sound device when it starts.
 - Gamepad not responding: connect it before or after starting; the most
   recently used pad is player 1. With gamepad co-op on, the last connected
   pad belongs to player 2.

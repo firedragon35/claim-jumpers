@@ -488,7 +488,7 @@ impl World {
                 if rel > 150.0 {
                     let o = self.body(other);
                     let (x, y) = ((me_b.x + o.x) / 2.0, (me_b.y + o.y) / 2.0);
-                    self.sfx(Sfx::Chip);
+                    self.sfx_from(Sfx::Chip, x, y);
                     self.emit(Event::Burst {
                         x,
                         y,

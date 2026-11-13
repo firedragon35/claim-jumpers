@@ -430,6 +430,12 @@ fn a_missile_blast_knocks_out_hostile_engines_in_range_for_ten_seconds() {
         tracking: 1.0,
     });
     step(&mut w, &Input::default());
+    // The pulse is heard, with the engines-down whine, from the blast.
+    let zap = w
+        .events
+        .iter()
+        .find(|n| n.event == cj_sim::events::Event::Sfx(cj_sim::events::Sfx::Emp(true)));
+    assert!(zap.is_some_and(|n| n.at.is_some()), "no placed EMP sound");
     let emp: Vec<f64> = w.jumpers.iter().map(|j| j.emp_t).collect();
     assert!(
         emp[0] > EMP_TIME - 0.1 && emp[1] > EMP_TIME - 0.1,

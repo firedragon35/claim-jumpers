@@ -986,6 +986,7 @@ fn nearby_players_hear_each_other_and_far_ones_do_not() {
     s.world.events.push(Emitted {
         to: Some(0),
         event: Event::Sfx(Sfx::Shoot(1)),
+        at: None,
     });
     s.world.events.push(Emitted {
         to: Some(0),
@@ -994,6 +995,7 @@ fn nearby_players_hear_each_other_and_far_ones_do_not() {
             load: 0.0,
             sputtering: false,
         },
+        at: None,
     });
     steps(&mut s, &mut bots.iter_mut().collect::<Vec<_>>(), 3);
     let shot = |b: &Bot| {

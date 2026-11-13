@@ -1003,7 +1003,7 @@ impl World {
         let b = h.b;
         self.escort_failed = true;
         self.explosion_fx(b.x, b.y, 160.0, Tint::Danger);
-        self.sfx(Sfx::Boom);
+        self.sfx_from(Sfx::Boom, b.x, b.y);
         // What survives of the cargo is scrap for whoever gets there first.
         for _ in 0..3 {
             let x = b.x + self.rng.range(-20.0, 20.0);
@@ -1095,7 +1095,7 @@ impl World {
             }
             self.damage_ship(p, CORE_ZAP_DAMAGE);
             self.burst(x, y, 6, Tint::Danger, 120.0);
-            self.sfx(Sfx::BeamZap);
+            self.sfx_from(Sfx::BeamZap, x, y);
             self.radio(Radio::CoreZap, false, true);
         }
     }

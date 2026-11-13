@@ -593,6 +593,7 @@ impl World {
         self.events.push(Emitted {
             to: self.hearer,
             event: e,
+            at: None,
         });
     }
 
@@ -617,6 +618,14 @@ impl World {
     /// Queues a sound effect event.
     pub(crate) fn sfx(&mut self, s: Sfx) {
         self.emit(Event::Sfx(s));
+    }
+    /// A sound from a place in the field, so the game can pan and muffle it.
+    pub(crate) fn sfx_from(&mut self, s: Sfx, x: f64, y: f64) {
+        self.events.push(Emitted {
+            to: self.hearer,
+            event: Event::Sfx(s),
+            at: Some((x as f32, y as f32)),
+        });
     }
     /// Queues a stock radio line by key; `force` interrupts the radio's cooldown and `once` plays it at most once per shift.
     pub(crate) fn radio(&mut self, key: Radio, force: bool, once: bool) {
@@ -1542,7 +1551,7 @@ impl World {
         // The shockwave. Not the player's kills: dying near a sheriff earns no stars.
         self.without_blame(|w| w.explode(x, y, TUG_WRECK_BLAST_RADIUS, 0.0));
         self.shake = 18.0;
-        self.sfx(Sfx::Boom);
+        self.sfx_from(Sfx::Boom, x, y);
         self.radio(Radio::Dead, true, false);
         // After the "tug is down" call, so Marge warns about them last.
         self.go_rogue(p);

@@ -84,6 +84,8 @@ pub enum Sfx {
     /// Missile launch and impact.
     Missile,
     MissileHit,
+    /// A missile's EMP pulse; `true` when it knocked out a ship's engines.
+    Emp(bool),
     SentryShot,
     /// A miner's cutter on your hull.
     BeamZap,
@@ -232,6 +234,8 @@ impl Achievement {
 pub struct Emitted {
     pub to: Option<usize>,
     pub event: Event,
+    /// Where a sound comes from in the field, when it has a place.
+    pub at: Option<(f32, f32)>,
 }
 
 /// Something the simulation tells the game about this step: sounds, radio lines, slow motion, effects and floating text.
