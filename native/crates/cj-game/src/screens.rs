@@ -53,6 +53,7 @@ pub enum Act {
     SetMusic,
     SetMotion,
     SetPalette,
+    SetEffects,
     CycleCoop,
     Rebind(crate::settings::Bind),
     ResetKeys,
@@ -2825,6 +2826,11 @@ pub fn settings(
             "set-palette",
             format!("Colorblind-safe palette: {}", onoff(s.colorblind)),
             Act::SetPalette,
+        ),
+        (
+            "set-effects",
+            format!("Glow and effects: {}", onoff(s.effects)),
+            Act::SetEffects,
         ),
         (
             "set-coop",

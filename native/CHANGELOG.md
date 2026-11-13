@@ -7,6 +7,22 @@ and the port uses [Semantic Versioning](https://semver.org/) as defined in
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-11-12
+
+### Added
+
+- Glow and effects. The field is drawn off-screen and finished with a bloom
+  pass, so bright things (thrusters, shots, the cable, cargo, sparks) glow
+  while rocks and the background stay dark. A gentle colour grade and faint
+  film grain finish the frame; reduced motion holds the grain still. The HUD
+  and menus are drawn after it and stay sharp.
+- A procedural nebula behind the stars, in the same colours and with the
+  same parallax as the old nebula glows, which it replaces while effects
+  are on.
+- Settings: "Glow and effects" turns all of it off (on by default; saved as
+  `effects` in `settings.json`). If the graphics driver can't compile the
+  effects, they stay off and the field draws as before.
+
 ## [1.4.6] - 2026-11-11
 
 Fixes from a third repository audit.

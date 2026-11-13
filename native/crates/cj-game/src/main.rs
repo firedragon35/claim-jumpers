@@ -32,6 +32,7 @@ mod marge;
 mod music;
 mod net;
 mod online;
+mod post;
 mod profile;
 mod radar;
 mod replay;
@@ -859,6 +860,10 @@ impl App {
                 self.settings.colorblind = !self.settings.colorblind;
                 self.save_settings();
             }
+            Act::SetEffects => {
+                self.settings.effects = !self.settings.effects;
+                self.save_settings();
+            }
             Act::CycleCoop => {
                 self.settings.coop = self.settings.coop.next();
                 self.save_settings();
@@ -1093,6 +1098,8 @@ async fn main() {
     let mut fx_rng = seeded(7);
     let stars = draw::Stars::new(&mut fx_rng);
     let mut vignette = draw::Vignette::new();
+    // Shaders compile here, after the window exists.
+    let mut post = post::Post::new();
     let store = save::Store::open();
     let (vw, vh) = view();
     let settings = settings::Settings::from_json(store.read(SETTINGS_FILE).as_deref());
@@ -1419,6 +1426,8 @@ async fn main() {
             playing: app.screen == Screen::Play,
             settings: &app.settings,
             paint: app.profile.paint_colours(),
+            post: &mut post,
+            effects: app.settings.effects,
         });
         if matches!(app.screen, Screen::Play | Screen::Paused) {
             radar::indicators(&look, &app.world, (vw, vh), dpi);

@@ -248,16 +248,19 @@ impl Stars {
         Stars { layers }
     }
 
-    /// Draw in screen space (logical pixels).
-    fn draw(&self, look: &Look, cam: Vec2, t: f32, w: f32, h: f32) {
+    /// Draw in screen space (logical pixels). `nebulae` draws the sprite
+    /// nebulae; it's off when the effects' shader nebula took their place.
+    fn draw(&self, look: &Look, cam: Vec2, t: f32, w: f32, h: f32, nebulae: bool) {
         let span = w.max(h);
-        look.additive(|| {
-            for &(nx, ny, nr, rgb) in &NEBULAE {
-                let x = (nx * w * 1.6 - cam.x * 0.02).rem_euclid(w * 1.6) - w * 0.3;
-                let y = (ny * h * 1.6 - cam.y * 0.02).rem_euclid(h * 1.6) - h * 0.3;
-                look.glow(x, y, nr * span, rgb, false, 0.22);
-            }
-        });
+        if nebulae {
+            look.additive(|| {
+                for &(nx, ny, nr, rgb) in &NEBULAE {
+                    let x = (nx * w * 1.6 - cam.x * 0.02).rem_euclid(w * 1.6) - w * 0.3;
+                    let y = (ny * h * 1.6 - cam.y * 0.02).rem_euclid(h * 1.6) - h * 0.3;
+                    look.glow(x, y, nr * span, rgb, false, 0.22);
+                }
+            });
+        }
         for l in &self.layers {
             for s in &l.stars {
                 let x = (s.x * w * 3.0 - cam.x * l.f).rem_euclid(w);
@@ -1145,9 +1148,13 @@ impl Vignette {
 /// Camera that shows `r` on the window with Y pointing down, like the
 /// browser canvas. macroquad 0.4's `from_display_rect` points Y up (it is
 /// meant for render targets), which drew every screen upside down.
+///
+/// While the effects are drawing the field off-screen, the camera targets
+/// that render target instead of the window (see `post`).
 pub fn display_camera(r: Rect) -> Camera2D {
     let mut cam = Camera2D::from_display_rect(r);
     cam.zoom.y = -cam.zoom.y;
+    cam.render_target = crate::post::target();
     cam
 }
 
@@ -1177,18 +1184,26 @@ pub struct Scene<'a> {
     pub playing: bool,
     /// The pilot's paint job, if one is chosen and unlocked.
     pub paint: Option<(u32, u32)>,
+    /// Bloom, grade and nebula; `effects` is the player's setting.
+    pub post: &'a mut crate::post::Post,
+    pub effects: bool,
 }
 
 pub fn render(sc: Scene) {
     let w = sc.world;
     let t = w.t as f32;
     let (vw, vh) = sc.view;
-    clear_background(crate::look::hex(col::VOID));
+    sc.post.begin(sc.effects, sc.view, sc.dpi);
+    // The camera comes first so the clear lands on the effects' target
+    // when they're on (clearing applies to the current camera's target).
     screen_camera(sc.view);
+    clear_background(crate::look::hex(col::VOID));
     if let Some((rgb, a)) = w.belt.def().tint {
         draw_rectangle(0.0, 0.0, vw, vh, rgba(rgb, a));
     }
-    sc.stars.draw(sc.look, v(w.cam.x, w.cam.y), t, vw, vh);
+    let cam = v(w.cam.x, w.cam.y);
+    let shader_nebula = sc.post.nebula(cam, t, sc.view);
+    sc.stars.draw(sc.look, cam, t, vw, vh, !shader_nebula);
 
     // World camera, with screen shake.
     let z = w.cam.zoom as f32;
@@ -1334,6 +1349,15 @@ pub fn render(sc: Scene) {
     if sc.playing && !w.shift_over {
         draw_hook_target(sc.look, w, t, sc.device, sc.settings, scale);
     }
+
+    // Glow and grade the field, before the overlays and HUD so those stay
+    // sharp. Reduced motion holds the grain still.
+    let seed = if crate::look::reduce_motion() {
+        0.0
+    } else {
+        (t * 60.0).floor() % 97.0
+    };
+    sc.post.finish(sc.view, seed);
 
     // Screen-space overlays.
     screen_camera(sc.view);

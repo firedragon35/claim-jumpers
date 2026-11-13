@@ -204,6 +204,8 @@ pub struct Settings {
     pub music: bool,
     pub reduce_motion: bool,
     pub colorblind: bool,
+    /// Bloom, colour grade and the shader nebula (draw::render, post).
+    pub effects: bool,
     pub coop: Coop,
     pub voice: bool,
     /// Primary-key overrides by action, as codes.
@@ -216,6 +218,7 @@ impl Default for Settings {
             music: true,
             reduce_motion: false,
             colorblind: false,
+            effects: true,
             coop: Coop::Off,
             voice: true,
             keys: Vec::new(),
@@ -236,6 +239,7 @@ impl Settings {
         s.music = flag("music").unwrap_or(s.music);
         s.reduce_motion = flag("reduceMotion").unwrap_or(s.reduce_motion);
         s.colorblind = flag("colorblind").unwrap_or(s.colorblind);
+        s.effects = flag("effects").unwrap_or(s.effects);
         s.voice = flag("voice").unwrap_or(s.voice);
         if let Some(c) = raw
             .get("coop")
@@ -295,6 +299,7 @@ impl Settings {
             "music": self.music,
             "reduceMotion": self.reduce_motion,
             "colorblind": self.colorblind,
+            "effects": self.effects,
             "coop": self.coop.key(),
             "voice": self.voice,
             "keys": keys,
@@ -380,6 +385,9 @@ mod tests {
                 "keys":{"thrust":"KeyI","fire":"KeyP","hook":"Bogus!","cut":"Numpad0"}}"#,
         ));
         assert!(!s.music && s.reduce_motion && !s.colorblind);
+        // A save from before the effects setting existed gets them on.
+        assert!(s.effects);
+        assert!(!Settings::from_json(Some(r#"{"effects":false}"#)).effects);
         assert_eq!(s.coop, Coop::Pad);
         // P is reserved and "Bogus!" isn't a key: both are dropped.
         assert_eq!(s.codes_for(Bind::Thrust), vec!["KeyI", "ArrowUp"]);

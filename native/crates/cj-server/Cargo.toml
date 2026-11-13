@@ -2,7 +2,7 @@
 name = "cj-server"
 # Kept equal to cj-game's version (check.sh verifies it): a client and a
 # server must run the same game version to play together.
-version = "1.4.6"
+version = "1.5.0"
 description = "Claim Jumpers authoritative multiplayer server: the session library and a headless binary."
 edition.workspace = true
 rust-version.workspace = true
