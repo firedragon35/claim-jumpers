@@ -216,6 +216,14 @@ pub struct Settings {
     pub volume: [u8; 4],
     pub coop: Coop,
     pub voice: bool,
+    /// Fullscreen (F11 toggles it too).
+    pub fullscreen: bool,
+    /// Both speakers get the same mix.
+    pub mono: bool,
+    /// Keep playing sound while the window is in the background.
+    pub background_sound: bool,
+    /// Servers joined from the Join screen, newest first (RECENT_MAX).
+    pub recent_servers: Vec<String>,
     /// Primary-key overrides by action, as codes.
     pub keys: Vec<(Bind, String)>,
 }
@@ -232,8 +240,25 @@ impl Default for Settings {
             volume: [100; 4],
             coop: Coop::Off,
             voice: true,
+            fullscreen: false,
+            mono: false,
+            background_sound: true,
+            recent_servers: Vec::new(),
             keys: Vec::new(),
         }
+    }
+}
+
+/// How many recently joined servers the Join screen remembers.
+pub const RECENT_MAX: usize = 5;
+
+impl Settings {
+    /// Puts `server` at the top of the recent list (once), dropping the
+    /// oldest past RECENT_MAX.
+    pub fn remember_server(&mut self, server: &str) {
+        self.recent_servers.retain(|s| s != server);
+        self.recent_servers.insert(0, server.to_owned());
+        self.recent_servers.truncate(RECENT_MAX);
     }
 }
 
@@ -296,6 +321,23 @@ impl Settings {
         s.colorblind = flag("colorblind").unwrap_or(s.colorblind);
         s.effects = flag("effects").unwrap_or(s.effects);
         s.sprites = flag("sprites").unwrap_or(s.sprites);
+        s.fullscreen = flag("fullscreen").unwrap_or(s.fullscreen);
+        s.mono = flag("mono").unwrap_or(s.mono);
+        s.background_sound = flag("backgroundSound").unwrap_or(s.background_sound);
+        // Only plausible addresses: the file may have been edited by hand.
+        if let Some(list) = raw.get("recentServers").and_then(Value::as_array) {
+            s.recent_servers = list
+                .iter()
+                .filter_map(Value::as_str)
+                .filter(|a| !a.is_empty() && a.len() <= 64)
+                .filter(|a| {
+                    a.chars()
+                        .all(|c| c.is_ascii_alphanumeric() || ".-:".contains(c))
+                })
+                .take(RECENT_MAX)
+                .map(str::to_owned)
+                .collect();
+        }
         if let Some(p) = raw
             .get("hudScale")
             .and_then(Value::as_u64)
@@ -378,6 +420,10 @@ impl Settings {
             "hudScale": self.hud_pct,
             "coop": self.coop.key(),
             "voice": self.voice,
+            "fullscreen": self.fullscreen,
+            "mono": self.mono,
+            "backgroundSound": self.background_sound,
+            "recentServers": self.recent_servers,
             "keys": keys,
         });
         for (k, (_, key)) in VOLUMES.iter().enumerate() {
@@ -464,6 +510,25 @@ mod tests {
                 "keys":{"thrust":"KeyI","fire":"KeyP","hook":"Bogus!","cut":"Numpad0"}}"#,
         ));
         assert!(!s.music && s.reduce_motion && !s.colorblind);
+        // Saves from before these settings get the old behaviour.
+        assert!(!s.fullscreen && !s.mono && s.background_sound);
+        let d = Settings::from_json(Some(
+            r#"{"fullscreen":true,"mono":true,"backgroundSound":false}"#,
+        ));
+        assert!(d.fullscreen && d.mono && !d.background_sound);
+        assert_eq!(Settings::from_json(Some(&d.to_json())), d);
+        // Recent servers: newest first, no repeats, five at most, and
+        // nothing odd from a hand-edited file.
+        let mut r = Settings::default();
+        for a in ["a", "b", "c", "a", "d", "e", "f"] {
+            r.remember_server(a);
+        }
+        assert_eq!(r.recent_servers, ["f", "e", "d", "a", "c"]);
+        assert_eq!(Settings::from_json(Some(&r.to_json())), r);
+        let odd = Settings::from_json(Some(
+            r#"{"recentServers":["ok.example:5000","bad host",3]}"#,
+        ));
+        assert_eq!(odd.recent_servers, ["ok.example:5000"]);
         // A save from before the effects setting existed gets them on.
         assert!(s.effects);
         assert!(!Settings::from_json(Some(r#"{"effects":false}"#)).effects);

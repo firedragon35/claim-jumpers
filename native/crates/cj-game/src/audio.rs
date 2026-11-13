@@ -91,6 +91,11 @@ const NOISE: NoiseOpts = NoiseOpts {
     sweep_to: 0.0,
 };
 
+/// The most voices the mixer sounds at once. The list is allocated once at
+/// this size so the real-time callback never reallocates; a busy 20-pilot
+/// field could otherwise stack voices without limit.
+const MAX_VOICES: usize = 64;
+
 /// A sounding voice, in seconds since it was queued. `music` voices play
 /// on the music bus (its own gain, no effects gain), as the browser routes
 /// the sequencer through Music.gain.
@@ -203,6 +208,8 @@ impl Echo {
 enum Cmd {
     Speech(crate::recordings::Playback),
     Play(Voice),
+    /// Both sides get the same mix (for one ear or one earbud).
+    Mono(bool),
     /// Engine loop targets: gain and low-pass cutoff in Hz.
     Thrust(f32, f32),
     /// Where the engine is heard, -1 (left) to 1 (right).
@@ -408,6 +415,7 @@ struct Mixer {
     speech: Option<crate::recordings::Playback>,
     noise: Noise,
     muted: bool,
+    mono: bool,
     // Engine loop: current and target gain and cutoff, and its filter.
     eng_gain: f32,
     eng_gain_to: f32,
@@ -574,7 +582,12 @@ impl Mixer {
             return (0.0, 0.0);
         }
         let g = MASTER_VOLUME * master;
-        self.compress((sl + mid) * g, (sr + mid) * g)
+        let (l, r) = self.compress((sl + mid) * g, (sr + mid) * g);
+        if self.mono {
+            let m = (l + r) * 0.5;
+            return (m, m);
+        }
+        (l, r)
     }
 
     /// DynamicsCompressor(threshold -14 dB, knee 10, ratio 4, attack 3 ms,
@@ -605,10 +618,11 @@ impl Mixer {
         Mixer {
             sr,
             rx,
-            voices: Vec::new(),
+            voices: Vec::with_capacity(MAX_VOICES),
             speech: None,
             noise: Noise(0x1234_5678),
             muted: false,
+            mono: false,
             eng_gain: 0.0,
             eng_gain_to: 0.0,
             eng_cut: 400.0,
@@ -643,6 +657,19 @@ impl Mixer {
                         }
                         Voice::Tone { .. } => {}
                     }
+                    // At the cap the oldest effect gives way (it's nearest its
+                    // end); music notes are kept so the beat never drops out.
+                    if self.voices.len() >= MAX_VOICES {
+                        let effect = self.voices.iter().position(|v| {
+                            !matches!(
+                                v,
+                                Voice::Tone { music: true, .. } | Voice::Noise { music: true, .. }
+                            )
+                        });
+                        if let Some(i) = effect {
+                            self.voices.remove(i);
+                        }
+                    }
                     self.voices.push(v);
                 }
                 Cmd::MusicGain(g) => self.music_gain_to = g,
@@ -661,6 +688,7 @@ impl Mixer {
                 }
                 Cmd::EnginePan(p) => self.eng_pan_to = p,
                 Cmd::Mute(m) => self.muted = m,
+                Cmd::Mono(m) => self.mono = m,
             }
         }
     }
@@ -674,6 +702,10 @@ pub struct Audio {
     /// Clock time of the next attempt to reopen the device.
     reopen_at: f64,
     muted: bool,
+    /// Silenced while the window is in the background (a setting); kept
+    /// apart from `muted` so returning doesn't undo the player's own M.
+    away: bool,
+    mono: bool,
     /// Scale on the next effect's volume (1 normally; less for another
     /// player's sound heard from a distance, see `sfx_at`).
     sfx_scale: f32,
@@ -716,6 +748,8 @@ impl Audio {
             failed,
             reopen_at: 0.0,
             muted: false,
+            away: false,
+            mono: false,
             sfx_scale: 1.0,
             volumes: [1.0; 4],
             place: Place::default(),
@@ -746,7 +780,8 @@ impl Audio {
             self.error = None;
             // A new mixer starts unmuted at full volume. Music and engine
             // levels are re-sent anyway.
-            self.send(Cmd::Mute(self.muted));
+            self.send(Cmd::Mute(self.muted || self.away));
+            self.send(Cmd::Mono(self.mono));
             self.send(Cmd::Volumes(self.volumes));
         }
     }
@@ -758,7 +793,19 @@ impl Audio {
 
     pub fn toggle_mute(&mut self) {
         self.muted = !self.muted;
-        self.send(Cmd::Mute(self.muted));
+        self.send(Cmd::Mute(self.muted || self.away));
+    }
+
+    /// Silences (or restores) the game while its window is in the background.
+    pub fn set_away(&mut self, away: bool) {
+        self.away = away;
+        self.send(Cmd::Mute(self.muted || away));
+    }
+
+    /// Sends both sides the same mix.
+    pub fn set_mono(&mut self, mono: bool) {
+        self.mono = mono;
+        self.send(Cmd::Mono(mono));
     }
 
     pub fn is_muted(&self) -> bool {
@@ -2018,7 +2065,7 @@ where
                 }
             },
             move |err: cpal::Error| {
-                eprintln!("audio stream error: {err}");
+                crate::log::line(&format!("audio stream error: {err}"));
                 if stream_is_lost(err.kind()) {
                     failed.store(true, Ordering::Relaxed);
                 }
@@ -2111,6 +2158,62 @@ mod tests {
         assert_eq!(field_ambience(&w).tension, 0.0);
         w.pilots[pl].chain.push(id);
         assert_eq!(field_ambience(&w).tension, 0.8);
+    }
+
+    /// With mono on, a sound panned hard right reaches both sides equally.
+    #[test]
+    fn mono_sends_both_sides_the_same_mix() {
+        let (tx, rx) = channel();
+        let mut m = Mixer::new(8_000.0, rx);
+        let right = Place {
+            pan: 1.0,
+            ..Place::default()
+        };
+        for mono in [false, true] {
+            tx.send(Cmd::Mono(mono)).unwrap();
+            tx.send(Cmd::Play(Voice::Noise {
+                dur: 1.0,
+                o: NOISE,
+                t: 0.0,
+                bq: Biquad::default(),
+                music: false,
+                place: right,
+            }))
+            .unwrap();
+            m.drain();
+            let (mut l, mut r) = (0.0f32, 0.0f32);
+            for _ in 0..800 {
+                let (a, b) = m.sample();
+                l += a.abs();
+                r += b.abs();
+            }
+            if mono {
+                assert!((l - r).abs() < 1e-3, "equal: {l} {r}");
+            } else {
+                assert!(r > l * 1.5, "panned right: {l} {r}");
+            }
+        }
+    }
+
+    /// A flood of plays never grows the voice list past its cap.
+    #[test]
+    fn the_mixer_caps_its_voices() {
+        let (tx, rx) = channel();
+        let mut m = Mixer::new(8_000.0, rx);
+        for _ in 0..200 {
+            tx.send(Cmd::Play(Voice::Noise {
+                dur: 5.0,
+                o: NOISE,
+                t: 0.0,
+                bq: Biquad::default(),
+                music: false,
+                place: Place::default(),
+            }))
+            .unwrap();
+        }
+        m.drain();
+        assert_eq!(m.voices.len(), MAX_VOICES);
+        assert!(m.voices.capacity() <= MAX_VOICES, "no reallocation");
     }
 
     /// The music dips while a radio line plays and comes back after it.
@@ -2254,6 +2357,8 @@ mod tests {
             failed: Arc::new(AtomicBool::new(false)),
             reopen_at: 0.0,
             muted: false,
+            away: false,
+            mono: false,
             sfx_scale: 1.0,
             volumes: [1.0; 4],
             place: Place::default(),
@@ -2306,6 +2411,8 @@ mod tests {
             failed: Arc::new(AtomicBool::new(false)),
             reopen_at: 0.0,
             muted: false,
+            away: false,
+            mono: false,
             sfx_scale: 1.0,
             volumes: [1.0; 4],
             place: Place::default(),

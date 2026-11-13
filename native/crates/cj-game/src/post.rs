@@ -428,17 +428,29 @@ pub struct Post {
     targets: Option<Targets>,
     /// Whether this frame's field went into the scene target.
     active: bool,
+    /// A new window size and when it was first seen: the targets are
+    /// rebuilt only once it has held for RESIZE_SETTLE, not on every frame
+    /// of a drag-resize.
+    resizing: Option<((u32, u32), f64)>,
 }
+
+/// Seconds a new window size must hold before the targets are rebuilt.
+const RESIZE_SETTLE: f64 = 0.15;
 
 impl Post {
     pub fn new() -> Post {
         let mats = Mats::load()
-            .map_err(|e| eprintln!("effects off: a post-processing shader failed: {e:?}"))
+            .map_err(|e| {
+                crate::log::line(&format!(
+                    "effects off: a post-processing shader failed: {e:?}"
+                ))
+            })
             .ok();
         Post {
             mats,
             targets: None,
             active: false,
+            resizing: None,
         }
     }
 
@@ -454,9 +466,27 @@ impl Post {
             ((view.0 * dpi).round() as u32).max(1),
             ((view.1 * dpi).round() as u32).max(1),
         );
-        // Rebuilt on resize (and on first use); otherwise reused each frame.
-        if self.targets.as_ref().is_none_or(|t| t.px != px) {
-            self.targets = Some(Targets::new(px));
+        // Built on first use; rebuilt once a resize settles, drawing
+        // without effects meanwhile; otherwise reused each frame.
+        match &self.targets {
+            None => self.targets = Some(Targets::new(px)),
+            Some(t) if t.px != px => {
+                let now = get_time();
+                match self.resizing {
+                    Some((size, since)) if size == px && now - since >= RESIZE_SETTLE => {
+                        self.targets = Some(Targets::new(px));
+                        self.resizing = None;
+                    }
+                    Some((size, _)) if size == px => {}
+                    _ => self.resizing = Some((px, now)),
+                }
+                if self.resizing.is_some() {
+                    self.active = false;
+                    set_target(None);
+                    return false;
+                }
+            }
+            Some(_) => self.resizing = None,
         }
         set_target(self.targets.as_ref().map(|t| t.scene.clone()));
         true

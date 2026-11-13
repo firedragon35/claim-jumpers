@@ -55,6 +55,9 @@ pub enum Act {
     SetMotion,
     SetPalette,
     SetEffects,
+    SetFullscreen,
+    SetMono,
+    SetBackgroundSound,
     SetSprites,
     CycleHud,
     /// Step one Sound row's volume (index into `Settings::volume`).
@@ -77,6 +80,8 @@ pub enum Act {
     /// Look up the server at the address typed on the Join screen, or,
     /// once it has answered, join it.
     Join,
+    /// Fill the Join address with recent server `i`.
+    PickServer(usize),
     /// In the break between online shifts: ready for the next one.
     Ready,
     /// Leave the server from the lobby.
@@ -133,12 +138,13 @@ pub fn title(
     dpi: f32,
     v: TitleView,
 ) -> Option<Act> {
-    let (w, h) = (1200.0, 660.0);
+    // Tall enough for a mode's blurb and its numbers on up to three lines.
+    let (w, h) = (1200.0, 680.0);
     u.begin(input, (w, h), view, dpi);
     if input.tab != 0 {
         *v.tab = (*v.tab as i32 + input.tab).rem_euclid(4) as usize;
     }
-    let r = Rect::new(20.0, 20.0, 1160.0, 620.0);
+    let r = Rect::new(20.0, 20.0, 1160.0, 640.0);
     card(r);
     let mut act = None;
     let (x, mut y) = (r.x + 36.0, r.y + 34.0);
@@ -230,10 +236,20 @@ pub fn title(
     if p {
         act = Some(Act::EditName);
     }
+    // While typing, show the name as it will be saved (cleaned and cut to
+    // length), so nothing about the result is a surprise.
+    let note = match v.editing {
+        Some(t) => {
+            let clean = crate::profile::clean_name(t);
+            let left = crate::profile::NAME_MAX.saturating_sub(clean.chars().count());
+            format!("Saves as \"{clean}\" · {left} left")
+        }
+        None => v.name_msg.to_owned(),
+    };
     text(
         look,
         u,
-        v.name_msg,
+        &note,
         er.x + er.w + 10.0,
         y + 11.0,
         12.0,
@@ -275,7 +291,7 @@ pub fn title(
     y += paragraph(
         look,
         u,
-        v.mode.def().blurb,
+        &mode_facts(v.mode.def()),
         x,
         y,
         560.0,
@@ -382,7 +398,9 @@ fn guide(look: &Look, u: &Ui, tab: usize, x: f32, y: f32, w: f32) {
             ("Q", "Drop last piece (fling it)"),
             ("X", "Cut the whole line"),
             ("Z / C · G", "Strafe · grind (with upgrades)"),
-            ("M", "Mute all"),
+            ("P · M · V · N", "Pause · mute · voice · music"),
+            ("T · F3 · F11", "Skip training · stats · fullscreen"),
+            ("B · Enter", "PvP on/off · chat (online)"),
         ],
         1 => &[
             ("L-stick / D-pad", "Turn"),
@@ -393,6 +411,7 @@ fn guide(look: &Look, u: &Ui, tab: usize, x: f32, y: f32, w: f32) {
             ("Y · B · LB", "Hook · drop last · cut all"),
             ("R-stick · X", "Strafe · grind (with upgrades)"),
             ("Start", "Start shift / pause"),
+            ("Select · B in menus", "Mute all · back"),
         ],
         2 => &[
             ("Scrap", "50–160 cr · 1 t"),
@@ -466,9 +485,22 @@ fn guide(look: &Look, u: &Ui, tab: usize, x: f32, y: f32, w: f32) {
     }
 }
 
+/// A mode's one-line blurb plus the numbers that make it so, read from
+/// its definition so the text can never drift from the tuning.
+fn mode_facts(d: &cj_sim::career::ModeDef) -> String {
+    let collectors = if d.collector_waves > 0 {
+        format!("collectors from shift {}", d.collector_from)
+    } else {
+        "no debt collectors".to_owned()
+    };
+    format!(
+        "{} Installments ×{}, hull damage ×{}, {collectors}.",
+        d.blurb, d.installment, d.damage
+    )
+}
+
 /* ------------------------------- Pause -------------------------------- */
 
-/// Draws the pause menu and returns the action the player picked, if any. `voice_on` is Marge's voice setting and `armed_menu` is whether the main-menu button is waiting for a second press to end the shift.
 /// The first screen: play alone, host a server for others, or join one.
 /// `limit`, `mode` and `pvp` are the options for a server this player hosts.
 // The screen's inputs plus the three host options, like the other screens'.
@@ -662,6 +694,8 @@ pub struct JoinView<'a> {
     pub can_join: bool,
     /// The server is being looked up: the button waits.
     pub looking: bool,
+    /// Servers joined before, newest first.
+    pub recent: &'a [String],
 }
 
 /// Joining a server: the host's address is typed in (the port is always
@@ -696,7 +730,7 @@ pub fn join(
     label(
         look,
         u,
-        "The host's IP address (port 47820)",
+        "The host's address (add :port if not 47820)",
         x,
         y,
         c(col::MUTED),
@@ -749,6 +783,28 @@ pub fn join(
     .0 || input.back
     {
         act = Some(Act::Back);
+    }
+    // Servers joined before, to the right of the address.
+    if !v.recent.is_empty() {
+        let rx = x + 420.0;
+        let mut ry = r.y + 118.0;
+        label(look, u, "Recent", rx, ry, c(col::MUTED));
+        ry += 18.0;
+        for (i, server) in v.recent.iter().enumerate() {
+            let (p, br) = u.button_at(
+                look,
+                &format!("recent-{i}"),
+                rx,
+                ry,
+                Style::Ghost,
+                server,
+                true,
+            );
+            if p {
+                act = Some(Act::PickServer(i));
+            }
+            ry += br.h + 4.0;
+        }
     }
     // Every server is sent the same identity (mp_id.txt), so a host could
     // reuse it elsewhere: say so where the choice to join is made.
@@ -913,43 +969,45 @@ pub fn lobby(
     act
 }
 
+/// Draws the pause menu and returns the action the player picked, if any.
+/// `voice_on` is Marge's voice setting; `armed` says whether End shift now
+/// and Main menu are waiting for their second press.
+#[allow(clippy::too_many_arguments)] // immediate-mode screens take their state as arguments
 pub fn pause(
     look: &Look,
     u: &mut Ui,
     input: &MenuInput,
     view: (f32, f32),
     dpi: f32,
-    armed_menu: bool,
+    armed: (bool, bool),
     voice_on: bool,
+    // `Some(hosting)` online: the shared shift keeps running under this
+    // card, and leaving drops this pilot (or, for a host, stops the server).
+    online: Option<bool>,
 ) -> Option<Act> {
+    let (armed_end, armed_menu) = armed;
     let (w, h) = (900.0, 360.0);
     u.begin(input, (w, h), view, dpi);
     let r = Rect::new(20.0, 20.0, 860.0, 320.0);
     card(r);
     let (x, mut y) = (r.x + 36.0, r.y + 34.0);
-    label(look, u, "Shift paused", x, y, c(col::MUTED));
+    let (kicker, title, line) = match online {
+        None => (
+            "Shift paused",
+            "On break",
+            "The meter isn't running. Marge is.",
+        ),
+        Some(_) => (
+            "Menu",
+            "Still flying",
+            "Online the shift goes on while this card is open.",
+        ),
+    };
+    label(look, u, kicker, x, y, c(col::MUTED));
     y += 22.0;
-    text(
-        look,
-        u,
-        "On break",
-        x,
-        y,
-        64.0,
-        Which::Display,
-        c(col::HAZARD),
-    );
+    text(look, u, title, x, y, 64.0, Which::Display, c(col::HAZARD));
     y += 72.0;
-    text(
-        look,
-        u,
-        "The meter isn't running. Marge is.",
-        x,
-        y,
-        18.0,
-        Which::Body,
-        c(col::TEXT),
-    );
+    text(look, u, line, x, y, 18.0, Which::Body, c(col::TEXT));
     y += 44.0;
     let mut act = None;
     let (p, rr) = u.button_at(look, "resume", x, y, Style::Primary, "Resume", true);
@@ -983,13 +1041,33 @@ pub fn pause(
         act = Some(Act::OpenSettings);
     }
     let by = by + 50.0;
+    // Online there's one way out, and it needs two presses like Main menu:
+    // a slip mustn't drop a pilot from a shared shift or stop a server.
+    if let Some(hosting) = online {
+        let leave = match (armed_end || armed_menu, hosting) {
+            (false, false) => "Leave server",
+            (false, true) => "Stop server",
+            (true, false) => "Leaves the shared shift. Press again",
+            (true, true) => "Stops the server for everyone. Press again",
+        };
+        if u.button_at(look, "leave", r.x + 36.0, by, Style::Ghost, leave, true)
+            .0
+        {
+            act = Some(Act::PauseToMenu);
+        }
+        return act;
+    }
     let (p, er) = u.button_at(
         look,
         "end",
         r.x + 36.0,
         by,
         Style::Ghost,
-        "End shift now",
+        if armed_end {
+            "Settles this shift. Press again"
+        } else {
+            "End shift now"
+        },
         true,
     );
     if p {
@@ -2907,6 +2985,32 @@ pub fn settings(
         }
         sy += br.h + 4.0;
     }
+    // Below the volumes: how the sound is heard, and the window.
+    let extra = [
+        (
+            "set-mono",
+            format!("Mono sound: {}", onoff(s.mono)),
+            Act::SetMono,
+        ),
+        (
+            "set-bgsound",
+            format!("Sound when away: {}", onoff(s.background_sound)),
+            Act::SetBackgroundSound,
+        ),
+        (
+            "set-fullscreen",
+            format!("Fullscreen: {}", onoff(s.fullscreen)),
+            Act::SetFullscreen,
+        ),
+    ];
+    sy += 8.0;
+    for (id, lbl, a) in extra {
+        let (p, br) = u.button_at(look, id, sx, sy, Style::Ghost, &lbl, true);
+        if p {
+            act = Some(a);
+        }
+        sy += br.h + 4.0;
+    }
     let kx = r.x + 520.0;
     let kw = r.x + r.w - 36.0 - kx;
     section(look, u, "Controls", kx, &mut y);
@@ -3133,7 +3237,7 @@ pub fn board(
     label(
         look,
         u,
-        "Hollis Belt · best single shift",
+        "Best single shifts flown on this PC",
         x,
         y,
         c(col::MUTED),

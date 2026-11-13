@@ -1,0 +1,7 @@
+# The toolchain releases are built and checked with, so CI and every developer
+# machine compile the shipped exe with the same compiler. Raise it deliberately
+# (and note it in the CHANGELOG); the minimum supported version stays 1.89
+# (`rust-version` in Cargo.toml).
+[toolchain]
+channel = "1.99.1"
+components = ["rustfmt", "clippy"]

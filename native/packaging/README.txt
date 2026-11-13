@@ -55,13 +55,20 @@ Marge's voice on/off    V
 Music on/off            N
 Skip training           T
 Frame-time overlay      F3
+Fullscreen on/off       F11
+Screenshot              F12 (saved in the screenshots folder of your saves)
 
 Menus: arrow keys, D-pad or left stick to move; Enter, Space or A to press;
-LB / RB to switch tabs. The mouse works too.
+Escape or B to go back; LB / RB to switch tabs. The mouse works too. Text
+fields take Ctrl+V.
+
+A single-player shift pauses by itself when you switch away from the game
+or your gamepad disconnects.
 
 The flight keys can be changed under Settings on the title screen. Settings
 also has the music, volume for master, effects, music and voice, reduced
 shake and flashing, a colorblind-safe palette,
+mono sound, sound while the game is in the background, fullscreen,
 glow and effects, the art style (painted sprites or the original vector
 outlines), the HUD size, and local co-op: a second player flies a partner tug from the numpad
 (8 thrust, 4 / 6 turn, 5 brake, 0 fire, Enter latch) or a second gamepad.
@@ -79,6 +86,8 @@ can load your career on a server, so keep it to yourself. Your game sends
 it to every server you join, though, so join only hosts you trust (see
 PLAYING ONLINE). When you host,
 the players' careers on your server are kept in its servers\hosted folder.
+The game keeps your last three careers, one per shift, as career.1.json to
+career.3.json, and writes problems to game.log (and a crash to crash.log).
 To back up or move your progress, copy that folder. To play from a
 different folder, set the CLAIM_JUMPERS_DATA environment variable to it.
 

@@ -56,7 +56,9 @@ pub struct Popup {
 
 pub struct Fx {
     rng: Rng,
-    pub particles: Vec<Particle>,
+    /// Oldest first; a deque so dropping the oldest at the cap is O(1)
+    /// instead of shifting the whole list for every new particle.
+    pub particles: std::collections::VecDeque<Particle>,
     pub popups: Vec<Popup>,
     /// Laser beams on screen: (x0, y0, x1, y1, seconds left).
     pub beams: Vec<(f64, f64, f64, f64, f64)>,
@@ -91,7 +93,7 @@ impl Fx {
     pub fn new(rng: Rng) -> Fx {
         Fx {
             rng,
-            particles: Vec::new(),
+            particles: std::collections::VecDeque::with_capacity(MAX_PARTICLES),
             popups: Vec::new(),
             beams: Vec::new(),
             trails: Default::default(),
@@ -135,9 +137,9 @@ impl Fx {
         grow: f64,
     ) {
         if self.particles.len() >= MAX_PARTICLES {
-            self.particles.remove(0);
+            self.particles.pop_front();
         }
-        self.particles.push(Particle {
+        self.particles.push_back(Particle {
             x,
             y,
             vx,

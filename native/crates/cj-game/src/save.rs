@@ -18,6 +18,8 @@ const CAREER: &str = "career.json";
 /// A copy of a career file that could not be loaded, kept because the next
 /// new career overwrites `CAREER`.
 const CAREER_BAD: &str = "career.bad.json";
+/// How many shift-by-shift career backups are kept (career.1..3.json).
+const CAREER_BACKUPS: usize = 3;
 const BEST: &str = "best.json";
 const MODE: &str = "mode.txt";
 /// "done" once the guided first shift has been finished or skipped.
@@ -28,6 +30,9 @@ pub struct Store {
     /// The latest problem to show the player. The release build has no
     /// console, so printing an error alone would tell them nothing.
     error: RefCell<Option<String>>,
+    /// Bumped whenever career.json is written or cleared, so a reader can
+    /// tell whether its copy is still current without re-reading the file.
+    career_gen: std::cell::Cell<u64>,
 }
 
 /// Best single-shift haul per difficulty mode.
@@ -63,6 +68,7 @@ impl Store {
         Store {
             dir,
             error: RefCell::new(error),
+            career_gen: std::cell::Cell::new(0),
         }
     }
 
@@ -73,7 +79,7 @@ impl Store {
 
     /// Log a save problem and queue a short message for the player.
     fn report(&self, message: String, detail: impl std::fmt::Display) {
-        eprintln!("{message} ({detail})");
+        crate::log::line(&format!("{message} ({detail})"));
         *self.error.borrow_mut() = Some(message);
     }
 
@@ -83,6 +89,27 @@ impl Store {
 
     pub fn read(&self, name: &str) -> Option<String> {
         std::fs::read_to_string(self.dir.as_ref()?.join(name)).ok()
+    }
+
+    /// Reads a JSON save (profile, board, settings). A file that exists but
+    /// isn't JSON is copied to `<name>.bad.json` before the caller falls
+    /// back to defaults, because the next write would overwrite it and the
+    /// player's records would be gone for good.
+    pub fn read_json(&self, name: &str) -> Option<String> {
+        let text = self.read(name)?;
+        if serde_json::from_str::<serde_json::Value>(&text).is_ok() {
+            return Some(text);
+        }
+        let dir = self.dir.as_ref()?;
+        let bad = name.strip_suffix(".json").unwrap_or(name).to_owned() + ".bad.json";
+        match std::fs::copy(dir.join(name), dir.join(&bad)) {
+            Ok(_) => self.report(
+                format!("{name} was damaged; a copy was kept as {bad}."),
+                "parse",
+            ),
+            Err(e) => self.report(format!("{name} could not be read or backed up."), e),
+        }
+        None
     }
 
     /// Write via a temporary file and a rename, so a crash mid-write never
@@ -120,9 +147,37 @@ impl Store {
 
     pub fn save_career(&self, c: &Career) {
         self.write(CAREER, &c.to_json());
+        self.career_gen.set(self.career_gen.get() + 1);
+    }
+
+    /// Keeps the last few careers, one per settled shift: career.json moves
+    /// to career.1.json, .1 to .2 and .2 to .3 (the oldest drops off). A
+    /// career damaged by a bad shift can then be put back by hand.
+    pub fn backup_career(&self) {
+        let Some(dir) = &self.dir else { return };
+        if !dir.join(CAREER).exists() {
+            return;
+        }
+        for n in (1..CAREER_BACKUPS).rev() {
+            let from = dir.join(format!("career.{n}.json"));
+            if from.exists() {
+                let _ = std::fs::rename(from, dir.join(format!("career.{}.json", n + 1)));
+            }
+        }
+        // Copied, not moved: career.json must exist until its replacement
+        // is written.
+        if let Err(e) = std::fs::copy(dir.join(CAREER), dir.join("career.1.json")) {
+            self.report("Could not back up the career.".to_owned(), e);
+        }
+    }
+
+    /// Changes each time career.json is saved or cleared through this store.
+    pub fn career_gen(&self) -> u64 {
+        self.career_gen.get()
     }
 
     pub fn clear_career(&self) {
+        self.career_gen.set(self.career_gen.get() + 1);
         let Some(dir) = &self.dir else { return };
         match std::fs::remove_file(dir.join(CAREER)) {
             Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
@@ -225,6 +280,7 @@ mod tests {
         Store {
             dir: Some(dir),
             error: RefCell::new(None),
+            career_gen: std::cell::Cell::new(0),
         }
     }
 
@@ -260,6 +316,42 @@ mod tests {
         assert!(s.load_career().is_none());
         // The next new career overwrites career.json, so the copy must exist.
         assert_eq!(s.read(CAREER_BAD).as_deref(), Some("{ not json"));
+        let _ = std::fs::remove_dir_all(s.dir.unwrap());
+    }
+
+    #[test]
+    fn a_corrupt_json_save_is_kept_and_reported() {
+        let s = temp_store("badjson");
+        s.write("profile.json", "{\"stats\":");
+        assert!(s.read_json("profile.json").is_none());
+        assert_eq!(s.read("profile.bad.json").as_deref(), Some("{\"stats\":"));
+        assert!(s.take_error().unwrap().contains("profile.json"));
+        // A good file reads as it is, and a missing one is simply absent.
+        s.write("board.json", "[]");
+        assert_eq!(s.read_json("board.json").as_deref(), Some("[]"));
+        assert!(s.read_json("settings.json").is_none());
+        assert!(s.take_error().is_none());
+        let _ = std::fs::remove_dir_all(s.dir.unwrap());
+    }
+
+    #[test]
+    fn career_backups_rotate_and_keep_three() {
+        let s = temp_store("rotate");
+        s.backup_career(); // nothing to back up yet
+        for shift in 1..=5 {
+            let mut c = Career::new(Mode::Standard);
+            c.shift = shift;
+            s.save_career(&c);
+            s.backup_career();
+        }
+        let shift_of = |n: usize| {
+            Career::from_json(&s.read(&format!("career.{n}.json")).unwrap())
+                .unwrap()
+                .shift
+        };
+        assert_eq!((shift_of(1), shift_of(2), shift_of(3)), (5, 4, 3));
+        assert!(s.read("career.4.json").is_none());
+        assert_eq!(s.load_career().unwrap().shift, 5, "career.json kept");
         let _ = std::fs::remove_dir_all(s.dir.unwrap());
     }
 

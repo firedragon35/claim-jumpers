@@ -7,6 +7,48 @@ and the port uses [Semantic Versioning](https://semver.org/) as defined in
 
 ## [Unreleased]
 
+## [1.16.0] - 2026-11-13
+
+From the 1.15.0 audit: its confirmed bugs, and the improvements that need no
+owner decision, new art or recordings, new dependency or extra hardware.
+
+### Fixed
+- Online, a crab latched on one tug no longer slows every pilot's thrust.
+- Online, the pause card's way out takes two presses and says what it does: "Leave server", or for a host "Stop server" (it stops the shift for everyone). It no longer claims the shift is paused while it goes on.
+- Escape and gamepad B now go back from the Join, Settings, Records, Leaderboard and Sound test screens.
+- Quitting a daily challenge from the pause card shows its report.
+- Joining no longer freezes the window while the host's name is looked up.
+- A damaged profile.json, board.json or settings.json is kept as a .bad.json copy, with a warning, instead of being overwritten with fresh defaults.
+- Marge's "hull low" call, the hull alarm and the HUD's hull colour all use 30% of the tug's own hull, so armour no longer separates them.
+
+### Added
+- Settings: fullscreen (also F11), mono sound, and sound while the game is in the background. Older settings files load with the old behaviour.
+- A single-player shift pauses when the window loses focus or the gamepad in use disconnects.
+- F12 saves a screenshot to the screenshots folder in the save folder.
+- Quitting a shift from the pause card shows the shift's report before the title.
+- End shift now takes two presses, like Main menu. An armed button disarms by itself after 3 seconds.
+- Join: type host:port for a server on another port, paste with Ctrl+V, and pick from the last five servers joined.
+- Online: a badge under the meters with the pilots flying and the round trip. F3 also shows round trip, packet loss, traffic and unconfirmed inputs, and the time each frame spends simulating and drawing.
+- Other tugs online turn smoothly between snapshots, as do rocks, cargo and the opposition.
+- Backing plates behind the HUD's banked block, meters and key hint, so the field doesn't run through them.
+- Messages queue instead of replacing each other (an achievement no longer hides the host's address).
+- The title's difficulty text gives each mode's installment and damage scale and when debt collectors start; the keyboard and gamepad guides list every control.
+- The pilot name shows how it will be saved, and how many characters are left, while you type it.
+- The leaderboard says it holds this PC's shifts.
+- In training, Marge's panel no longer repeats the training card.
+- The career keeps its last three shifts as career.1.json to career.3.json.
+- game.log records problems that were invisible in the release build (sound, recordings, saves, shaders), and a crash writes crash.log, which the next launch points out.
+- A splash screen is drawn before the start-up date check, which can take 1.5 seconds offline.
+- Hosted and dedicated servers write a health line to server.log once a minute (pilots, overruns, slowest step).
+- For testing: CJ_NET_JITTER_MS and CJ_NET_LOSS_PCT add jitter and loss to a client's connection.
+
+### Changed
+- The sound mixer sounds at most 64 voices, dropping the oldest effect (never music) past that, and never reallocates on the audio thread. Particles past the cap drop the oldest without shifting the list.
+- The glow effects' render targets are rebuilt once a window resize settles, not on every frame of the drag.
+- The title screen reads career.json only after it has changed.
+- CI builds the release exe and keeps it as a download, and audits the dependencies against RustSec advisories. The toolchain is pinned to 1.99.1 (rust-toolchain.toml).
+- Tests: a randomised decoder test for client messages, mixer limits and mono, save backups, the log, recent servers, network impairment, and an ignored simulation timing baseline (docs/performance.md).
+
 ## [1.15.0] - 2026-11-13
 
 ### Added

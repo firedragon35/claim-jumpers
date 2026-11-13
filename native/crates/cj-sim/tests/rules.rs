@@ -432,6 +432,31 @@ fn each_input_flies_its_own_tug() {
     assert!(w.pilots[1].ship.b.x > 2000.0, "pilot 1 thrust along +x");
 }
 
+/// A crab latched on one tug slows only that tug, not every pilot online.
+#[test]
+fn a_crab_on_one_tug_doesnt_slow_another() {
+    use cj_sim::entities::{make_crab, CrabState};
+    let thrust = Input {
+        thrust: 1.0,
+        ..Input::default()
+    };
+    // Fly pilot 1 for half a second, with or without a crab on pilot 0.
+    let fly = |crab: bool| {
+        let mut w = two_pilot_field();
+        if crab {
+            let (x, y) = (w.pilots[0].ship.b.x, w.pilots[0].ship.b.y);
+            let mut c = make_crab(&mut w.rng, CrabState::Latched, None, x, y);
+            c.on = 0;
+            w.crabs.push(c);
+        }
+        for _ in 0..30 {
+            w.step_all(&[Input::default(), thrust], STEP);
+        }
+        w.pilots[1].ship.b.x
+    };
+    assert_eq!(fly(true), fly(false), "pilot 1 flies at full thrust");
+}
+
 /// Removing a towed item from the field takes it off whichever chain held it.
 #[test]
 fn removing_cargo_finds_the_chain_that_holds_it() {

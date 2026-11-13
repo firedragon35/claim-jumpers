@@ -73,14 +73,22 @@ impl Perf {
 
     /// Draw the panel at the left edge, mid-height (clear of the HUD's
     /// corners), in window units. `particles` and `effects` are what the
-    /// frame drew.
-    pub fn draw(&self, look: &Look, view: (f32, f32), particles: usize, effects: bool) {
+    /// frame drew; `extra` rows follow them (the frame's split, and the
+    /// connection when online).
+    pub fn draw(
+        &self,
+        look: &Look,
+        view: (f32, f32),
+        particles: usize,
+        effects: bool,
+        extra: &[String],
+    ) {
         let Some(s) = self.stats().filter(|_| self.on) else {
             return;
         };
         let (x, y) = (16.0, (view.1 * 0.42).round());
         let font = &look.fonts.mono;
-        let rows = [
+        let mut rows = vec![
             (format!("{:.0} fps  {:.1} ms", s.fps, s.avg_ms), col::TEXT),
             (
                 format!("worst {:.1} ms (last {WINDOW:.0} s)", s.worst_ms),
@@ -96,6 +104,7 @@ impl Perf {
                 col::MUTED,
             ),
         ];
+        rows.extend(extra.iter().map(|e| (e.clone(), col::MUTED)));
         draw_rectangle(
             x - 8.0,
             y - 6.0,

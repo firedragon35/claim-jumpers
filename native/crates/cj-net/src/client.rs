@@ -44,10 +44,20 @@ fn is_local(e: &Event) -> bool {
     )
 }
 
-/// Something drawn between snapshots: matched by id, blended by position.
+/// Something drawn between snapshots: matched by id, blended by position
+/// and (when it has one) heading.
 trait Tracked {
     fn id(&self) -> u32;
     fn pos(&mut self) -> (&mut f64, &mut f64);
+    fn angle(&mut self) -> Option<&mut f64>;
+}
+
+/// Turns from `a` toward `b` by `t` (0..1) the short way round, so a
+/// heading crossing the ±π seam doesn't spin the long way.
+fn lerp_angle(a: f64, b: f64, t: f64) -> f64 {
+    use std::f64::consts::{PI, TAU};
+    let d = (b - a + PI).rem_euclid(TAU) - PI;
+    a + d * t
 }
 
 macro_rules! tracked_body {
@@ -55,14 +65,7 @@ macro_rules! tracked_body {
         impl Tracked for $t {
             fn id(&self) -> u32 { self.id }
             fn pos(&mut self) -> (&mut f64, &mut f64) { (&mut self.b.x, &mut self.b.y) }
-        }
-    )*};
-}
-macro_rules! tracked_xy {
-    ($($t:ty),*) => {$(
-        impl Tracked for $t {
-            fn id(&self) -> u32 { self.id }
-            fn pos(&mut self) -> (&mut f64, &mut f64) { (&mut self.x, &mut self.y) }
+            fn angle(&mut self) -> Option<&mut f64> { Some(&mut self.angle) }
         }
     )*};
 }
@@ -75,7 +78,29 @@ tracked_body!(
     cj_sim::opposition::Sheriff,
     cj_sim::opposition::Miner
 );
-tracked_xy!(cj_sim::opposition::Sentry, cj_sim::opposition::Net);
+// The two x/y entities: a sentry turns, a net doesn't.
+impl Tracked for cj_sim::opposition::Sentry {
+    fn id(&self) -> u32 {
+        self.id
+    }
+    fn pos(&mut self) -> (&mut f64, &mut f64) {
+        (&mut self.x, &mut self.y)
+    }
+    fn angle(&mut self) -> Option<&mut f64> {
+        Some(&mut self.angle)
+    }
+}
+impl Tracked for cj_sim::opposition::Net {
+    fn id(&self) -> u32 {
+        self.id
+    }
+    fn pos(&mut self) -> (&mut f64, &mut f64) {
+        (&mut self.x, &mut self.y)
+    }
+    fn angle(&mut self) -> Option<&mut f64> {
+        None
+    }
+}
 
 /// Moves each entity in `now` back toward its place in `before` (matched
 /// by id): `alpha` 0 is `before`, 1 is `now`. Entities only in `now` stay.
@@ -88,6 +113,10 @@ fn blend<T: Tracked + Clone>(now: &mut [T], before: &[T], alpha: f64) {
             let (x, y) = e.pos();
             *x = ox + (*x - ox) * alpha;
             *y = oy + (*y - oy) * alpha;
+            let oa = o.angle().map(|a| *a);
+            if let (Some(oa), Some(a)) = (oa, e.angle()) {
+                *a = lerp_angle(oa, *a, alpha);
+            }
         }
     }
 }
@@ -216,6 +245,12 @@ impl Session {
 
     /// Whether the server is between shifts. A break list from before
     /// this client's newest Welcome is old news.
+    /// Inputs sent but not yet confirmed by a snapshot (replayed on top
+    /// of each one): a growing number means the server is falling behind.
+    pub fn unconfirmed(&self) -> usize {
+        self.history.len()
+    }
+
     pub fn in_break(&self) -> bool {
         self.lobby
             .as_ref()
@@ -421,6 +456,8 @@ impl Session {
                     let b = &mut pl.ship.b;
                     b.x = o.ship.b.x + (b.x - o.ship.b.x) * alpha;
                     b.y = o.ship.b.y + (b.y - o.ship.b.y) * alpha;
+                    // Without this a spinning remote tug turns in 20 Hz steps.
+                    pl.ship.angle = lerp_angle(o.ship.angle, pl.ship.angle, alpha);
                 }
             }
         }
@@ -565,6 +602,18 @@ fn strikes(w: &World, b: &Bullet) -> bool {
 
 #[cfg(test)]
 mod tests {
+    /// Headings blend the short way across the ±π seam.
+    #[test]
+    fn angles_blend_the_short_way_round() {
+        use std::f64::consts::PI;
+        let close = |a: f64, b: f64| (a - b).abs() < 1e-9;
+        assert!(close(super::lerp_angle(0.0, 1.0, 0.5), 0.5));
+        // 170° to -170° passes through 180°, not through 0°.
+        let a = super::lerp_angle(PI - 0.2, -PI + 0.2, 0.5);
+        assert!(close(a.rem_euclid(2.0 * PI), PI), "{a}");
+        assert!(close(super::lerp_angle(2.0, -1.0, 1.0), -1.0));
+    }
+
     use super::*;
     use crate::snapshot::Known;
     use cj_sim::career::{Career, Mode};

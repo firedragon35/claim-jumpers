@@ -443,6 +443,66 @@ pub fn clean_name(raw: &str) -> String {
 mod tests {
     use super::*;
 
+    /// Hostile bytes at the trust boundary: random strings, and valid
+    /// client messages with bytes flipped, cut short or extended, must
+    /// decode to a message or an error, never a panic. Anything that does
+    /// decode still passes through the cleaners the server applies.
+    #[test]
+    fn random_and_mutated_bytes_never_panic_the_decoder() {
+        let mut rng = cj_sim::rng::Rng::seeded(84);
+        let valid: Vec<Vec<u8>> = vec![
+            encode(&ClientMsg::Hello {
+                game_version: "1.15.0".to_owned(),
+                player: [7; 16],
+                secret: [9; 16],
+                pilot: "Tugger-1234".to_owned(),
+                view: (1280, 720),
+            }),
+            encode(&ClientMsg::Input {
+                seq: 42,
+                inputs: vec![Input::default(); INPUTS_PER_MESSAGE],
+            }),
+            encode(&ClientMsg::Chat {
+                text: "hello field".to_owned(),
+            }),
+            encode(&ClientMsg::Query),
+        ];
+        let byte = |rng: &mut cj_sim::rng::Rng| rng.int(0, 255) as u8;
+        for round in 0..100_000 {
+            let bytes: Vec<u8> = if round % 2 == 0 {
+                let n = rng.int(0, 96) as usize;
+                (0..n).map(|_| byte(&mut rng)).collect()
+            } else {
+                let mut b = valid[round % valid.len()].clone();
+                match rng.int(0, 2) {
+                    0 if !b.is_empty() => {
+                        let i = rng.int(0, b.len() as i32 - 1) as usize;
+                        b[i] = byte(&mut rng);
+                    }
+                    1 => b.truncate(rng.int(0, b.len() as i32) as usize),
+                    _ => b.extend((0..rng.int(1, 8)).map(|_| byte(&mut rng))),
+                }
+                b
+            };
+            if let Ok(msg) = decode::<ClientMsg>(&bytes) {
+                match msg {
+                    ClientMsg::Input { inputs, .. } => {
+                        inputs.into_iter().for_each(|i| {
+                            let _ = clean_input(i);
+                        });
+                    }
+                    ClientMsg::Chat { text } => {
+                        let _ = clean_chat(&text);
+                    }
+                    ClientMsg::Hello { pilot, view, .. } => {
+                        let _ = (clean_name(&pilot), clean_view(view));
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
     /// Chat lines lose control characters and symbols the fonts can't
     /// draw, collapse their spaces and are cut to length.
     #[test]

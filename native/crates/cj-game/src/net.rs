@@ -8,12 +8,17 @@
 //!
 //! For testing on one machine, `CJ_NET_LAG_MS` holds every message back so
 //! the round trip takes that long: half on the way out, half on the way in.
+//! `CJ_NET_JITTER_MS` adds up to that much more at random, and
+//! `CJ_NET_LOSS_PCT` drops that share of messages, each way. Jitter and loss
+//! touch only the unreliable channel (inputs and snapshots): reliable
+//! messages keep renet's promise of order and delivery.
 
 use cj_net::client::Session;
 use renet::{ConnectionConfig, RenetClient};
 use renet_netcode::{ClientAuthentication, NetcodeClientTransport, NetcodeTransportError};
 use std::hash::{BuildHasher, Hasher};
 use std::net::{SocketAddr, ToSocketAddrs, UdpSocket};
+use std::sync::mpsc;
 use std::time::{Duration, SystemTime};
 
 /// The file in the save folder that holds this install's multiplayer
@@ -24,6 +29,50 @@ const ID_FILE: &str = "mp_id.txt";
 const CONNECT_TIMEOUT: f64 = 8.0;
 /// Seconds between Queries while looking at a server before joining.
 const QUERY_EVERY: f64 = 2.0;
+
+/// The server address for what was typed on the Join screen: `host` gets
+/// the default port, and `host:port` keeps its own (a server started with
+/// `--port`). A port that isn't a number is left for the lookup to reject.
+pub fn server_addr(typed: &str) -> String {
+    let typed = typed.trim();
+    if typed.contains(':') {
+        typed.to_owned()
+    } else {
+        format!("{typed}:{}", cj_net::DEFAULT_PORT)
+    }
+}
+
+/// Looks `server` ("host:port") up on a worker thread and sends back its
+/// first IPv4 address as "a.b.c.d:port", or the sentence to show. The OS
+/// resolver has no timeout of its own and can take seconds on an unknown
+/// name, so it must never run on the frame loop. Literal addresses answer
+/// at once without a thread.
+pub fn resolve(server: String) -> mpsc::Receiver<Result<String, String>> {
+    let (tx, rx) = mpsc::channel();
+    let literal = server_is_literal(&server);
+    let look = move || {
+        server
+            .to_socket_addrs()
+            .map_err(|e| format!("Can't find server {server}: {e}"))?
+            .find(SocketAddr::is_ipv4)
+            .map(|a| a.to_string())
+            .ok_or_else(|| format!("Server {server} has no IPv4 address"))
+    };
+    if literal {
+        let _ = tx.send(look());
+    } else {
+        // A dropped receiver (the player typed a new address) just ends it.
+        std::thread::spawn(move || {
+            let _ = tx.send(look());
+        });
+    }
+    rx
+}
+
+/// An "a.b.c.d:port" address needs no name lookup.
+fn server_is_literal(server: &str) -> bool {
+    server.parse::<std::net::SocketAddrV4>().is_ok()
+}
 
 /// 16 bytes that are hard to guess: std's per-process hash keys come from
 /// the operating system's random source. Not cryptographic, but the id and
@@ -94,22 +143,78 @@ pub struct Online {
     server: String,
     /// Why the session ended, once it has, as a sentence for the player.
     pub ended: Option<String>,
-    /// Test-only added delay each way, in seconds (`CJ_NET_LAG_MS` / 2).
-    delay: f64,
+    /// Test-only network trouble (see the module notes).
+    impair: Impair,
     /// Seconds since connecting, the clock for delayed messages.
     clock: f64,
     /// Messages waiting out the delay: (due time, channel, bytes).
-    outgoing: std::collections::VecDeque<(f64, u8, Vec<u8>)>,
+    outgoing: std::collections::VecDeque<(f64, (u8, Vec<u8>))>,
     incoming: std::collections::VecDeque<(f64, Vec<u8>)>,
 }
 
-/// The test-only added round trip, in seconds, from `CJ_NET_LAG_MS`.
-fn test_lag() -> f64 {
-    std::env::var("CJ_NET_LAG_MS")
+/// A test-only setting from the environment: a number in `0..=max`, or 0.
+fn test_env(name: &str, max: f64) -> f64 {
+    std::env::var(name)
         .ok()
         .and_then(|v| v.trim().parse::<f64>().ok())
-        .filter(|ms| ms.is_finite() && (0.0..=2000.0).contains(ms))
-        .map_or(0.0, |ms| ms / 1000.0)
+        .filter(|v| v.is_finite() && (0.0..=max).contains(v))
+        .unwrap_or(0.0)
+}
+
+/// Test-only network trouble, applied to each message each way.
+#[derive(Clone, Copy, Debug, Default)]
+struct Impair {
+    /// Fixed delay each way, seconds.
+    delay: f64,
+    /// Up to this much more at random, seconds (unreliable channel only).
+    jitter: f64,
+    /// Share of messages dropped, 0..1 (unreliable channel only).
+    loss: f64,
+    /// xorshift state for the dice.
+    seed: u64,
+}
+
+impl Impair {
+    fn from_env() -> Impair {
+        Impair {
+            delay: test_env("CJ_NET_LAG_MS", 2000.0) / 2000.0,
+            jitter: test_env("CJ_NET_JITTER_MS", 1000.0) / 1000.0,
+            loss: test_env("CJ_NET_LOSS_PCT", 90.0) / 100.0,
+            seed: 0x9E37_79B9_7F4A_7C15,
+        }
+    }
+
+    fn active(&self) -> bool {
+        self.delay > 0.0 || self.jitter > 0.0 || self.loss > 0.0
+    }
+
+    /// A uniform roll in 0..1.
+    fn roll(&mut self) -> f64 {
+        self.seed ^= self.seed << 13;
+        self.seed ^= self.seed >> 7;
+        self.seed ^= self.seed << 17;
+        (self.seed >> 11) as f64 / (1u64 << 53) as f64
+    }
+
+    /// When a message on channel `ch` handed over at `now` comes out, or
+    /// None if it is lost.
+    fn due(&mut self, now: f64, ch: u8) -> Option<f64> {
+        if ch != cj_net::channel::UNRELIABLE {
+            return Some(now + self.delay);
+        }
+        if self.loss > 0.0 && self.roll() < self.loss {
+            return None;
+        }
+        Some(now + self.delay + self.jitter * self.roll())
+    }
+}
+
+/// Takes the first queued message that is due by `now`. With jitter the
+/// queue isn't in due order, so it is searched, not just peeked at the
+/// front; queue order is kept among those due.
+fn take_due<T>(queue: &mut std::collections::VecDeque<(f64, T)>, now: f64) -> Option<T> {
+    let i = queue.iter().position(|(due, _)| *due <= now)?;
+    queue.remove(i).map(|(_, m)| m)
 }
 
 /// The game's version: a server only plays with its own version.
@@ -166,7 +271,7 @@ impl Online {
             waited: 0.0,
             server: server.to_owned(),
             ended: None,
-            delay: test_lag() / 2.0,
+            impair: Impair::from_env(),
             clock: 0.0,
             outgoing: std::collections::VecDeque::new(),
             incoming: std::collections::VecDeque::new(),
@@ -212,25 +317,16 @@ impl Online {
             }
             for ch in [cj_net::channel::RELIABLE, cj_net::channel::UNRELIABLE] {
                 while let Some(bytes) = self.client.receive_message(ch) {
-                    self.incoming
-                        .push_back((self.clock + self.delay, bytes.to_vec()));
+                    if let Some(due) = self.impair.due(self.clock, ch) {
+                        self.incoming.push_back((due, bytes.to_vec()));
+                    }
                 }
             }
-            while self
-                .incoming
-                .front()
-                .is_some_and(|(due, _)| *due <= self.clock)
-            {
-                let (_, bytes) = self.incoming.pop_front().expect("front exists");
+            while let Some(bytes) = take_due(&mut self.incoming, self.clock) {
                 // A server that sends nonsense is ignored, not trusted.
                 let _ = self.session.receive(&bytes);
             }
-            while self
-                .outgoing
-                .front()
-                .is_some_and(|(due, _, _)| *due <= self.clock)
-            {
-                let (_, ch, bytes) = self.outgoing.pop_front().expect("front exists");
+            while let Some((ch, bytes)) = take_due(&mut self.outgoing, self.clock) {
                 self.client.send_message(ch, bytes);
             }
         } else if self.client.is_disconnected() {
@@ -256,6 +352,30 @@ impl Online {
     }
 
     /// Joins after looking first: sends the held Hello.
+    /// The smoothed round trip to the server, in milliseconds.
+    pub fn rtt_ms(&self) -> f64 {
+        self.client.rtt() * 1000.0
+    }
+
+    /// F3 overlay rows: round trip, packet loss, traffic, and how many
+    /// inputs the server hasn't confirmed yet.
+    pub fn net_rows(&self) -> [String; 3] {
+        let n = self.client.network_info();
+        [
+            format!(
+                "rtt {:.0} ms  loss {:.1}%",
+                n.rtt * 1000.0,
+                n.packet_loss * 100.0
+            ),
+            format!(
+                "net {:.1} kB/s down {:.1} up",
+                n.bytes_received_per_second / 1000.0,
+                n.bytes_sent_per_second / 1000.0
+            ),
+            format!("unconfirmed inputs {}", self.session.unconfirmed()),
+        ]
+    }
+
     pub fn join(&mut self) {
         if let Some(h) = self.held.take() {
             self.hello = Some(h);
@@ -264,9 +384,10 @@ impl Online {
 
     /// Queues a message for the server.
     pub fn send(&mut self, (ch, bytes): (u8, Vec<u8>)) {
-        if self.delay > 0.0 {
-            self.outgoing
-                .push_back((self.clock + self.delay, ch, bytes));
+        if self.impair.active() {
+            if let Some(due) = self.impair.due(self.clock, ch) {
+                self.outgoing.push_back((due, (ch, bytes)));
+            }
         } else if self.client.is_connected() {
             self.client.send_message(ch, bytes);
         }
@@ -288,6 +409,53 @@ impl Online {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Loss and jitter hit only the unreliable channel, at about the rate
+    /// asked; the queue hands out messages once due, in queue order.
+    #[test]
+    fn impairment_drops_and_delays_only_unreliable_messages() {
+        let mut imp = Impair {
+            delay: 0.05,
+            jitter: 0.02,
+            loss: 0.1,
+            seed: 1,
+        };
+        let un = cj_net::channel::UNRELIABLE;
+        let rel = cj_net::channel::RELIABLE;
+        let mut lost = 0;
+        for _ in 0..10_000 {
+            match imp.due(1.0, un) {
+                None => lost += 1,
+                Some(d) => assert!((1.05..=1.07).contains(&d), "{d}"),
+            }
+            assert_eq!(imp.due(1.0, rel), Some(1.05), "reliable: delay only");
+        }
+        assert!((800..1200).contains(&lost), "about 10% lost: {lost}");
+        let mut q: std::collections::VecDeque<(f64, char)> =
+            [(2.0, 'a'), (1.0, 'b'), (1.5, 'c')].into();
+        assert_eq!(take_due(&mut q, 1.6), Some('b'));
+        assert_eq!(take_due(&mut q, 1.6), Some('c'));
+        assert_eq!(take_due(&mut q, 1.6), None);
+    }
+
+    /// A bare host gets the default port; a typed port is kept.
+    #[test]
+    fn a_typed_port_is_kept() {
+        let d = cj_net::DEFAULT_PORT;
+        assert_eq!(server_addr(" 192.0.2.10 "), format!("192.0.2.10:{d}"));
+        assert_eq!(server_addr("192.0.2.10:5000"), "192.0.2.10:5000");
+        assert_eq!(server_addr("host.example:5000"), "host.example:5000");
+    }
+
+    /// A literal address resolves at once; a bad one gives a sentence.
+    #[test]
+    fn literal_addresses_resolve_without_a_wait() {
+        let rx = resolve("192.0.2.10:5000".to_owned());
+        assert_eq!(rx.try_recv().unwrap().unwrap(), "192.0.2.10:5000");
+        let rx = resolve("192.0.2.10:notaport".to_owned());
+        let r = rx.recv_timeout(Duration::from_secs(10)).unwrap();
+        assert!(r.unwrap_err().starts_with("Can't find server"));
+    }
 
     /// Two players reach a real UDP server the way the game does: the
     /// first joins at once (as the host does), the second looks the server

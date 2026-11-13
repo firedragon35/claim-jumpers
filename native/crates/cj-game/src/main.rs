@@ -22,11 +22,13 @@ mod audio;
 mod controls;
 mod draw;
 mod expiry;
+mod focus;
 mod foes;
 mod fx;
 mod host;
 mod hud;
 mod lines;
+mod log;
 mod look;
 mod marge;
 mod music;
@@ -114,6 +116,8 @@ const PILOT_FILE: &str = "pilot.txt";
 const TOAST_TIME: f64 = 3.5;
 /// How long a save warning stays up (seconds): longer, as it matters more.
 const SAVE_WARNING_TIME: f64 = 8.0;
+/// Seconds a two-press button stays armed before it resets itself.
+const ARM_TIMEOUT: f64 = 3.0;
 /// How long the host's "others join with ..." note stays up (seconds).
 const HOST_TOAST_TIME: f64 = 20.0;
 /// Seconds of hosting alone before the host is told why others may not be
@@ -130,6 +134,8 @@ struct App {
     career: Option<Career>,
     /// The saved career, as the title screen describes it.
     saved: Option<Career>,
+    /// The store's career generation `saved` was read at.
+    saved_gen: u64,
     world: World,
     fx: fx::Fx,
     screen: Screen,
@@ -141,6 +147,10 @@ struct App {
     /// Two-press confirmations: erase the save, quit a shift to the menu.
     armed_new: bool,
     armed_menu: bool,
+    armed_end: bool,
+    /// When a two-press button was armed: it disarms by itself after
+    /// ARM_TIMEOUT, so a stale arm can't catch a later stray press.
+    armed_at: f64,
     accumulator: f64,
     seeded: bool,
     quit: bool,
@@ -171,6 +181,9 @@ struct App {
     bench: sounds::Bench,
     /// The last achievement earned, and the clock time it fades.
     toast: Option<(String, f64)>,
+    /// Messages waiting their turn (text, seconds to show), so a second
+    /// message (an achievement while hosting, say) doesn't wipe the first.
+    toasts: std::collections::VecDeque<(String, f64)>,
     /// A connection to a server while playing online (see `net`).
     online: Option<net::Online>,
     /// The server this game is hosting, if any (see `host`).
@@ -196,6 +209,12 @@ struct App {
     online_career: Option<Career>,
     /// A daily challenge in progress: its day and its fixed loadout.
     daily: Option<(String, Career)>,
+    /// The shift was quit from the pause card: its report's Next leads to
+    /// the title rather than the shop.
+    quit_to_title: bool,
+    /// A Join-screen address being looked up: what was typed, and where the
+    /// worker thread sends the answer.
+    lookup: Option<(String, std::sync::mpsc::Receiver<Result<String, String>>)>,
 }
 
 /// True when the career goes on after this report (to the shop).
@@ -206,7 +225,33 @@ fn continues(rep: Option<&Report>) -> bool {
     )
 }
 
+/// At most this many messages wait behind the one showing; past it the
+/// oldest waiting one is dropped.
+const TOAST_QUEUE: usize = 3;
+
 impl App {
+    /// Queues a toast to show for `secs` once those before it are done.
+    fn say(&mut self, text: String, secs: f64) {
+        if self.toasts.len() >= TOAST_QUEUE {
+            self.toasts.pop_front();
+        }
+        self.toasts.push_back((text, secs));
+    }
+
+    /// Moves to the next waiting toast once the current one has had its time.
+    fn next_toast(&mut self) {
+        let done = self
+            .toast
+            .as_ref()
+            .is_none_or(|(_, until)| get_time() > *until);
+        if done {
+            self.toast = self
+                .toasts
+                .pop_front()
+                .map(|(text, secs)| (text, get_time() + secs));
+        }
+    }
+
     fn rng(&self) -> Rng {
         if self.seeded {
             Rng::seeded(7)
@@ -220,8 +265,14 @@ impl App {
         self.ui.reset();
         self.armed_new = false;
         self.armed_menu = false;
+        self.armed_end = false;
         if s == Screen::Title {
-            self.saved = self.store.load_career();
+            // Only re-read when the career was saved since: a damaged file
+            // would otherwise be backed up again on every visit.
+            if self.saved_gen != self.store.career_gen() {
+                self.saved = self.store.load_career();
+                self.saved_gen = self.store.career_gen();
+            }
         }
         // Online the server rolls the offers and conditions. Offline the
         // roll is saved at once: otherwise going back to the title and
@@ -285,9 +336,34 @@ impl App {
         self.begin_play(audio);
     }
 
+    /// Connects to a Join-screen address once its lookup has answered.
+    fn poll_lookup(&mut self, audio: &mut audio::Audio) {
+        let Some((_, rx)) = self.lookup.as_ref() else {
+            return;
+        };
+        let answer = match rx.try_recv() {
+            Ok(a) => a,
+            Err(std::sync::mpsc::TryRecvError::Empty) => return,
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                Err("The address lookup stopped. Try again.".to_owned())
+            }
+        };
+        self.lookup = None;
+        if let Err(e) = answer.and_then(|addr| self.start_online(&addr, true, audio)) {
+            self.say(e, SAVE_WARNING_TIME);
+        }
+    }
+
     /// The Join screen's line about the server being looked up, and whether
     /// it can be joined.
     fn join_status(&self) -> (Option<(String, u32)>, bool, bool) {
+        if let Some((server, _)) = self.lookup.as_ref() {
+            return (
+                Some((format!("Looking up {server}..."), look::col::MUTED)),
+                false,
+                true,
+            );
+        }
         let Some(on) = self.online.as_ref().filter(|o| o.looking()) else {
             return (None, false, false);
         };
@@ -354,7 +430,7 @@ impl App {
         ) {
             Ok(h) => h,
             Err(e) => {
-                self.toast = Some((e, get_time() + SAVE_WARNING_TIME));
+                self.say(e, SAVE_WARNING_TIME);
                 return;
             }
         };
@@ -370,11 +446,11 @@ impl App {
                     ),
                     None => "Hosting on port 47820.".to_owned(),
                 };
-                self.toast = Some((tell, get_time() + HOST_TOAST_TIME));
+                self.say(tell, HOST_TOAST_TIME);
             }
             Err(e) => {
                 self.hosted = None;
-                self.toast = Some((e, get_time() + SAVE_WARNING_TIME));
+                self.say(e, SAVE_WARNING_TIME);
             }
         }
     }
@@ -396,7 +472,7 @@ impl App {
         self.online_career = None;
         self.chat.clear();
         self.world = World::new_shift(self.rng(), self.world.view);
-        self.toast = Some((why, get_time() + SAVE_WARNING_TIME));
+        self.say(why, SAVE_WARNING_TIME);
         self.open(back);
     }
 
@@ -417,10 +493,7 @@ impl App {
         }
         self.alone_hinted = true;
         let at = host::lan_address().map_or_else(String::new, |ip| format!(" with {ip}"));
-        self.toast = Some((
-            format!("No one has joined yet. Check they join{at}, and that Windows Firewall allows Claim Jumpers on private networks."),
-            get_time() + HOST_TOAST_TIME,
-        ));
+        self.say(format!("No one has joined yet. Check they join{at}, and that Windows Firewall allows Claim Jumpers on private networks."), HOST_TOAST_TIME);
     }
 
     /// Online screen changes the server drives: to the lobby when a shift
@@ -471,6 +544,7 @@ impl App {
     /// Everything a shift resets once its world is ready, career or daily.
     fn begin_play(&mut self, audio: &mut audio::Audio) {
         self.fx = fx::Fx::new(self.rng());
+        self.quit_to_title = false;
         self.accumulator = 0.0;
         self.radio.reset();
         self.recorder = replay::Recorder::default();
@@ -567,7 +641,12 @@ impl App {
             self.store.save_bests(&self.bests);
         }
         match st.outcome {
-            Outcome::Continue | Outcome::TradedUp { .. } => self.store.save_career(c),
+            Outcome::Continue | Outcome::TradedUp { .. } => {
+                // The career as it stood before this shift goes into the
+                // rotating backups first.
+                self.store.backup_career();
+                self.store.save_career(c);
+            }
             // A repossession or a paid-off fleet ends the career.
             Outcome::Repossessed { .. } | Outcome::FleetPaid => self.store.clear_career(),
         }
@@ -643,10 +722,7 @@ impl App {
             .iter()
             .find(|a| a.0 == id)
             .map_or("", |a| a.2);
-        self.toast = Some((
-            format!("Achievement: {title} · {how}"),
-            get_time() + TOAST_TIME,
-        ));
+        self.say(format!("Achievement: {title} · {how}"), TOAST_TIME);
         audio.sfx(Sfx::Jackpot);
         self.store.write(PROFILE_FILE, &self.profile.to_json());
     }
@@ -740,6 +816,7 @@ impl App {
             Act::NewCareer => {
                 if !self.armed_new {
                     self.armed_new = true;
+                    self.armed_at = get_time();
                     return;
                 }
                 self.store.clear_career();
@@ -787,16 +864,30 @@ impl App {
             Act::Join => {
                 if self.online.is_some() {
                     if self.join_status().1 {
+                        let typed = self.join_addr.trim().to_owned();
+                        self.settings.remember_server(&typed);
+                        self.save_settings();
                         self.join_online(audio);
                     }
                     return;
                 }
-                let server = format!("{}:{}", self.join_addr.trim(), cj_net::DEFAULT_PORT);
-                if let Err(e) = self.start_online(&server, true, audio) {
-                    self.toast = Some((e, get_time() + SAVE_WARNING_TIME));
+                // The name lookup runs off the frame loop; `poll_lookup`
+                // connects once it answers.
+                let server = net::server_addr(&self.join_addr);
+                self.lookup = Some((server.clone(), net::resolve(server)));
+            }
+            Act::PickServer(i) => {
+                if let Some(server) = self.settings.recent_servers.get(i) {
+                    self.join_addr = server.clone();
+                    // A different address: stop looking at the old server.
+                    self.lookup = None;
+                    if let Some(mut on) = self.online.take() {
+                        on.leave();
+                    }
                 }
             }
             Act::Back if self.screen == Screen::Join => {
+                self.lookup = None;
                 if let Some(mut on) = self.online.take() {
                     on.leave();
                 }
@@ -860,6 +951,18 @@ impl App {
                 self.settings.reduce_motion = !self.settings.reduce_motion;
                 self.save_settings();
             }
+            Act::SetFullscreen => {
+                self.settings.fullscreen = !self.settings.fullscreen;
+                self.save_settings();
+            }
+            Act::SetMono => {
+                self.settings.mono = !self.settings.mono;
+                self.save_settings();
+            }
+            Act::SetBackgroundSound => {
+                self.settings.background_sound = !self.settings.background_sound;
+                self.save_settings();
+            }
             Act::SetPalette => {
                 self.settings.colorblind = !self.settings.colorblind;
                 self.save_settings();
@@ -920,23 +1023,41 @@ impl App {
             Act::Daily => self.start_daily(audio),
             Act::Resume => self.open(Screen::Play),
             // Online, leaving is just leaving: the shared shift goes on, and
-            // there's no local career to settle.
+            // there's no local career to settle. It takes two presses, as
+            // offline, because a host's leave stops the server for everyone.
             Act::EndShiftNow | Act::PauseToMenu if self.online.is_some() => {
+                if !self.armed_menu {
+                    self.armed_menu = true;
+                    self.armed_at = get_time();
+                    return;
+                }
                 self.leave_online("You left the server.".to_owned());
             }
-            Act::EndShiftNow => self.end_shift(audio),
+            // Settling is final, so it takes two presses like Main menu: a
+            // pad's A on the focused button is an easy slip.
+            Act::EndShiftNow => {
+                if !self.armed_end {
+                    self.armed_end = true;
+                    self.armed_menu = false;
+                    self.armed_at = get_time();
+                    return;
+                }
+                self.end_shift(audio);
+            }
             Act::PauseToMenu => {
                 // Quitting mid-shift must not dodge the installment: it ends
                 // the shift (two presses). A repossession or payoff stays on
                 // the report so the player sees it.
                 if !self.armed_menu {
                     self.armed_menu = true;
+                    self.armed_end = false;
+                    self.armed_at = get_time();
                     return;
                 }
+                // The report is shown so the player sees what quitting cost
+                // (installment, contract, wage); its Next goes to the title.
                 self.end_shift(audio);
-                if continues(self.report.as_ref()) {
-                    self.go_to_title();
-                }
+                self.quit_to_title = true;
             }
             // Online the report leads back to the lobby: the server has
             // already settled the career, and the break goes on there.
@@ -950,7 +1071,10 @@ impl App {
                 self.open(next);
             }
             Act::ReportNext => {
-                if self.report.as_ref().is_some_and(|r| r.daily.is_some()) {
+                let quit = std::mem::take(&mut self.quit_to_title);
+                if self.report.as_ref().is_some_and(|r| r.daily.is_some())
+                    || (quit && continues(self.report.as_ref()))
+                {
                     self.go_to_title();
                 } else if continues(self.report.as_ref()) {
                     self.shop_msg.clear();
@@ -1092,6 +1216,11 @@ async fn main() {
         }
     };
     let look = look::Look::new();
+    // One frame of the splash first: the date check below can wait 1.5 s
+    // for network time, and a blank window that long looks hung.
+    clear_background(BLACK);
+    ui::splash(&look, view(), screen_dpi_scale());
+    next_frame().await;
     // Past the play-test cut-off nothing else starts: no sound, no saves
     // read or written, no server. The date comes from network time when
     // it answers (up to 1.5 s offline), otherwise the PC's clock.
@@ -1108,9 +1237,13 @@ async fn main() {
         expired_screen(&look).await;
         return;
     }
+    // The save folder first, so the log and the crash hook cover the rest
+    // of startup (sound included).
+    let store = save::Store::open();
+    let crash_note = log::init(store.folder());
     let mut audio = audio::Audio::start();
     if let Some(e) = &audio.error {
-        eprintln!("sound is off: {e}");
+        log::line(&format!("sound is off: {e}"));
     }
     let mut controls = controls::Controls::new();
     let mut fx_rng = seeded(7);
@@ -1119,11 +1252,10 @@ async fn main() {
     // Shaders compile here, after the window exists.
     let mut post = post::Post::new();
     let mut perf = perf::Perf::new();
-    let store = save::Store::open();
     let (vw, vh) = view();
-    let settings = settings::Settings::from_json(store.read(SETTINGS_FILE).as_deref());
-    let profile = profile::Profile::from_json(store.read(PROFILE_FILE).as_deref());
-    let board = profile::board_from_json(store.read(BOARD_FILE).as_deref());
+    let settings = settings::Settings::from_json(store.read_json(SETTINGS_FILE).as_deref());
+    let profile = profile::Profile::from_json(store.read_json(PROFILE_FILE).as_deref());
+    let board = profile::board_from_json(store.read_json(BOARD_FILE).as_deref());
     // loadPlayerName: a cleaned saved name, or a fresh Tugger-NNNN.
     let pilot = match store.read(PILOT_FILE).map(|n| profile::clean_name(&n)) {
         Some(n) if !n.is_empty() => n,
@@ -1137,6 +1269,7 @@ async fn main() {
         bests: store.load_bests(),
         mode: store.load_mode(),
         saved: store.load_career(),
+        saved_gen: store.career_gen(),
         store,
         career: None,
         world: World::new_shift(seeded(7), (f64::from(vw), f64::from(vh))),
@@ -1150,6 +1283,8 @@ async fn main() {
         shop_msg: String::new(),
         armed_new: false,
         armed_menu: false,
+        armed_end: false,
+        armed_at: 0.0,
         accumulator: 0.0,
         seeded: smoke,
         quit: false,
@@ -1174,6 +1309,7 @@ async fn main() {
         sound_groups: sounds::groups(),
         bench: sounds::Bench::default(),
         toast: None,
+        toasts: std::collections::VecDeque::new(),
         online: None,
         hosted: None,
         join_addr: String::new(),
@@ -1186,7 +1322,12 @@ async fn main() {
         host_pvp: false,
         online_career: None,
         daily: None,
+        quit_to_title: false,
+        lookup: None,
     };
+    if let Some(note) = crash_note {
+        app.say(note, SAVE_WARNING_TIME);
+    }
     let mut sm = Smoke::default();
     if smoke {
         app.act(Act::StartOrContinue, &mut audio);
@@ -1198,13 +1339,33 @@ async fn main() {
         let (vw, vh) = view();
         app.world.view = (f64::from(vw), f64::from(vh));
         if let Err(e) = app.start_online(&server, false, &mut audio) {
-            app.toast = Some((e, get_time() + SAVE_WARNING_TIME));
+            app.say(e, SAVE_WARNING_TIME);
         }
     }
     let start = get_time();
+    let mut focus = focus::Focus::new();
+    // What the window is now, so the setting is applied only on a change.
+    let mut fullscreen_now = false;
+    // F3's smoothed CPU split of a frame, in ms.
+    let (mut sim_ms, mut draw_ms) = (0.0f32, 0.0f32);
 
     loop {
-        controls.poll();
+        let pad_lost = controls.poll();
+        // Leaving the window (or a pad dropping out) pauses a single-player
+        // shift below; online the shared shift can't wait.
+        let focus_change = focus.update();
+        if focus_change != focus::Change::None {
+            audio.set_away(focus.away && !app.settings.background_sound);
+        }
+        let step_away = (focus_change == focus::Change::Lost || pad_lost) && !smoke;
+        if get_time() - app.armed_at > ARM_TIMEOUT {
+            app.armed_new = false;
+            app.armed_menu = false;
+            app.armed_end = false;
+        }
+        if is_key_pressed(KeyCode::F11) {
+            app.act(Act::SetFullscreen, &mut audio);
+        }
         audio.recover(get_time());
         let (vw, vh) = view();
         app.world.view = (f64::from(vw), f64::from(vh));
@@ -1229,10 +1390,13 @@ async fn main() {
         // The Join screen's address: an IP address or host name.
         if app.screen == Screen::Join {
             let before = app.join_addr.clone();
-            while let Some(ch) = get_char_pressed() {
-                if (ch.is_ascii_alphanumeric() || ch == '.' || ch == '-')
-                    && app.join_addr.len() < 64
-                {
+            for ch in typed_chars() {
+                // One ':' and digits after it for a server on its own port.
+                let port_ok = ch == ':' && !app.join_addr.contains(':')
+                    || ch.is_ascii_digit() && app.join_addr.contains(':');
+                let host_ok = (ch.is_ascii_alphanumeric() || ch == '.' || ch == '-')
+                    && !app.join_addr.contains(':');
+                if (host_ok || port_ok) && app.join_addr.len() < 64 {
                     app.join_addr.push(ch);
                 }
             }
@@ -1242,10 +1406,12 @@ async fn main() {
             // A changed address means a different server: stop looking at
             // the old one.
             if app.join_addr != before {
+                app.lookup = None;
                 if let Some(mut on) = app.online.take() {
                     on.leave();
                 }
             }
+            app.poll_lookup(&mut audio);
             if !app.join_addr.is_empty()
                 && (is_key_pressed(KeyCode::Enter) || is_key_pressed(KeyCode::KpEnter))
             {
@@ -1255,7 +1421,7 @@ async fn main() {
         // Online chat: Enter opens it in a shift (the lobby has a button),
         // Enter sends the line and Escape drops it.
         if let Some(t) = app.chat.typing.as_mut() {
-            while let Some(ch) = get_char_pressed() {
+            for ch in typed_chars() {
                 if !ch.is_control() && t.chars().count() < cj_net::CHAT_MAX {
                     t.push(ch);
                 }
@@ -1282,7 +1448,7 @@ async fn main() {
             app.chat.typing = Some(String::new());
         }
         if let Some(t) = app.name_edit.as_mut() {
-            while let Some(ch) = get_char_pressed() {
+            for ch in typed_chars() {
                 if !ch.is_control() && t.chars().count() < profile::NAME_MAX * 2 {
                     t.push(ch);
                 }
@@ -1319,6 +1485,11 @@ async fn main() {
             look::set_sprites(app.settings.sprites);
             look::set_reduce_motion(app.settings.reduce_motion);
             audio.set_volumes(app.settings.volume_gains());
+            audio.set_mono(app.settings.mono);
+            if app.settings.fullscreen != fullscreen_now {
+                fullscreen_now = app.settings.fullscreen;
+                set_fullscreen(fullscreen_now);
+            }
             app.music.enabled = app.settings.music;
             controls.bind(&app.settings);
         }
@@ -1339,7 +1510,11 @@ async fn main() {
             },
             activate: keys.activate && !typing,
             tab: keys.tab,
-            back: false,
+            // Escape / pad B back out of a screen. Typing keeps Escape for
+            // itself (a rebind cancels, a name edit drops), except on Join,
+            // whose address field is always open.
+            back: keys.back
+                && (!typing || (app.screen == Screen::Join && app.chat.typing.is_none())),
             start: keys.start,
         };
 
@@ -1349,6 +1524,7 @@ async fn main() {
             perf.on = !perf.on;
         }
 
+        let sim_began = std::time::Instant::now();
         // Simulation, or the drifting field behind the menus.
         let dt = f64::from(get_frame_time()).min(MAX_FRAME_DT);
         // The press that opens the pause card must not also close it below.
@@ -1404,7 +1580,7 @@ async fn main() {
                 );
             }
             Screen::Play => {
-                if presses.pause && !smoke {
+                if (presses.pause && !smoke) || step_away {
                     audio.set_thrust(0.0, 0.0, false);
                     app.open(Screen::Paused);
                     just_paused = true;
@@ -1448,6 +1624,12 @@ async fn main() {
         };
         audio.set_echo(echo);
 
+        // CPU time only (the GPU runs behind), smoothed so F3 is readable.
+        let smooth = |avg: &mut f32, t: std::time::Instant| {
+            *avg += (t.elapsed().as_secs_f32() * 1000.0 - *avg) * 0.1;
+        };
+        smooth(&mut sim_ms, sim_began);
+        let draw_began = std::time::Instant::now();
         // Draw the field, then the HUD or the screen's card.
         let dpi = screen_dpi_scale();
         draw::render(draw::Scene {
@@ -1496,7 +1678,15 @@ async fn main() {
                 controls.last_device,
                 app.fx.banked_shown,
             );
-            app.radio.draw(&look, app.world.t, hud_view);
+            // In training, Marge's line repeats the card's: show it once.
+            let card = app.world.tut.as_ref().map(|t| {
+                cj_sim::tutorial::TUTORIAL[t.step.min(cj_sim::tutorial::TUTORIAL.len() - 1)]
+            });
+            app.radio.draw(&look, app.world.t, hud_view, card);
+            if let Some(on) = app.online.as_ref() {
+                let pilots = app.world.pilots.iter().filter(|p| p.away.is_none()).count();
+                hud::online_badge(&look, hud_view, pilots, on.rtt_ms());
+            }
             // Online, holding Tab shows who is flying and how they're doing.
             if let Some(on) = app.online.as_ref().filter(|_| is_key_down(KeyCode::Tab)) {
                 online::player_list(&look, on.session.lobby.as_ref(), on.session.pilot, hud_view);
@@ -1534,8 +1724,9 @@ async fn main() {
                     &menu,
                     (vw, vh),
                     dpi,
-                    app.armed_menu,
+                    (app.armed_end, app.armed_menu),
                     app.voice.enabled,
+                    app.online.as_ref().map(|_| app.hosted.is_some()),
                 )
             }
             Screen::Launch => {
@@ -1563,6 +1754,7 @@ async fn main() {
                     status,
                     can_join,
                     looking,
+                    recent: &app.settings.recent_servers,
                 };
                 screens::join(&look, &mut app.ui, &menu, (vw, vh), dpi, v)
             }
@@ -1674,22 +1866,47 @@ async fn main() {
             }
         };
         if let Some(warning) = app.store.take_error() {
-            app.toast = Some((warning, get_time() + SAVE_WARNING_TIME));
+            app.say(warning, SAVE_WARNING_TIME);
         }
+        app.next_toast();
         draw_toast(&look, &app.toast, (vw, vh));
         // Last, over every screen, in window units.
+        smooth(&mut draw_ms, draw_began);
         if perf.on {
             draw::screen_camera((vw, vh));
+            let mut extra = vec![format!("cpu sim {sim_ms:.2} ms  draw {draw_ms:.2} ms")];
+            if let Some(on) = app.online.as_ref() {
+                extra.extend(on.net_rows());
+            }
             perf.draw(
                 &look,
                 (vw, vh),
                 app.fx.particles.len(),
                 app.settings.effects,
+                &extra,
             );
         }
         let picked = if smoke { sm.drive(&mut app) } else { picked };
         if let Some(a) = picked {
             app.act(a, &mut audio);
+        }
+        // F12: a screenshot into the save folder (the game writes nowhere
+        // else), named by the time so shots never overwrite each other.
+        if is_key_pressed(KeyCode::F12) && !smoke {
+            if let Some(dir) = app.store.folder().map(|d| d.join("screenshots")) {
+                let secs = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_or(0, |d| d.as_secs());
+                let path = dir.join(format!("claim-jumpers-{secs}.png"));
+                let msg = match std::fs::create_dir_all(&dir) {
+                    Ok(()) => {
+                        save_screen(&path);
+                        format!("Screenshot saved to {}", path.display())
+                    }
+                    Err(e) => format!("Could not save a screenshot: {e}"),
+                };
+                app.say(msg, TOAST_TIME);
+            }
         }
         if smoke && sm.capture(&app, start) {
             let passed = sm.finish(&app, &audio, get_time() - start);
@@ -1962,7 +2179,8 @@ impl Smoke {
                 app.open(Screen::Paused);
                 None
             }
-            Screen::Paused if leave => Some(Act::EndShiftNow),
+            // End shift now takes two presses: arm it, then press again.
+            Screen::Paused if leave || self.on_screen == 5 => Some(Act::EndShiftNow),
             Screen::Report if leave => {
                 if let Some(c) = app.career.as_mut() {
                     // Enough in the wallet to show a purchase, and a
@@ -2046,13 +2264,7 @@ impl Smoke {
             _ => return false,
         };
         let path = std::env::temp_dir().join(format!("claim-jumpers-m5-{name}.png"));
-        // get_screen_data comes back top row first, as the window shows it,
-        // but carries the alpha of the last blend; make it opaque.
-        let mut img = get_screen_data();
-        for px in img.bytes.chunks_mut(4) {
-            px[3] = 255;
-        }
-        img.export_png(&path.to_string_lossy());
+        save_screen(&path);
         if name == "play" {
             let w = &app.world;
             let s = &w.me().ship;
@@ -2267,6 +2479,31 @@ fn smoke_input(frame: u32) -> Input {
         fire: true,
         ..Input::default()
     }
+}
+
+/// Saves what the window shows now as a PNG at `path`.
+fn save_screen(path: &std::path::Path) {
+    // get_screen_data comes back top row first, as the window shows it,
+    // but carries the alpha of the last blend; make it opaque.
+    let mut img = get_screen_data();
+    for px in img.bytes.chunks_mut(4) {
+        px[3] = 255;
+    }
+    img.export_png(&path.to_string_lossy());
+}
+
+/// This frame's typed characters, plus the clipboard's text on Ctrl+V (an
+/// address or a name is often copied from a chat window). Each field still
+/// filters what it accepts, character by character.
+fn typed_chars() -> Vec<char> {
+    let mut out: Vec<char> = std::iter::from_fn(get_char_pressed).collect();
+    let ctrl = is_key_down(KeyCode::LeftControl) || is_key_down(KeyCode::RightControl);
+    if ctrl && is_key_pressed(KeyCode::V) {
+        if let Some(text) = miniquad::window::clipboard_get() {
+            out.extend(text.trim().chars());
+        }
+    }
+    out
 }
 
 /// The achievement toast (#toast): top centre, a hazard edge, 3.5 s.

@@ -4,7 +4,7 @@ A native Rust port of Claim Jumpers for Windows 10 and 11. This is the lead
 version of the game. The browser game (`claim-jumpers-game`) it was ported
 from is a frozen baseline at its 1.0.7, and new gameplay is built here first.
 
-**Status: release 1.15.0, online co-op and opt-in PvP for up to 20 pilots (all systems ported, packaged for Windows; history in [CHANGELOG.md](CHANGELOG.md)).** A career of
+**Status: release 1.16.0, online co-op and opt-in PvP for up to 20 pilots (all systems ported, packaged for Windows; history in [CHANGELOG.md](CHANGELOG.md)).** A career of
 five-minute shifts: fly the tug, tow and fight for salvage, and bank it at
 the carrier, against rival crews, debt collectors who net and tow the tug
 (or confiscate a fat load, or impound it), the law (wanted stars, patrols,
@@ -146,7 +146,11 @@ $env:CLAIM_JUMPERS_DATA = "$env:TEMP\cj-p2"; .\target\release\claim-jumpers.exe
 ```
 
 `CJ_NET_LAG_MS` (0 to 2000) adds that much round-trip delay to a client,
-for feel tests. `--join HOST:PORT` skips the Join screen.
+for feel tests. `CJ_NET_JITTER_MS` (0 to 1000) adds up to that much more at
+random, and `CJ_NET_LOSS_PCT` (0 to 90) drops that share of messages, each
+way; both touch only the unreliable channel (inputs and snapshots).
+`--join HOST:PORT` skips the Join screen, and the Join screen takes
+`host:port` for a server started with `--port`.
 
 ## Release package
 
@@ -198,7 +202,9 @@ installer: the zip unpacks and runs in place, and the saves live in
 | Marge's voice on / off | V | |
 | Music on / off | N | |
 | Skip training | T | |
-| Frame-time overlay | F3 | |
+| Frame-time overlay (with the network when online) | F3 | |
+| Fullscreen on / off | F11 | |
+| Screenshot (to `screenshots` in the save folder) | F12 | |
 
 The flight keys can be rebound in Settings. With local co-op on, P2 flies
 from the numpad (8 thrust, 4 / 6 turn, 5 or 2 brake, 0 fire, Enter latch)
@@ -206,8 +212,13 @@ or from the last connected gamepad (left stick turn, RT or A thrust, LT
 brake, RB fire, Y latch), and player 1 leaves that gamepad alone.
 
 In menus: arrow keys, D-pad or left stick move between buttons; Enter,
-Space or A press; LB / RB switch tabs; Start presses the screen's main
-button. The mouse works too.
+Space or A press; Escape or B goes back; LB / RB switch tabs; Start presses
+the screen's main button. The mouse works too. Text fields take Ctrl+V.
+
+A single-player shift pauses by itself when the window loses focus or the
+gamepad being flown with disconnects. Online the shared shift can't wait,
+so the pause card there is a menu over a running shift, and leaving (or,
+for a host, stopping the server) takes two presses.
 
 The career, best shifts and chosen difficulty are saved in
 `%APPDATA%\ClaimJumpers` (`career.json`, `best.json`, `mode.txt`), with
@@ -217,8 +228,13 @@ the settings (`settings.json`), the profile of records and achievements
 browser's field names. Saves are written atomically, and a malformed save
 is repaired on load the way the browser repairs one. A career file that
 can't be read at all is copied to `career.bad.json` before a new career
-replaces it, and a save that fails shows a warning on screen. Set
-`CLAIM_JUMPERS_DATA` to use another folder.
+replaces it; a damaged `profile.json`, `board.json` or `settings.json` is
+likewise kept as `<name>.bad.json`. Each settled shift keeps the career as it
+was before in `career.1.json` to `career.3.json` (newest first), and a save
+that fails shows a warning on screen. Problems are also written to
+`game.log` (restarted past 1 MB, the last kept as `game.old.log`), and a
+crash writes `crash.log`, which the next launch renames `crash.last.log` and
+points out. Set `CLAIM_JUMPERS_DATA` to use another folder.
 
 Unattended check: a scripted shift with a tow, the cannon, a rival, a
 crab, missiles and sentries, the refinery waking its drones, a debt

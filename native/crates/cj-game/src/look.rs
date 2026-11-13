@@ -345,8 +345,9 @@ pub struct ShipArt {
     pub hauler: Texture2D,
 }
 
-/// A painted sprite, with mipmaps: the art is ~512 px but drawn at ~50,
-/// and plain linear filtering would sample it too sparsely and shimmer.
+/// A painted sprite, with mipmaps: the art is about 80 to 180 px but drawn
+/// at around 50, and plain linear filtering would sample it too sparsely
+/// and shimmer.
 fn png(bytes: &[u8]) -> Texture2D {
     mipmapped(Texture2D::from_file_with_format(
         bytes,

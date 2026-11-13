@@ -1386,6 +1386,39 @@ pub const MAX_CATCH_UP: Duration = Duration::from_millis(250);
 /// A panic in a step (a bug) ends the run the same way, so players are told
 /// at once instead of waiting out a timeout, and comes back as `Err` with
 /// what went wrong (also in the log).
+/// Steps between the run loop's health lines in the log (one minute).
+const HEALTH_EVERY: u32 = 60 * 60;
+
+/// What the run loop saw since its last health line.
+#[derive(Default)]
+struct Health {
+    steps: u32,
+    overruns: u32,
+    slowest: Duration,
+}
+
+impl Health {
+    /// Notes one step that took `took` to run.
+    fn step(&mut self, took: Duration) {
+        self.steps += 1;
+        self.slowest = self.slowest.max(took);
+    }
+
+    /// The summary line once a minute's steps are in (and starts again).
+    fn line(&mut self, pilots: usize, waiting: usize) -> Option<String> {
+        if self.steps < HEALTH_EVERY {
+            return None;
+        }
+        let line = format!(
+            "health: {pilots} flying, {waiting} waiting, {} overruns, slowest step {:.1} ms",
+            self.overruns,
+            self.slowest.as_secs_f64() * 1000.0
+        );
+        *self = Health::default();
+        Some(line)
+    }
+}
+
 pub fn run(
     transport: &mut renet_netcode::NetcodeServerTransport,
     server: &mut Server,
@@ -1397,7 +1430,9 @@ pub fn run(
     // when the loop falls too far behind (see MAX_CATCH_UP).
     let mut start = Instant::now();
     let mut n: u32 = 0;
+    let mut health = Health::default();
     let outcome = loop {
+        let began = Instant::now();
         let stepped = catch_unwind(AssertUnwindSafe(|| {
             if let Err(e) = transport.update(step, &mut server.renet) {
                 server.log.push(format!("transport: {e}"));
@@ -1421,6 +1456,10 @@ pub fn run(
                 break Err(why);
             }
         }
+        health.step(began.elapsed());
+        if let Some(line) = health.line(server.players.len(), server.waiting.len()) {
+            server.log.push(line);
+        }
         n += 1;
         let deadline = start + step * n;
         match deadline.checked_duration_since(Instant::now()) {
@@ -1437,6 +1476,7 @@ pub fn run(
                 n = 0;
             }
             None if Instant::now() - deadline > step * 3 => {
+                health.overruns += 1;
                 server.log.push(format!(
                     "step {n} overran by {:?}",
                     Instant::now() - deadline
@@ -1454,4 +1494,28 @@ pub fn run(
         transport.disconnect_all(&mut server.renet);
     }));
     outcome
+}
+
+#[cfg(test)]
+mod health_tests {
+    use super::*;
+
+    /// One summary per minute of steps, carrying the slowest step and the
+    /// overrun count, and nothing in between.
+    #[test]
+    fn the_health_line_comes_once_a_minute() {
+        let mut h = Health::default();
+        for i in 0..HEALTH_EVERY - 1 {
+            h.step(Duration::from_millis(if i == 10 { 12 } else { 1 }));
+            assert!(h.line(2, 1).is_none());
+        }
+        h.overruns = 3;
+        h.step(Duration::from_millis(1));
+        let line = h.line(2, 1).expect("a minute is up");
+        assert_eq!(
+            line,
+            "health: 2 flying, 1 waiting, 3 overruns, slowest step 12.0 ms"
+        );
+        assert_eq!((h.steps, h.overruns), (0, 0), "starts again");
+    }
 }

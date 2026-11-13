@@ -79,9 +79,10 @@ const PAD_TAPS: [(Button, Tap); 7] = [
     (Button::Select, Tap::Mute),
 ];
 
-/// Pad buttons the menus read: A press, LB / RB tabs, Start primary.
-const MENU_BUTTONS: [Button; 4] = [
+/// Pad buttons the menus read: A press, B back, LB / RB tabs, Start primary.
+const MENU_BUTTONS: [Button; 5] = [
     Button::South,
+    Button::East,
     Button::LeftTrigger,
     Button::RightTrigger,
     Button::Start,
@@ -93,6 +94,8 @@ pub struct MenuKeys {
     /// Direction held (arrow keys, D-pad or left stick).
     pub dir: Option<(f32, f32)>,
     pub activate: bool,
+    /// Escape or pad B: back out of this screen.
+    pub back: bool,
     pub tab: i32,
     pub start: bool,
 }
@@ -173,10 +176,16 @@ impl Controls {
 
     /// Drain gamepad events once per frame, before reading anything, so
     /// gilrs updates its cached state and notices pads connected after launch.
-    pub fn poll(&mut self) {
+    /// True when a pad disconnected while the player was flying with one,
+    /// so a single-player shift can pause instead of drifting.
+    pub fn poll(&mut self) -> bool {
+        let mut lost = false;
         if let Some(g) = self.gilrs.as_mut() {
-            while g.next_event().is_some() {}
+            while let Some(e) = g.next_event() {
+                lost |= e.event == gilrs::EventType::Disconnected;
+            }
         }
+        lost && self.last_device == Device::Pad
     }
 
     /// Held controls right now, from keyboard and the most recently used pad.
@@ -292,7 +301,8 @@ impl Controls {
         out.activate = is_key_pressed(KeyCode::Enter)
             || is_key_pressed(KeyCode::KpEnter)
             || is_key_pressed(KeyCode::Space);
-        if dir.is_some() || out.activate {
+        out.back = is_key_pressed(KeyCode::Escape);
+        if dir.is_some() || out.activate || out.back {
             self.last_device = Device::Keyboard;
         }
         let skip = self.exclude();
@@ -326,6 +336,9 @@ impl Controls {
         let edge = |b: Button| now.contains(&b) && !self.menu_prev.contains(&b);
         if edge(Button::South) {
             out.activate = true;
+        }
+        if edge(Button::East) {
+            out.back = true;
         }
         if edge(Button::LeftTrigger) {
             out.tab = -1;

@@ -1086,7 +1086,13 @@ impl World {
             -REVERSE_THROTTLE * input.reverse
         };
         let mut force = SHIP_THRUST * mods.thrust_mul;
-        if self.crabs.iter().any(|c| c.state == CrabState::Latched) {
+        // Only a crab on this tug fouls its nozzle: online, a crab on another
+        // pilot's hull must not slow the whole field.
+        if self
+            .crabs
+            .iter()
+            .any(|c| c.state == CrabState::Latched && c.on == p)
+        {
             force *= CRAB_LATCHED_THRUST;
         }
         if s.net.is_some() {
@@ -1241,7 +1247,8 @@ impl World {
             shots = mods.guns();
         }
 
-        let low = !s.low_warned && s.hp < 30.0;
+        // Same 30 % line as the alarm below, so armour can't separate them.
+        let low = !s.low_warned && s.hp < mods.max_hp * 0.3;
         if low {
             s.low_warned = true;
         }
@@ -1671,9 +1678,9 @@ impl World {
             let mut repaired_low = false;
             if s.hp < max_hp {
                 s.hp = max_hp.min(s.hp + BAY_REPAIR_RATE * dt);
-                repaired_low = s.hp < 70.0;
+                repaired_low = s.hp < max_hp * 0.7;
             }
-            if s.hp > 40.0 {
+            if s.hp > max_hp * 0.4 {
                 s.low_warned = false;
             }
             if repaired_low {

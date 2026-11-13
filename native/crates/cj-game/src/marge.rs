@@ -73,7 +73,7 @@ impl Voice {
             .chain(std::iter::once((text, false)))
         {
             let Some(plan) = crate::recordings::plan(line, system) else {
-                eprintln!("recording missing for radio line: {line}");
+                crate::log::line(&format!("recording missing for radio line: {line}"));
                 return;
             };
             for i in plan {
@@ -195,7 +195,12 @@ impl RadioPanel {
     }
 
     /// The panel: bottom-left, a hazard edge, fading to quiet between lines.
-    pub fn draw(&self, look: &Look, now: f64, view: (f32, f32)) {
+    /// Draws nothing while the panel would only repeat `shown`, a line
+    /// already on screen (the training card's).
+    pub fn draw(&self, look: &Look, now: f64, view: (f32, f32), shown: Option<&str>) {
+        if shown == Some(self.text.as_str()) {
+            return;
+        }
         let (vw, vh) = view;
         let max_w = 420.0f32.min(vw - 32.0);
         let lines = wrap(look, &self.text, 16.0, Which::Body, max_w - 24.0 - 3.0);

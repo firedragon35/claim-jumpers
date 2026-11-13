@@ -30,6 +30,19 @@ fn label_width(look: &Look, text: &str) -> f32 {
 }
 
 /// A meter row: label column, then an 8 px bar with a 1 px edge.
+/// A dark translucent plate behind a block of HUD text at (x, y), w by h,
+/// with a little margin, so the text stays readable over the field.
+fn plate(x: f32, y: f32, w: f32, h: f32) {
+    let m = 6.0;
+    draw_rectangle(
+        x - m,
+        y - m,
+        w + 2.0 * m,
+        h + 2.0 * m,
+        Color::new(0.02, 0.03, 0.06, 0.55),
+    );
+}
+
 fn meter(look: &Look, name: &str, x: f32, y: f32, w: f32, frac: f32, fill: u32) {
     label(look, name, x, y, crate::look::hex(col::MUTED));
     let bx = x + 52.0 + 8.0;
@@ -69,16 +82,9 @@ pub fn draw(
     let (vw, vh) = view;
     let (pad, top) = (16.0, 12.0);
 
-    // Left: banked credits and what's on the line.
-    label(look, "Banked", pad, top, crate::look::hex(col::MUTED));
-    text_left(
-        &fmt_credits(banked.round()),
-        pad,
-        top + 16.0,
-        34.0,
-        &look.fonts.display,
-        crate::look::hex(col::HAZARD),
-    );
+    // Left: banked credits and what's on the line. The text lines are
+    // worked out first so a backing plate can be sized to them and drawn
+    // underneath: otherwise world tags and bright rocks run through them.
     // Sealed pods stay secret on the HUD too: their value shows as "+ ?".
     let chain = w
         .me()
@@ -95,28 +101,23 @@ pub fn draw(
     } else {
         ""
     };
-    let line = format!("On the line {}{secret} cr", fmt_credits(known));
-    let mut ly = top + 54.0;
-    let online = |s: &str, y: f32, c: u32| {
-        text_left(s, pad, y, 13.0, &look.fonts.mono, crate::look::hex(c));
-    };
-    online(&line, ly, col::CABLE);
+    let mut lines = vec![(
+        format!("On the line {}{secret} cr", fmt_credits(known)),
+        col::CABLE,
+    )];
     // Carried-over money from earlier shifts (this shift's haul is "Banked").
     if let Some(c) = career {
-        ly += 18.0;
-        let (s, colr) = if c.wallet < 0.0 {
+        lines.push(if c.wallet < 0.0 {
             (
                 format!("Wallet −{} cr overdrawn", fmt_credits(-c.wallet)),
                 col::DANGER,
             )
         } else {
             (format!("Wallet {} cr", fmt_credits(c.wallet)), col::CABLE)
-        };
-        online(&s, ly, colr);
+        });
     }
     // The accepted contract and its progress; cable once it is met.
     if let Some(k) = &w.me().contract {
-        ly += 18.0;
         let prog = k.n.min(w.contract_progress(0, k));
         let money = matches!(
             k.kind,
@@ -128,14 +129,45 @@ pub fn draw(
             format!("{prog} / {}", k.n)
         };
         let failed = k.kind == cj_sim::field::ContractKind::Clean && w.me().stats.deaths > 0;
-        let (s, colr) = if failed {
+        lines.push(if failed {
             (format!("Contract failed · {}", k.text()), col::HAZARD)
         } else if prog >= k.n {
             (format!("Contract · {} · {amount}", k.text()), col::CABLE)
         } else {
             (format!("Contract · {} · {amount}", k.text()), col::HAZARD)
-        };
-        online(&s, ly, colr);
+        });
+    }
+    // The short gear rows below (slugs, missiles, sentries) need no width.
+    let gear = [
+        w.me().mods.grinder || w.me().ship.slugs > 0,
+        w.me().mods.missiles,
+        w.me().mods.drone_bay,
+    ]
+    .iter()
+    .filter(|b| **b)
+    .count();
+    let widest = lines
+        .iter()
+        .map(|(s, _)| text_width(s, 13.0, &look.fonts.mono))
+        .fold(150.0f32, f32::max);
+    let rows = (lines.len() + gear) as f32;
+    plate(pad, top, widest, 54.0 + 18.0 * (rows - 1.0) + 16.0);
+    label(look, "Banked", pad, top, crate::look::hex(col::MUTED));
+    text_left(
+        &fmt_credits(banked.round()),
+        pad,
+        top + 16.0,
+        34.0,
+        &look.fonts.display,
+        crate::look::hex(col::HAZARD),
+    );
+    let mut ly = top + 54.0 - 18.0;
+    let online = |s: &str, y: f32, c: u32| {
+        text_left(s, pad, y, 13.0, &look.fonts.mono, crate::look::hex(c));
+    };
+    for (s, c) in &lines {
+        ly += 18.0;
+        online(s, ly, *c);
     }
     if w.me().mods.grinder || w.me().ship.slugs > 0 {
         ly += 18.0;
@@ -305,6 +337,7 @@ pub fn draw(
     let mx = vw - pad - mw;
     let s = &w.me().ship;
     let m = &w.me().mods;
+    plate(mx, top, mw, 94.0 + 12.0);
     meter(
         look,
         "Shield",
@@ -314,7 +347,8 @@ pub fn draw(
         (s.shield / m.shield_max) as f32,
         col::SHIELD,
     );
-    let hull_c = if s.hp < 30.0 {
+    // The same 30 % line as the hull alarm.
+    let hull_c = if s.hp < m.max_hp * 0.3 {
         col::DANGER
     } else {
         col::HAZARD
@@ -389,6 +423,17 @@ pub fn draw(
             "Y hook · B drop last · LB cut all · Start pause",
         ],
     };
+    let hint_w = lines
+        .iter()
+        .map(|l| text_width(l, 11.0, &look.fonts.mono_light))
+        .fold(0.0f32, f32::max);
+    let hint_top = vh - 16.0 - 17.6 * lines.len() as f32;
+    plate(
+        vw - pad - hint_w,
+        hint_top,
+        hint_w,
+        17.6 * lines.len() as f32,
+    );
     for (i, l) in lines.iter().rev().enumerate() {
         let tw = text_width(l, 11.0, &look.fonts.mono_light);
         let y = vh - 16.0 - 17.6 * (i as f32 + 1.0);
@@ -401,6 +446,25 @@ pub fn draw(
             crate::look::hex(col::MUTED),
         );
     }
+}
+
+/// Online: a small badge under the meters saying so, with how many pilots
+/// are flying and the round trip, so a laggy shift explains itself.
+pub fn online_badge(look: &Look, view: (f32, f32), pilots: usize, rtt_ms: f64) {
+    let s = format!(
+        "ONLINE · {pilots} pilot{} · {rtt_ms:.0} ms",
+        if pilots == 1 { "" } else { "s" }
+    );
+    let tw = text_width(&s, 11.0, &look.fonts.mono);
+    // Under the winch load line (top + 94), clear of the radar below it.
+    let (x, y) = (view.0 - 16.0 - tw, 12.0 + 112.0);
+    plate(x, y, tw, 12.0);
+    let c = if rtt_ms > 150.0 {
+        col::HAZARD
+    } else {
+        col::CABLE
+    };
+    text_left(&s, x, y, 11.0, &look.fonts.mono, crate::look::hex(c));
 }
 
 /// The HUD's PvP status for pilot `me`, if there is anything to say.
