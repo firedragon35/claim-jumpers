@@ -525,69 +525,52 @@ fn draw_wreck(wr: &Wreck, t: f32) {
 /// Rock: dark body, a soft highlight to the upper left that stays put while
 /// it spins, shadowed craters, and the outline.
 fn draw_rock(look: &Look, rk: &Rock) {
-    let xf = Xf::new(rk.b.x, rk.b.y, rk.angle);
-    let r = rk.b.r as f32;
-    let pts = shape_pts(&xf, &rk.shape, rk.b.r);
-    let flash = rk.flash > 0.0;
-    if flash {
-        fill_fan(xf.o, &pts, crate::look::hex(0x2b3448));
-    } else {
-        shaded_fan(xf.o, &pts, crate::look::hex(col::ROCK_FILL), 1.3, 0.6);
-    }
-    // The browser fills a radial gradient clipped to the outline. Without
-    // clipping, a smaller soft highlight keeps the light inside the rock.
-    look.glow(
-        xf.o.x - r * 0.35,
-        xf.o.y - r * 0.35,
-        r * 0.75,
-        0xaab9d2,
-        false,
-        0.28,
+    let tex = &look.rocks[crate::look::rock_art(rk.size, rk.veined, rk.id)];
+    let flash = (rk.flash > 0.0).then_some(0.6);
+    draw_sprite(
+        look,
+        tex,
+        v(rk.b.x, rk.b.y),
+        rk.b.r as f32,
+        rk.angle as f32,
+        rock_tint(rk.veined, 1.0),
+        flash,
     );
-    for c in &rk.craters {
-        let p = xf.p((c.a.cos() * c.d) as f32 * r, (c.a.sin() * c.d) as f32 * r);
-        let cr = c.s as f32 * r;
-        draw_circle(p.x, p.y, cr, Color::new(0.0, 0.0, 0.0, 0.28));
-        draw_circle_lines(
-            p.x,
-            p.y,
-            cr,
-            1.0,
-            Color::new(200.0 / 255.0, 215.0 / 255.0, 235.0 / 255.0, 0.08),
-        );
-    }
-    if flash {
-        polyline(&pts, true, 2.0, crate::look::hex(col::TEXT));
+}
+
+/// The art's lit faces are bright enough to cross the bloom threshold
+/// and glow: darken plain rock into the field's blue-grey, and ore a
+/// little less so its seams still shine.
+fn rock_tint(ore: bool, alpha: f32) -> Color {
+    if ore {
+        Color::new(0.8, 0.78, 0.76, alpha)
     } else {
-        let edge = crate::look::hex(col::ROCK);
-        lit_outline(
-            xf.o,
-            &pts,
-            2.0,
-            mix_col(edge, WHITE, 0.55),
-            edge,
-            shade(edge, 0.5),
-        );
+        Color::new(0.5, 0.54, 0.62, alpha)
     }
-    if rk.veined {
-        // Gold seams mark ore-bearing rock.
-        let c = rgba(col::ORE, 0.85);
-        polyline(
-            &xf.pts(&[
-                (-r * 0.5, -r * 0.2),
-                (-r * 0.1, r * 0.1),
-                (r * 0.35, -r * 0.05),
-            ]),
-            false,
-            2.0,
-            c,
-        );
-        polyline(
-            &xf.pts(&[(-r * 0.2, r * 0.4), (r * 0.15, r * 0.3)]),
-            false,
-            2.0,
-            c,
-        );
+}
+
+/// Draw a body sprite centred on `c`, turned by `angle`, sized so its area
+/// matches the circle of radius `r` the simulation collides with, through
+/// `tint` (`rock_tint`). `flash` adds that much white light over it (a hit).
+fn draw_sprite(
+    look: &Look,
+    tex: &Texture2D,
+    c: Vec2,
+    r: f32,
+    angle: f32,
+    tint: Color,
+    flash: Option<f32>,
+) {
+    let size = tex.size() * (2.1 * r / (tex.width() * tex.height()).sqrt());
+    let params = DrawTextureParams {
+        dest_size: Some(size),
+        rotation: angle,
+        ..Default::default()
+    };
+    let (x, y) = (c.x - size.x / 2.0, c.y - size.y / 2.0);
+    draw_texture_ex(tex, x, y, tint, params.clone());
+    if let Some(a) = flash {
+        look.additive(|| draw_texture_ex(tex, x, y, Color::new(1.0, 1.0, 1.0, a), params));
     }
 }
 
@@ -1168,7 +1151,7 @@ fn draw_particles(
         }
         let f = (p.life / p.max) as f32;
         if p.kind == Kind::Chunk {
-            draw_chunk(p, f);
+            draw_chunk(look, p, f);
             continue;
         }
         let r = p.size as f32 * (1.0 + (1.0 - f) * p.grow as f32);
@@ -1216,13 +1199,29 @@ fn draw_particles(
 /// A broken-off piece of rock: a lumpy pentagon that tumbles as it flies,
 /// lit like the rocks, fading out over its last 40% of life (`f` is the
 /// life left, 1 to 0).
-fn draw_chunk(p: &crate::fx::Particle, f: f32) {
+fn draw_chunk(look: &Look, p: &crate::fx::Particle, f: f32) {
     // Fixed lumps, so each chunk keeps its shape as it turns.
     const LUMPS: [f32; 5] = [1.0, 0.7, 0.95, 0.6, 0.85];
     let age = (p.max - p.life) as f32;
     let angle = p.ring as f32 + p.grow as f32 * age;
     let c = v(p.x, p.y);
     let r = p.size as f32;
+    let fade = (f / 0.4).min(1.0);
+    if p.rgb == col::ROCK || p.rgb == col::ORE {
+        // Rock breaks into small rocks; the start angle picks which.
+        let id = (p.ring * 1000.0) as u32;
+        let tex = &look.rocks[crate::look::rock_art(1, p.rgb == col::ORE, id)];
+        draw_sprite(
+            look,
+            tex,
+            c,
+            r,
+            angle,
+            rock_tint(p.rgb == col::ORE, fade),
+            None,
+        );
+        return;
+    }
     let pts: Vec<Vec2> = LUMPS
         .iter()
         .enumerate()
@@ -1231,7 +1230,6 @@ fn draw_chunk(p: &crate::fx::Particle, f: f32) {
             c + vec2(a.cos(), a.sin()) * r * m
         })
         .collect();
-    let fade = (f / 0.4).min(1.0);
     let mut fill = crate::look::hex(col::ROCK_FILL);
     fill.a = fade;
     shaded_fan(c, &pts, fill, 1.3, 0.6);
@@ -1734,6 +1732,37 @@ fn draw_pvp_mark(look: &crate::look::Look, w: &World, p: usize, scale: f32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every rock gets art of its own size and kind, keeps the same art
+    /// for the same id, and every variant gets used.
+    #[test]
+    fn rocks_pick_art_by_size_kind_and_id() {
+        use crate::look::rock_art;
+        for size in 1..=3u8 {
+            for ore in [false, true] {
+                let picks: std::collections::HashSet<usize> =
+                    (0..50).map(|id| rock_art(size, ore, id)).collect();
+                assert!(!picks.is_empty());
+                for id in 0..50 {
+                    assert_eq!(rock_art(size, ore, id), rock_art(size, ore, id));
+                }
+                // An ore rock never borrows plain art, or the reverse.
+                for other in (0..50).map(|id| rock_art(size, !ore, id)) {
+                    assert!(!picks.contains(&other), "size {size}");
+                }
+            }
+        }
+        assert_eq!(
+            (0..20)
+                .map(|id| rock_art(1, false, id))
+                .collect::<std::collections::HashSet<_>>()
+                .len(),
+            10
+        );
+        // Out-of-range sizes fall back to the nearest real one.
+        assert_eq!(rock_art(0, true, 7), rock_art(1, true, 7));
+        assert_eq!(rock_art(9, false, 7), rock_art(3, false, 7));
+    }
 
     /// The rect's top-left must land at the window's top-left (GL clip
     /// space y = +1), not the bottom-left, or everything draws upside down.

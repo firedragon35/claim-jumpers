@@ -188,8 +188,62 @@ void main() {
     gl_FragColor = color * texture2D(Texture, uv);
 }"#;
 
+// Rock art from the owner's asset pack (see assets/sprites/README.md).
+macro_rules! rock_png {
+    ($name:literal) => {
+        include_bytes!(concat!("../../../assets/sprites/rocks/", $name, ".png"))
+    };
+}
+
+/// Rock sprites: (size, ore-bearing, PNG). Sizes match `Rock::size`
+/// (1 small, 2 medium, 3 large); ore-bearing art is the molten and
+/// gold-plated rock.
+const ROCK_ART: [(u8, bool, &[u8]); 27] = [
+    (3, true, rock_png!("large_a_molten")),
+    (3, true, rock_png!("large_b_metallic")),
+    (3, true, rock_png!("breakup_large_molten")),
+    (3, false, rock_png!("large_c_cratered")),
+    (2, true, rock_png!("medium_01_molten")),
+    (2, true, rock_png!("medium_02_metallic")),
+    (2, true, rock_png!("medium_06_ore_slab")),
+    (2, true, rock_png!("breakup_medium_01_molten")),
+    (2, true, rock_png!("breakup_medium_03_metallic")),
+    (2, false, rock_png!("medium_03_cratered")),
+    (2, false, rock_png!("medium_07_cratered")),
+    (2, false, rock_png!("breakup_medium_02_cratered")),
+    (1, true, rock_png!("small_02_molten")),
+    (1, true, rock_png!("small_03_metallic")),
+    (1, true, rock_png!("small_09_metallic")),
+    (1, true, rock_png!("breakup_small_02_molten")),
+    (1, true, rock_png!("breakup_small_03_metallic")),
+    (1, false, rock_png!("small_01_rock")),
+    (1, false, rock_png!("small_04_cratered")),
+    (1, false, rock_png!("small_07_rock")),
+    (1, false, rock_png!("small_08_cratered")),
+    (1, false, rock_png!("small_10_rock")),
+    (1, false, rock_png!("breakup_small_01_rock")),
+    (1, false, rock_png!("breakup_small_04_cratered")),
+    (1, false, rock_png!("field_sample_rock_03")),
+    (1, false, rock_png!("field_sample_rock_05")),
+    (1, false, rock_png!("field_sample_rock_08")),
+];
+
+/// Which `Look::rocks` sprite draws a rock of this size and kind. The id
+/// picks among the variants, so a rock keeps its look as it tumbles.
+pub fn rock_art(size: u8, ore: bool, id: u32) -> usize {
+    let size = size.clamp(1, 3);
+    let fits =
+        || (0..ROCK_ART.len()).filter(move |&i| ROCK_ART[i].0 == size && ROCK_ART[i].1 == ore);
+    let n = fits().count();
+    fits()
+        .nth(id as usize % n)
+        .expect("every size has art of both kinds")
+}
+
 pub struct Look {
     pub fonts: Fonts,
+    /// Rock sprites, in `ROCK_ART` order (pick one with `rock_art`).
+    pub rocks: Vec<Texture2D>,
     /// Source × alpha added to the frame: canvas 'lighter'.
     additive: Material,
     /// Glow sprites per (colour, hot), built on first use like the browser's spriteCache.
@@ -218,6 +272,10 @@ impl Look {
         .expect("additive material compiles (checked in M0)");
         Look {
             fonts: Fonts::load(),
+            rocks: ROCK_ART
+                .iter()
+                .map(|(_, _, png)| Texture2D::from_file_with_format(png, Some(ImageFormat::Png)))
+                .collect(),
             additive,
             sprites: RefCell::new(HashMap::new()),
         }

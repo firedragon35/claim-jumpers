@@ -7,6 +7,11 @@ and the port uses [Semantic Versioning](https://semver.org/) as defined in
 
 ## [Unreleased]
 
+## [1.11.0] - 2026-11-12
+
+### Changed
+- Rocks are drawn with painted sprites from the asteroid art pack: cratered grey rock and molten or gold-plated ore rock in three sizes, with several variants each. A rock keeps the same art as it tumbles, and hits still flash it white. Chunks thrown off a breaking rock use the small rock art. Collision is unchanged.
+
 ## [1.10.0] - 2026-11-12
 
 ### Added
