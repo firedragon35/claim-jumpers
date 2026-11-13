@@ -963,7 +963,7 @@ fn draw_shots(look: &Look, w: &World) {
 /// Pilot `p`'s tow line, from its tug's stern down its chain. A taut link
 /// is straight and brightens with tension; a slack link sags into a curve
 /// so the rope reads as rope.
-fn draw_cable(w: &World, p: usize) {
+fn draw_cable(look: &Look, w: &World, p: usize) {
     let s = &w.pilots[p].ship;
     if !s.alive || w.pilots[p].chain.is_empty() {
         return;
@@ -994,14 +994,25 @@ fn draw_cable(w: &World, p: usize) {
             vec![a, b]
         };
         let tns = it.tension as f32;
+        let width = 1.6 + tns * 1.4;
         // (Every pilot's chain; rivals draw their line in draw_jumper.)
-        glow_stroke(
-            &pts,
-            false,
-            if tns > 0.6 { col::TEXT } else { col::CABLE },
-            1.6 + tns * 1.4,
-            1.0,
-        );
+        glow_stroke(&pts, false, col::CABLE, width, 1.0);
+        // As it tightens the line whitens smoothly (0.3 to 0.9 tension)...
+        let hot = ((tns - 0.3) / 0.6).clamp(0.0, 1.0);
+        if hot > 0.0 {
+            polyline(&pts, false, width, rgba(col::TEXT, hot));
+        }
+        // ...and a halo of light builds around it.
+        if tns > 0.2 {
+            look.additive(|| {
+                polyline(
+                    &pts,
+                    false,
+                    6.0 + tns * 10.0,
+                    rgba(col::CABLE, 0.14 * tns * tns),
+                );
+            });
+        }
         a = b;
     }
 }
@@ -1149,12 +1160,17 @@ fn draw_particles(
     visible: impl Fn(f64, f64, f64) -> bool,
     between: impl FnOnce(),
 ) {
-    // Smoke first, in normal blending, so the glowing fire draws over it.
+    // Smoke and rock chunks first, in normal blending, so the glowing fire
+    // draws over them.
     for p in &fx.particles {
-        if p.kind != Kind::Smoke || !visible(p.x, p.y, 0.0) {
+        if !matches!(p.kind, Kind::Smoke | Kind::Chunk) || !visible(p.x, p.y, p.size) {
             continue;
         }
         let f = (p.life / p.max) as f32;
+        if p.kind == Kind::Chunk {
+            draw_chunk(p, f);
+            continue;
+        }
         let r = p.size as f32 * (1.0 + (1.0 - f) * p.grow as f32);
         draw_circle(p.x as f32, p.y as f32, r, rgba(p.rgb, 0.5 * f));
     }
@@ -1162,7 +1178,7 @@ fn draw_particles(
     // Everything that glows adds light, so overlaps brighten toward white.
     look.additive(|| {
         for p in &fx.particles {
-            if p.kind == Kind::Smoke || !visible(p.x, p.y, p.ring) {
+            if matches!(p.kind, Kind::Smoke | Kind::Chunk) || !visible(p.x, p.y, p.ring) {
                 continue;
             }
             let f = (p.life / p.max) as f32;
@@ -1192,6 +1208,67 @@ fn draw_particles(
                     draw_line(x, y, bx, by, size, rgba(p.rgb, f));
                 }
                 _ => look.glow(x, y, size * 2.2, p.rgb, true, f),
+            }
+        }
+    });
+}
+
+/// A broken-off piece of rock: a lumpy pentagon that tumbles as it flies,
+/// lit like the rocks, fading out over its last 40% of life (`f` is the
+/// life left, 1 to 0).
+fn draw_chunk(p: &crate::fx::Particle, f: f32) {
+    // Fixed lumps, so each chunk keeps its shape as it turns.
+    const LUMPS: [f32; 5] = [1.0, 0.7, 0.95, 0.6, 0.85];
+    let age = (p.max - p.life) as f32;
+    let angle = p.ring as f32 + p.grow as f32 * age;
+    let c = v(p.x, p.y);
+    let r = p.size as f32;
+    let pts: Vec<Vec2> = LUMPS
+        .iter()
+        .enumerate()
+        .map(|(i, &m)| {
+            let a = angle + i as f32 * TAU / 5.0;
+            c + vec2(a.cos(), a.sin()) * r * m
+        })
+        .collect();
+    let fade = (f / 0.4).min(1.0);
+    let mut fill = crate::look::hex(col::ROCK_FILL);
+    fill.a = fade;
+    shaded_fan(c, &pts, fill, 1.3, 0.6);
+    let mut edge = crate::look::hex(p.rgb);
+    edge.a = fade;
+    polyline(&pts, true, 1.5, edge);
+}
+
+/// Each tug's thruster trail: a ribbon from the stern that thins and fades
+/// with age, drawn as light. `t` is the world time the trail points carry.
+fn draw_engine_trails(look: &Look, fx: &Fx, t: f64) {
+    look.additive(|| {
+        for tr in &fx.engine {
+            for i in 1..tr.len() {
+                let (a, b) = (tr[i - 1], tr[i]);
+                // Long jumps (a respawn, a snapshot correction) aren't trail.
+                if (b.0 - a.0).hypot(b.1 - a.1) > 80.0 {
+                    continue;
+                }
+                let k = (1.0 - (t - b.2) / crate::fx::ENGINE_TRAIL_TIME).clamp(0.0, 1.0) as f32;
+                let (a, b) = (v(a.0, a.1), v(b.0, b.1));
+                draw_line(
+                    a.x,
+                    a.y,
+                    b.x,
+                    b.y,
+                    2.0 + 8.0 * k,
+                    rgba(col::HAZARD, 0.22 * k * k),
+                );
+                draw_line(
+                    a.x,
+                    a.y,
+                    b.x,
+                    b.y,
+                    1.0 + 2.0 * k,
+                    rgba(0xfff3b0, 0.5 * k * k),
+                );
             }
         }
     });
@@ -1373,7 +1450,7 @@ pub fn render(sc: Scene) {
     }
     if sc.show_tug {
         for p in 0..w.pilots.len() {
-            draw_cable(w, p);
+            draw_cable(sc.look, w, p);
         }
     }
     for it in &w.items {
@@ -1431,6 +1508,7 @@ pub fn render(sc: Scene) {
         }
     }
     if sc.show_tug {
+        draw_engine_trails(sc.look, sc.fx, w.t);
         // Every pilot's tug: yours in your paint job, each other pilot in
         // its slot's colour.
         for p in 0..w.pilots.len() {

@@ -7,6 +7,21 @@ and the port uses [Semantic Versioning](https://semver.org/) as defined in
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-11-12
+
+### Added
+
+- Thruster trails: a burning engine leaves a short glowing ribbon behind the
+  tug that thins and fades over a third of a second. Every pilot's tug has
+  one, online too.
+- A rock that breaks throws tumbling chunks along with its dust, lit like
+  the rocks and edged in gold when it held ore.
+
+### Changed
+
+- The cable whitens smoothly as it tightens, and a soft halo builds around
+  it, instead of switching colour at one tension.
+
 ## [1.7.0] - 2026-11-12
 
 ### Added

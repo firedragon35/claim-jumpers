@@ -21,7 +21,13 @@ pub enum Kind {
     Flash,
     Shard,
     Smoke,
+    /// A tumbling piece of broken rock. Reuses two fields: `ring` is its
+    /// starting angle and `grow` its spin in radians per second.
+    Chunk,
 }
+
+/// Seconds a thruster trail point lasts.
+pub const ENGINE_TRAIL_TIME: f64 = 0.35;
 
 #[derive(Clone, Debug)]
 pub struct Particle {
@@ -56,6 +62,11 @@ pub struct Fx {
     pub beams: Vec<(f64, f64, f64, f64, f64)>,
     /// Recent positions of fast towed or thrown cargo, by item id (updateTrail).
     pub trails: std::collections::HashMap<u32, std::collections::VecDeque<(f64, f64)>>,
+    /// Each pilot's recent stern positions while thrusting, with the world
+    /// time they were taken. Expired by age rather than count, so the trail
+    /// is the same length whether it's updated every step (offline) or
+    /// every frame (online).
+    pub engine: Vec<std::collections::VecDeque<(f64, f64, f64)>>,
 }
 
 impl Fx {
@@ -66,6 +77,7 @@ impl Fx {
             popups: Vec::new(),
             beams: Vec::new(),
             trails: Default::default(),
+            engine: Vec::new(),
         }
     }
 
@@ -144,6 +156,31 @@ impl Fx {
             i += 1.0;
         }
         self.burst(x, y, 6.0 + r / 6.0, rgb, 140.0 + r * 2.0);
+        // Tumbling chunks, outlined in the rock's tint (gold for ore).
+        let mut i = 0.0;
+        while i < 3.0 + r / 12.0 {
+            let a = self.rng.angle();
+            let sp = self.rng.range(60.0, 160.0) + r;
+            let px = x + a.cos() * r * 0.4;
+            let py = y + a.sin() * r * 0.4;
+            let life = self.rng.range(0.9, 1.6);
+            let size = r * self.rng.range(0.12, 0.22);
+            let start = self.rng.angle();
+            let spin = self.rng.range(-6.0, 6.0);
+            self.add(
+                px,
+                py,
+                a.cos() * sp,
+                a.sin() * sp,
+                life,
+                rgb,
+                size,
+                start,
+                Kind::Chunk,
+                spin,
+            );
+            i += 1.0;
+        }
     }
 
     fn explosion(&mut self, x: f64, y: f64, size: f64, rgb: u32) {
@@ -298,6 +335,27 @@ impl Fx {
                 tr.pop_front();
             }
         }
+        // Thruster trails: a point per update while the engine burns
+        // cleanly, dropped once older than ENGINE_TRAIL_TIME. A wreck or a
+        // clock that went backwards (a new shift) clears the trail.
+        self.engine.resize_with(w.pilots.len(), Default::default);
+        for (tr, pl) in self.engine.iter_mut().zip(&w.pilots) {
+            let s = &pl.ship;
+            if !s.alive {
+                tr.clear();
+                continue;
+            }
+            if s.throttle > 0.0 && !s.sputtering {
+                let (x, y) = s.stern();
+                tr.push_back((x, y, w.t));
+            }
+            while tr
+                .front()
+                .is_some_and(|q| w.t - q.2 > ENGINE_TRAIL_TIME || q.2 > w.t)
+            {
+                tr.pop_front();
+            }
+        }
     }
 
     pub fn emit_ambient(&mut self, w: &World) {
@@ -394,5 +452,48 @@ impl Fx {
             b.4 -= dt;
         }
         self.beams.retain(|b| b.4 > 0.0);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The thruster trail grows while the engine burns, drops points older
+    /// than ENGINE_TRAIL_TIME, and clears when the tug is wrecked or the
+    /// clock goes back (a new shift).
+    #[test]
+    fn engine_trail_expires_by_age() {
+        let mut w = World::new_shift(Rng::seeded(1), (1280.0, 720.0));
+        let mut fx = Fx::new(Rng::seeded(2));
+        w.pilots[0].ship.alive = true;
+        w.pilots[0].ship.sputtering = false;
+        w.pilots[0].ship.throttle = 1.0;
+        for i in 0..60 {
+            w.t = f64::from(i) / 60.0;
+            fx.update_trails(&w);
+        }
+        let tr = &fx.engine[0];
+        // 0.35 s at 60 updates a second: 21 or 22 points, all recent.
+        assert!((20..=22).contains(&tr.len()), "{}", tr.len());
+        assert!(tr.iter().all(|q| w.t - q.2 <= ENGINE_TRAIL_TIME));
+
+        // Engine off: nothing new, and the trail runs out.
+        w.pilots[0].ship.throttle = 0.0;
+        w.t += ENGINE_TRAIL_TIME + 0.01;
+        fx.update_trails(&w);
+        assert!(fx.engine[0].is_empty());
+
+        // A new shift's clock starts again from zero: old points go.
+        w.pilots[0].ship.throttle = 1.0;
+        fx.update_trails(&w);
+        w.t = 0.0;
+        fx.update_trails(&w);
+        assert_eq!(fx.engine[0].len(), 1);
+
+        // Wrecked: cleared at once.
+        w.pilots[0].ship.alive = false;
+        fx.update_trails(&w);
+        assert!(fx.engine[0].is_empty());
     }
 }
