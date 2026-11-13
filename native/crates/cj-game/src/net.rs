@@ -322,7 +322,10 @@ mod tests {
         let mut guest =
             Online::connect(&addr, ([2; 16], [2; 16]), "Guest", (1280, 720), true).expect("guest");
         let frame = 1.0 / 60.0;
-        for f in 0..60 * 8 {
+        // Real time, not a frame count: a slow runner gets longer, not a
+        // failure.
+        let mut deadline = std::time::Instant::now() + Duration::from_secs(30);
+        while std::time::Instant::now() < deadline {
             for on in [&mut host, &mut guest] {
                 on.pump(frame);
                 // As in the game: only a shift in play steps and flushes;
@@ -335,8 +338,16 @@ mod tests {
                 }
                 on.flush();
             }
-            if guest.looking() && guest.session.info.is_some() && f > 60 * 3 {
+            // Join the moment the server has answered the look, as a click on
+            // the Join screen does. Waiting longer races the server's 5 s
+            // Hello deadline on a slow machine.
+            if guest.looking() && guest.session.info.is_some() {
                 guest.join();
+            }
+            // Once both fly, keep going a while: they must stay connected.
+            if host.session.pilot.is_some() && guest.session.pilot.is_some() {
+                let now = std::time::Instant::now();
+                deadline = deadline.min(now + Duration::from_secs(2));
             }
             std::thread::sleep(Duration::from_secs_f64(frame));
         }
