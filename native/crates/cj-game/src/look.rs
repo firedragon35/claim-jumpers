@@ -52,6 +52,7 @@ const CB_PALETTE: [(u32, u32); 10] = [
 
 static COLORBLIND: AtomicBool = AtomicBool::new(false);
 static REDUCE_MOTION: AtomicBool = AtomicBool::new(false);
+static SPRITES: AtomicBool = AtomicBool::new(true);
 /// The HUD's magnification while it is being drawn, as f32 bits; 1.0
 /// (0x3f800000) the rest of the time, so menus and the field are unaffected.
 static HUD_SCALE: AtomicU32 = AtomicU32::new(0x3f80_0000);
@@ -65,6 +66,15 @@ pub fn set_hud_scale(k: f32) {
 
 pub fn hud_scale() -> f32 {
     f32::from_bits(HUD_SCALE.load(Ordering::Relaxed))
+}
+
+/// Choose painted sprites or the original vector outlines (Settings).
+pub fn set_sprites(on: bool) {
+    SPRITES.store(on, Ordering::Relaxed);
+}
+
+pub fn sprites() -> bool {
+    SPRITES.load(Ordering::Relaxed)
 }
 
 /// Switch the palette (Settings.apply); every colour is looked up per draw.
@@ -240,10 +250,65 @@ pub fn rock_art(size: u8, ore: bool, id: u32) -> usize {
         .expect("every size has art of both kinds")
 }
 
+macro_rules! ship_png {
+    ($name:literal) => {
+        include_bytes!(concat!("../../../assets/sprites/ships/", $name, ".png"))
+    };
+}
+
+/// Player models, one per pilot slot (see `player_model`).
+const PLAYER_ART: [&[u8]; 5] = [
+    ship_png!("player_miner"),
+    ship_png!("player_fighter"),
+    ship_png!("player_interceptor"),
+    ship_png!("player_heavy"),
+    ship_png!("player_scout"),
+];
+
+/// Which player model pilot slot `slot` flies: they take turns, so the
+/// first five pilots on a server all look different.
+pub fn player_model(slot: usize) -> usize {
+    slot % PLAYER_ART.len()
+}
+
+/// Ship sprites. The player and rival art points its nose up the image;
+/// the sheriff, collector and hauler art points it to the right.
+pub struct ShipArt {
+    /// In `PLAYER_ART` order.
+    pub players: Vec<Texture2D>,
+    pub skiff: Texture2D,
+    pub cutter: Texture2D,
+    pub gunship: Texture2D,
+    pub brute: Texture2D,
+    pub sheriff: Texture2D,
+    pub collector: Texture2D,
+    pub hauler: Texture2D,
+}
+
+fn png(bytes: &[u8]) -> Texture2D {
+    Texture2D::from_file_with_format(bytes, Some(ImageFormat::Png))
+}
+
+impl ShipArt {
+    fn load() -> ShipArt {
+        ShipArt {
+            players: PLAYER_ART.iter().map(|b| png(b)).collect(),
+            skiff: png(ship_png!("rival_raider")),
+            cutter: png(ship_png!("rival_interceptor")),
+            gunship: png(ship_png!("rival_gunship")),
+            brute: png(ship_png!("rival_elite")),
+            sheriff: png(ship_png!("security_patrol_sheriff")),
+            collector: png(ship_png!("debt_collector")),
+            hauler: png(ship_png!("cargo_hauler")),
+        }
+    }
+}
+
 pub struct Look {
     pub fonts: Fonts,
     /// Rock sprites, in `ROCK_ART` order (pick one with `rock_art`).
     pub rocks: Vec<Texture2D>,
+    pub ships: ShipArt,
     /// Source × alpha added to the frame: canvas 'lighter'.
     additive: Material,
     /// Glow sprites per (colour, hot), built on first use like the browser's spriteCache.
@@ -272,10 +337,8 @@ impl Look {
         .expect("additive material compiles (checked in M0)");
         Look {
             fonts: Fonts::load(),
-            rocks: ROCK_ART
-                .iter()
-                .map(|(_, _, png)| Texture2D::from_file_with_format(png, Some(ImageFormat::Png)))
-                .collect(),
+            rocks: ROCK_ART.iter().map(|(_, _, b)| png(b)).collect(),
+            ships: ShipArt::load(),
             additive,
             sprites: RefCell::new(HashMap::new()),
         }

@@ -7,6 +7,14 @@ and the port uses [Semantic Versioning](https://semver.org/) as defined in
 
 ## [Unreleased]
 
+## [1.12.0] - 2026-11-12
+
+### Changed
+- Ships are drawn with painted sprites from the art pack. Each pilot slot flies its own player model (miner, fighter, interceptor, heavy, scout, then round again), washed in its paint job or online slot colour. Rivals use a model per hull (skiff, cutter, gunship, brute), and the sheriff, Galactic SWAT, debt collector and convoy hauler have their own art. Thrust flames, shields, hit flashes, hunter heat, light bars and tags still show. Bought parts show on the tug in the shop, no longer in the field. Collision is unchanged.
+
+### Added
+- Settings: "Art style" switches rocks and ships between the painted sprites and the original vector outlines (painted by default; saved as `sprites` in settings.json). Vector style shows bought parts on the tug again. The co-op note moves under the controls to make room.
+
 ## [1.11.0] - 2026-11-12
 
 ### Changed

@@ -74,6 +74,30 @@ fn fill_rect(f: &Frame, x: f32, y: f32, w: f32, h: f32, c: Color) {
     fill_fan((r[0] + r[2]) / 2.0, &r, c);
 }
 
+/// The exhaust flame off the stern, choked while sputtering; the
+/// afterburner throws a long, blue-hot flame. The sprite ships use it too.
+pub fn draw_flame(look: &Look, f: &Frame, st: &TugState, rng: &mut Rng) {
+    let k = f.k;
+    if st.thrust > 0.0 && !st.sputtering {
+        let len = rng.range(14.0, 26.0) as f32 * if st.burn { 2.0 } else { 1.0 };
+        let flame = if st.burn { col::CABLE } else { col::HAZARD };
+        let g = f.p(-24.0, 0.0);
+        look.additive(|| look.glow(g.x, g.y, (16.0 + len * 0.4) * k, flame, true, 1.0));
+        draw_triangle(
+            f.p(-20.0, -6.0),
+            f.p(-20.0 - len, 0.0),
+            f.p(-20.0, 6.0),
+            rgba(flame, 0.85),
+        );
+        draw_triangle(
+            f.p(-20.0, -3.0),
+            f.p(-20.0 - len * 0.55, 0.0),
+            f.p(-20.0, 3.0),
+            crate::look::hex(0xfff3d0),
+        );
+    }
+}
+
 pub fn draw_tug(look: &Look, f: &Frame, m: &Mods, st: &TugState, rng: &mut Rng) {
     let k = f.k;
     let t = st.t;
@@ -113,26 +137,7 @@ pub fn draw_tug(look: &Look, f: &Frame, m: &Mods, st: &TugState, rng: &mut Rng) 
             }
         }
     }
-    // Exhaust flame, choked while sputtering; the afterburner throws a
-    // long, blue-hot flame.
-    if st.thrust > 0.0 && !st.sputtering {
-        let len = rng.range(14.0, 26.0) as f32 * if st.burn { 2.0 } else { 1.0 };
-        let flame = if st.burn { col::CABLE } else { col::HAZARD };
-        let g = f.p(-24.0, 0.0);
-        look.additive(|| look.glow(g.x, g.y, (16.0 + len * 0.4) * k, flame, true, 1.0));
-        draw_triangle(
-            f.p(-20.0, -6.0),
-            f.p(-20.0 - len, 0.0),
-            f.p(-20.0, 6.0),
-            rgba(flame, 0.85),
-        );
-        draw_triangle(
-            f.p(-20.0, -3.0),
-            f.p(-20.0 - len * 0.55, 0.0),
-            f.p(-20.0, 3.0),
-            crate::look::hex(0xfff3d0),
-        );
-    }
+    draw_flame(look, f, st, rng);
     // Gun barrels, red while the guns are overheated.
     let barrel_c = crate::look::hex(if st.overheated {
         col::DANGER

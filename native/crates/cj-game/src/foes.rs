@@ -5,8 +5,8 @@
 
 use crate::controls::Device;
 use crate::draw::{
-    arc_pts, circle_pts, dashed, fill_convex, fill_fan, fill_poly, glow_stroke, polyline, rect_pts,
-    v, Xf,
+    arc_pts, circle_pts, dashed, draw_sprite, fill_convex, fill_fan, fill_poly, glow_stroke,
+    long_fit, polyline, rect_pts, ship_tint, v, Xf,
 };
 use crate::look::{col, rgba, text_centered, Look};
 use crate::settings::{key_label, Bind, Settings};
@@ -265,49 +265,62 @@ pub fn collector(look: &Look, w: &World, k: &Collector, t: f32, rng: &mut Rng, s
         dashed(&pts, false, 10.0, 6.0, -t * 40.0, 2.0, c(col::COLLECTOR));
     }
     let xf = Xf::new(k.b.x, k.b.y, k.angle);
-    let hull = xf.pts(&[
-        (24.0, -8.0),
-        (24.0, 8.0),
-        (12.0, 18.0),
-        (-18.0, 18.0),
-        (-26.0, 9.0),
-        (-26.0, -9.0),
-        (-18.0, -18.0),
-        (12.0, -18.0),
-    ]);
-    fill_fan(xf.o, &hull, c(0x1a1530));
-    glow_stroke(
-        &hull,
-        true,
-        if k.flash > 0.0 {
-            col::TEXT
-        } else {
-            col::COLLECTOR
-        },
-        2.2,
-        1.0,
-    );
-    // Net launcher: a flared mouth on the bow.
-    polyline(
-        &xf.pts(&[(24.0, -6.0), (34.0, -11.0), (34.0, 11.0), (24.0, 6.0)]),
-        false,
-        2.0,
-        c(col::COLLECTOR),
-    );
-    // Armour seams and a stencilled lien mark.
-    let seam = rgba(col::COLLECTOR, 0.4);
-    polyline(&xf.pts(&[(-8.0, -18.0), (-8.0, 18.0)]), false, 1.0, seam);
-    polyline(&xf.pts(&[(6.0, -18.0), (6.0, 18.0)]), false, 1.0, seam);
-    let lien = xf.p(-1.0, 0.0);
-    text_centered(
-        "LIEN",
-        lien.x,
-        lien.y,
-        9.0,
-        &look.fonts.mono,
-        c(col::COLLECTOR),
-        scale,
-    );
+    if crate::look::sprites() {
+        let tex = &look.ships.collector;
+        draw_sprite(
+            look,
+            tex,
+            v(k.b.x, k.b.y),
+            long_fit(tex, 72.0),
+            k.angle as f32,
+            ship_tint(None),
+            (k.flash > 0.0).then_some(0.6),
+        );
+    } else {
+        let hull = xf.pts(&[
+            (24.0, -8.0),
+            (24.0, 8.0),
+            (12.0, 18.0),
+            (-18.0, 18.0),
+            (-26.0, 9.0),
+            (-26.0, -9.0),
+            (-18.0, -18.0),
+            (12.0, -18.0),
+        ]);
+        fill_fan(xf.o, &hull, c(0x1a1530));
+        glow_stroke(
+            &hull,
+            true,
+            if k.flash > 0.0 {
+                col::TEXT
+            } else {
+                col::COLLECTOR
+            },
+            2.2,
+            1.0,
+        );
+        // Net launcher: a flared mouth on the bow.
+        polyline(
+            &xf.pts(&[(24.0, -6.0), (34.0, -11.0), (34.0, 11.0), (24.0, 6.0)]),
+            false,
+            2.0,
+            c(col::COLLECTOR),
+        );
+        // Armour seams and a stencilled lien mark.
+        let seam = rgba(col::COLLECTOR, 0.4);
+        polyline(&xf.pts(&[(-8.0, -18.0), (-8.0, 18.0)]), false, 1.0, seam);
+        polyline(&xf.pts(&[(6.0, -18.0), (6.0, 18.0)]), false, 1.0, seam);
+        let lien = xf.p(-1.0, 0.0);
+        text_centered(
+            "LIEN",
+            lien.x,
+            lien.y,
+            9.0,
+            &look.fonts.mono,
+            c(col::COLLECTOR),
+            scale,
+        );
+    }
     // Engines glow hard while hauling.
     if k.state == CollectorState::Tow {
         let back = rng.range(0.0, 8.0) as f32;
@@ -399,67 +412,86 @@ pub fn net_on_ship(
 pub fn sheriff(look: &Look, sh: &Sheriff, t: f32) {
     let chasing = sh.state == SheriffState::Pursuit;
     let xf = Xf::new(sh.b.x, sh.b.y, sh.angle);
-    if sh.swat {
-        // Galactic SWAT: a bigger, dark armoured gunship with red striping.
-        let k = 1.25;
-        let pts: Vec<(f32, f32)> = [
-            (26.0, 0.0),
-            (12.0, -9.0),
-            (-6.0, -18.0),
-            (-20.0, -14.0),
-            (-22.0, 0.0),
-            (-20.0, 14.0),
-            (-6.0, 18.0),
-            (12.0, 9.0),
-        ]
-        .iter()
-        .map(|&(x, y)| (x * k, y * k))
-        .collect();
-        let hull = xf.pts(&pts);
-        fill_poly(&hull, c(0x16181f));
-        glow_stroke(
-            &hull,
-            true,
-            if sh.flash > 0.0 {
-                col::TEXT
-            } else {
-                col::DANGER
-            },
-            2.0,
-            1.0,
-        );
-        fill_convex(
-            &rect_pts(&xf, -14.0 * k, -2.0 * k, 24.0 * k, 4.0 * k),
-            c(col::DANGER),
-        );
-        fill_convex(
-            &rect_pts(&xf, 14.0 * k, -2.5 * k, 8.0 * k, 5.0 * k),
-            c(0xffb3a8),
+    if crate::look::sprites() {
+        let tex = &look.ships.sheriff;
+        // Galactic SWAT: the same cruiser, bigger and blacked out in red.
+        let (len, tint) = if sh.swat {
+            (75.0, Color::new(0.62, 0.32, 0.32, 1.0))
+        } else {
+            (60.0, ship_tint(None))
+        };
+        draw_sprite(
+            look,
+            tex,
+            v(sh.b.x, sh.b.y),
+            long_fit(tex, len),
+            sh.angle as f32,
+            tint,
+            (sh.flash > 0.0).then_some(0.6),
         );
     } else {
-        let hull = xf.pts(&[
-            (26.0, 0.0),
-            (8.0, -10.0),
-            (-14.0, -16.0),
-            (-20.0, -6.0),
-            (-20.0, 6.0),
-            (-14.0, 16.0),
-            (8.0, 10.0),
-        ]);
-        fill_fan(xf.o, &hull, c(0xdfe7f5));
-        glow_stroke(
-            &hull,
-            true,
-            if sh.flash > 0.0 {
-                col::DANGER
-            } else {
-                col::LAW
-            },
-            2.0,
-            1.0,
-        );
-        fill_convex(&rect_pts(&xf, -12.0, -3.0, 22.0, 6.0), c(col::LAW));
-        fill_convex(&rect_pts(&xf, 4.0, -4.0, 8.0, 8.0), c(0x10182c));
+        if sh.swat {
+            // Galactic SWAT: a bigger, dark armoured gunship with red striping.
+            let k = 1.25;
+            let pts: Vec<(f32, f32)> = [
+                (26.0, 0.0),
+                (12.0, -9.0),
+                (-6.0, -18.0),
+                (-20.0, -14.0),
+                (-22.0, 0.0),
+                (-20.0, 14.0),
+                (-6.0, 18.0),
+                (12.0, 9.0),
+            ]
+            .iter()
+            .map(|&(x, y)| (x * k, y * k))
+            .collect();
+            let hull = xf.pts(&pts);
+            fill_poly(&hull, c(0x16181f));
+            glow_stroke(
+                &hull,
+                true,
+                if sh.flash > 0.0 {
+                    col::TEXT
+                } else {
+                    col::DANGER
+                },
+                2.0,
+                1.0,
+            );
+            fill_convex(
+                &rect_pts(&xf, -14.0 * k, -2.0 * k, 24.0 * k, 4.0 * k),
+                c(col::DANGER),
+            );
+            fill_convex(
+                &rect_pts(&xf, 14.0 * k, -2.5 * k, 8.0 * k, 5.0 * k),
+                c(0xffb3a8),
+            );
+        } else {
+            let hull = xf.pts(&[
+                (26.0, 0.0),
+                (8.0, -10.0),
+                (-14.0, -16.0),
+                (-20.0, -6.0),
+                (-20.0, 6.0),
+                (-14.0, 16.0),
+                (8.0, 10.0),
+            ]);
+            fill_fan(xf.o, &hull, c(0xdfe7f5));
+            glow_stroke(
+                &hull,
+                true,
+                if sh.flash > 0.0 {
+                    col::DANGER
+                } else {
+                    col::LAW
+                },
+                2.0,
+                1.0,
+            );
+            fill_convex(&rect_pts(&xf, -12.0, -3.0, 22.0, 6.0), c(col::LAW));
+            fill_convex(&rect_pts(&xf, 4.0, -4.0, 8.0, 8.0), c(0x10182c));
+        }
     }
     // Light bar: alternating red and blue, fast in a chase.
     let phase = ((t * if chasing { 8.0 } else { 2.0 }).floor() as i64) % 2 == 1;
@@ -686,21 +718,34 @@ pub fn draw_all(
 /// a tag above it (red once below 40%).
 pub fn hauler(look: &Look, h: &cj_sim::field::Hauler, t: f32, scale: f32) {
     let xf = Xf::new(h.b.x, h.b.y, h.angle);
-    let flash = h.flash > 0.0;
-    let hull = c(if flash { 0x2a3442 } else { 0x18202c });
-    fill_convex(&rect_pts(&xf, -46.0, -16.0, 70.0, 32.0), hull);
-    for x in [-40.0, -22.0, -4.0] {
-        fill_convex(&rect_pts(&xf, x, -22.0, 14.0, 44.0), c(0x2b3a4f));
+    if crate::look::sprites() {
+        let tex = &look.ships.hauler;
+        draw_sprite(
+            look,
+            tex,
+            v(h.b.x, h.b.y),
+            long_fit(tex, 100.0),
+            h.angle as f32,
+            ship_tint(None),
+            (h.flash > 0.0).then_some(0.6),
+        );
+    } else {
+        let flash = h.flash > 0.0;
+        let hull = c(if flash { 0x2a3442 } else { 0x18202c });
+        fill_convex(&rect_pts(&xf, -46.0, -16.0, 70.0, 32.0), hull);
+        for x in [-40.0, -22.0, -4.0] {
+            fill_convex(&rect_pts(&xf, x, -22.0, 14.0, 44.0), c(0x2b3a4f));
+        }
+        let nose = xf.pts(&[(24.0, -14.0), (40.0, 0.0), (24.0, 14.0)]);
+        fill_convex(&nose, c(0x18202c));
+        glow_stroke(
+            &nose,
+            true,
+            if flash { col::DANGER } else { col::STEEL },
+            1.5,
+            1.0,
+        );
     }
-    let nose = xf.pts(&[(24.0, -14.0), (40.0, 0.0), (24.0, 14.0)]);
-    fill_convex(&nose, c(0x18202c));
-    glow_stroke(
-        &nose,
-        true,
-        if flash { col::DANGER } else { col::STEEL },
-        1.5,
-        1.0,
-    );
     let p = xf.p(-50.0, 0.0);
     look.additive(|| {
         look.glow(

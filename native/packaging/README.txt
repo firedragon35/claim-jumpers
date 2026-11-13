@@ -61,7 +61,8 @@ LB / RB to switch tabs. The mouse works too.
 
 The flight keys can be changed under Settings on the title screen. Settings
 also has the music, reduced shake and flashing, a colorblind-safe palette,
-glow and effects, the HUD size, and local co-op: a second player flies a partner tug from the numpad
+glow and effects, the art style (painted sprites or the original vector
+outlines), the HUD size, and local co-op: a second player flies a partner tug from the numpad
 (8 thrust, 4 / 6 turn, 5 brake, 0 fire, Enter latch) or a second gamepad.
 
 

@@ -206,6 +206,9 @@ pub struct Settings {
     pub colorblind: bool,
     /// Bloom, colour grade and the shader nebula (draw::render, post).
     pub effects: bool,
+    /// Painted sprites for rocks and ships (true), or the original vector
+    /// outlines.
+    pub sprites: bool,
     /// HUD size in percent: one of HUD_SIZES.
     pub hud_pct: u16,
     pub coop: Coop,
@@ -221,6 +224,7 @@ impl Default for Settings {
             reduce_motion: false,
             colorblind: false,
             effects: true,
+            sprites: true,
             hud_pct: 100,
             coop: Coop::Off,
             voice: true,
@@ -260,6 +264,7 @@ impl Settings {
         s.reduce_motion = flag("reduceMotion").unwrap_or(s.reduce_motion);
         s.colorblind = flag("colorblind").unwrap_or(s.colorblind);
         s.effects = flag("effects").unwrap_or(s.effects);
+        s.sprites = flag("sprites").unwrap_or(s.sprites);
         if let Some(p) = raw
             .get("hudScale")
             .and_then(Value::as_u64)
@@ -328,6 +333,7 @@ impl Settings {
             "reduceMotion": self.reduce_motion,
             "colorblind": self.colorblind,
             "effects": self.effects,
+            "sprites": self.sprites,
             "hudScale": self.hud_pct,
             "coop": self.coop.key(),
             "voice": self.voice,
@@ -417,6 +423,9 @@ mod tests {
         // A save from before the effects setting existed gets them on.
         assert!(s.effects);
         assert!(!Settings::from_json(Some(r#"{"effects":false}"#)).effects);
+        // ...and painted sprites, unless the player chose vector art.
+        assert!(s.sprites);
+        assert!(!Settings::from_json(Some(r#"{"sprites":false}"#)).sprites);
         // HUD size: a listed size loads; anything else stays at 100%.
         assert_eq!(s.hud_pct, 100);
         assert_eq!(

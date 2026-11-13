@@ -9,5 +9,11 @@ out until the game has such rocks. They are embedded in the exe by
 `crates/cj-game/src/look.rs` (`ROCK_ART`), which says which file draws
 which size and kind.
 
+`ships/`: 12 ship sprites from the same pack (`assets/ships`, plus
+`assets/cargo/cargo_hauler.png`): the five player models, four rival
+hulls, the sheriff, the debt collector and the hauler. `ShipArt` in
+`look.rs` says which draws what. Player and rival art points its nose up
+the image; the sheriff, collector and hauler point right.
+
 Origin and rights of the art: to be confirmed by the owner before a
 public release; add a credit to `packaging/README.txt` if one is needed.

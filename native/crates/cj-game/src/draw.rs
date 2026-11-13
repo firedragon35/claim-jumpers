@@ -525,17 +525,88 @@ fn draw_wreck(wr: &Wreck, t: f32) {
 /// Rock: dark body, a soft highlight to the upper left that stays put while
 /// it spins, shadowed craters, and the outline.
 fn draw_rock(look: &Look, rk: &Rock) {
+    if !crate::look::sprites() {
+        return draw_rock_vector(look, rk);
+    }
     let tex = &look.rocks[crate::look::rock_art(rk.size, rk.veined, rk.id)];
     let flash = (rk.flash > 0.0).then_some(0.6);
     draw_sprite(
         look,
         tex,
         v(rk.b.x, rk.b.y),
-        rk.b.r as f32,
+        area_fit(tex, rk.b.r as f32),
         rk.angle as f32,
         rock_tint(rk.veined, 1.0),
         flash,
     );
+}
+
+/// The original vector rock (Art style: vector).
+fn draw_rock_vector(look: &Look, rk: &Rock) {
+    let xf = Xf::new(rk.b.x, rk.b.y, rk.angle);
+    let r = rk.b.r as f32;
+    let pts = shape_pts(&xf, &rk.shape, rk.b.r);
+    let flash = rk.flash > 0.0;
+    if flash {
+        fill_fan(xf.o, &pts, crate::look::hex(0x2b3448));
+    } else {
+        shaded_fan(xf.o, &pts, crate::look::hex(col::ROCK_FILL), 1.3, 0.6);
+    }
+    // The browser fills a radial gradient clipped to the outline. Without
+    // clipping, a smaller soft highlight keeps the light inside the rock.
+    look.glow(
+        xf.o.x - r * 0.35,
+        xf.o.y - r * 0.35,
+        r * 0.75,
+        0xaab9d2,
+        false,
+        0.28,
+    );
+    for c in &rk.craters {
+        let p = xf.p((c.a.cos() * c.d) as f32 * r, (c.a.sin() * c.d) as f32 * r);
+        let cr = c.s as f32 * r;
+        draw_circle(p.x, p.y, cr, Color::new(0.0, 0.0, 0.0, 0.28));
+        draw_circle_lines(
+            p.x,
+            p.y,
+            cr,
+            1.0,
+            Color::new(200.0 / 255.0, 215.0 / 255.0, 235.0 / 255.0, 0.08),
+        );
+    }
+    if flash {
+        polyline(&pts, true, 2.0, crate::look::hex(col::TEXT));
+    } else {
+        let edge = crate::look::hex(col::ROCK);
+        lit_outline(
+            xf.o,
+            &pts,
+            2.0,
+            mix_col(edge, WHITE, 0.55),
+            edge,
+            shade(edge, 0.5),
+        );
+    }
+    if rk.veined {
+        // Gold seams mark ore-bearing rock.
+        let c = rgba(col::ORE, 0.85);
+        polyline(
+            &xf.pts(&[
+                (-r * 0.5, -r * 0.2),
+                (-r * 0.1, r * 0.1),
+                (r * 0.35, -r * 0.05),
+            ]),
+            false,
+            2.0,
+            c,
+        );
+        polyline(
+            &xf.pts(&[(-r * 0.2, r * 0.4), (r * 0.15, r * 0.3)]),
+            false,
+            2.0,
+            c,
+        );
+    }
 }
 
 /// The art's lit faces are bright enough to cross the bloom threshold
@@ -549,19 +620,46 @@ fn rock_tint(ore: bool, alpha: f32) -> Color {
     }
 }
 
-/// Draw a body sprite centred on `c`, turned by `angle`, sized so its area
-/// matches the circle of radius `r` the simulation collides with, through
-/// `tint` (`rock_tint`). `flash` adds that much white light over it (a hit).
-fn draw_sprite(
+/// Ship art is lit brighter than the field: dim it under the bloom
+/// threshold. A paint job (or an online slot's colours) washes it with
+/// the trim colour.
+pub(crate) fn ship_tint(paint: Option<(u32, u32)>) -> Color {
+    let base = Color::new(0.7, 0.72, 0.78, 1.0);
+    match paint {
+        Some((_, trim)) => mix_col(base, crate::look::hex(trim), 0.35),
+        None => base,
+    }
+}
+
+/// The player and rival art points up the image; the game's angle 0
+/// points along +x.
+/// A tug sprite's longest side, px (the drawn tug was about 48 long).
+const TUG_LEN: f32 = 52.0;
+
+pub(crate) const NOSE_UP: f32 = std::f32::consts::FRAC_PI_2;
+
+/// A sprite size whose area matches the circle of radius `r` the
+/// simulation collides with (rocks).
+fn area_fit(tex: &Texture2D, r: f32) -> Vec2 {
+    tex.size() * (2.1 * r / (tex.width() * tex.height()).sqrt())
+}
+
+/// A sprite size whose longest side is `len` (ships).
+pub(crate) fn long_fit(tex: &Texture2D, len: f32) -> Vec2 {
+    tex.size() * (len / tex.width().max(tex.height()))
+}
+
+/// Draw a sprite of `size` centred on `c`, turned by `angle`, through
+/// `tint`. `flash` adds that much white light over it (a hit).
+pub(crate) fn draw_sprite(
     look: &Look,
     tex: &Texture2D,
     c: Vec2,
-    r: f32,
+    size: Vec2,
     angle: f32,
     tint: Color,
     flash: Option<f32>,
 ) {
-    let size = tex.size() * (2.1 * r / (tex.width() * tex.height()).sqrt());
     let params = DrawTextureParams {
         dest_size: Some(size),
         rotation: angle,
@@ -818,66 +916,91 @@ fn draw_jumper(look: &Look, w: &World, j: &Jumper) {
     let k = if j.boss.is_some() { 1.4 } else { 1.0 };
     let xf = Xf::scaled(j.b.x, j.b.y, j.angle, k);
     let def = j.variant.def();
-    let edge = if j.flash > 0.0 {
-        col::TEXT
-    } else {
-        def.stroke.unwrap_or(col::JUMPER)
-    };
-    let outline: &[(f32, f32)] = match j.variant {
-        // Skiff: a thin dart, all engine.
-        Variant::Skiff => &[(16.0, 0.0), (-10.0, -7.0), (-6.0, 0.0), (-10.0, 7.0)],
-        // Brute: a blunt slab with a grab-claw prow.
-        Variant::Brute => &[
-            (20.0, -6.0),
-            (24.0, 0.0),
-            (20.0, 6.0),
-            (10.0, 15.0),
-            (-16.0, 15.0),
-            (-20.0, 6.0),
-            (-20.0, -6.0),
-            (-16.0, -15.0),
-            (10.0, -15.0),
-        ],
-        // Gunship: a swept wing with gun pods on the tips.
-        Variant::Gunship => &[
-            (18.0, 0.0),
-            (0.0, -6.0),
-            (-6.0, -17.0),
-            (-14.0, -17.0),
-            (-10.0, 0.0),
-            (-14.0, 17.0),
-            (-6.0, 17.0),
-            (0.0, 6.0),
-        ],
-        Variant::Cutter => &[(18.0, 0.0), (-11.0, -12.0), (-5.0, 0.0), (-11.0, 12.0)],
-    };
-    let pts = xf.pts(outline);
-    fill_poly(&pts, crate::look::hex(def.hull));
-    glow_stroke(&pts, true, edge, 2.0, 1.0);
-    match j.variant {
-        Variant::Gunship => {
-            fill_convex(
-                &rect_pts(&xf, -8.0, -18.0, 10.0, 3.0),
-                crate::look::hex(edge),
-            );
-            fill_convex(
-                &rect_pts(&xf, -8.0, 15.0, 10.0, 3.0),
-                crate::look::hex(edge),
-            );
+    if crate::look::sprites() {
+        if j.hunter {
+            // Hunters run hot: they are here for you. Under the hull, so it
+            // reads as engine heat.
+            let p = xf.p(-8.0, 0.0);
+            look.additive(|| look.glow(p.x, p.y, 14.0, col::DANGER, true, 1.0));
         }
-        Variant::Brute => fill_convex(
-            &rect_pts(&xf, -12.0, -3.0, 18.0, 6.0),
-            crate::look::hex(edge),
-        ),
-        _ => {}
-    }
-    if j.hunter {
-        // Hunters wear red war paint and run hot: they are here for you.
-        let red = crate::look::hex(col::DANGER);
-        polyline(&xf.pts(&[(6.0, -4.0), (-6.0, -8.0)]), false, 2.0, red);
-        polyline(&xf.pts(&[(6.0, 4.0), (-6.0, 8.0)]), false, 2.0, red);
-        let p = xf.p(-8.0, 0.0);
-        look.additive(|| look.glow(p.x, p.y, 14.0, col::DANGER, true, 1.0));
+        let art = &look.ships;
+        let tex = match j.variant {
+            Variant::Skiff => &art.skiff,
+            Variant::Cutter => &art.cutter,
+            Variant::Gunship => &art.gunship,
+            Variant::Brute => &art.brute,
+        };
+        draw_sprite(
+            look,
+            tex,
+            v(j.b.x, j.b.y),
+            long_fit(tex, def.r as f32 * 2.4 * k),
+            j.angle as f32 + NOSE_UP,
+            ship_tint(None),
+            (j.flash > 0.0).then_some(0.6),
+        );
+    } else {
+        let edge = if j.flash > 0.0 {
+            col::TEXT
+        } else {
+            def.stroke.unwrap_or(col::JUMPER)
+        };
+        let outline: &[(f32, f32)] = match j.variant {
+            // Skiff: a thin dart, all engine.
+            Variant::Skiff => &[(16.0, 0.0), (-10.0, -7.0), (-6.0, 0.0), (-10.0, 7.0)],
+            // Brute: a blunt slab with a grab-claw prow.
+            Variant::Brute => &[
+                (20.0, -6.0),
+                (24.0, 0.0),
+                (20.0, 6.0),
+                (10.0, 15.0),
+                (-16.0, 15.0),
+                (-20.0, 6.0),
+                (-20.0, -6.0),
+                (-16.0, -15.0),
+                (10.0, -15.0),
+            ],
+            // Gunship: a swept wing with gun pods on the tips.
+            Variant::Gunship => &[
+                (18.0, 0.0),
+                (0.0, -6.0),
+                (-6.0, -17.0),
+                (-14.0, -17.0),
+                (-10.0, 0.0),
+                (-14.0, 17.0),
+                (-6.0, 17.0),
+                (0.0, 6.0),
+            ],
+            Variant::Cutter => &[(18.0, 0.0), (-11.0, -12.0), (-5.0, 0.0), (-11.0, 12.0)],
+        };
+        let pts = xf.pts(outline);
+        fill_poly(&pts, crate::look::hex(def.hull));
+        glow_stroke(&pts, true, edge, 2.0, 1.0);
+        match j.variant {
+            Variant::Gunship => {
+                fill_convex(
+                    &rect_pts(&xf, -8.0, -18.0, 10.0, 3.0),
+                    crate::look::hex(edge),
+                );
+                fill_convex(
+                    &rect_pts(&xf, -8.0, 15.0, 10.0, 3.0),
+                    crate::look::hex(edge),
+                );
+            }
+            Variant::Brute => fill_convex(
+                &rect_pts(&xf, -12.0, -3.0, 18.0, 6.0),
+                crate::look::hex(edge),
+            ),
+            _ => {}
+        }
+        if j.hunter {
+            // Hunters wear red war paint and run hot: they are here for you.
+            let red = crate::look::hex(col::DANGER);
+            polyline(&xf.pts(&[(6.0, -4.0), (-6.0, -8.0)]), false, 2.0, red);
+            polyline(&xf.pts(&[(6.0, 4.0), (-6.0, 8.0)]), false, 2.0, red);
+            let p = xf.p(-8.0, 0.0);
+            look.additive(|| look.glow(p.x, p.y, 14.0, col::DANGER, true, 1.0));
+        }
     }
     // Sever countdown ring while latched to your cargo.
     if let Some(it) = hooked.filter(|it| it.towed && j.latch_t > 0.0) {
@@ -1019,7 +1142,22 @@ fn draw_ship(look: &Look, w: &World, p: usize, t: f32, rng: &mut Rng, paint: Opt
         missiles: Some(s.missiles),
         paint,
     };
-    tug::draw_tug(look, &f, &w.pilots[p].mods, &st, rng);
+    if crate::look::sprites() {
+        // Each pilot slot flies its own model; bought parts show in the shop.
+        let art = &look.ships.players[crate::look::player_model(p)];
+        tug::draw_flame(look, &f, &st, rng);
+        draw_sprite(
+            look,
+            art,
+            v(s.b.x, s.b.y),
+            long_fit(art, TUG_LEN),
+            s.angle as f32 + NOSE_UP,
+            ship_tint(paint),
+            st.flash.then_some(0.6),
+        );
+    } else {
+        tug::draw_tug(look, &f, &w.pilots[p].mods, &st, rng);
+    }
     tug::draw_shield(
         s.b.x as f32,
         s.b.y as f32,
@@ -1207,7 +1345,7 @@ fn draw_chunk(look: &Look, p: &crate::fx::Particle, f: f32) {
     let c = v(p.x, p.y);
     let r = p.size as f32;
     let fade = (f / 0.4).min(1.0);
-    if p.rgb == col::ROCK || p.rgb == col::ORE {
+    if crate::look::sprites() && (p.rgb == col::ROCK || p.rgb == col::ORE) {
         // Rock breaks into small rocks; the start angle picks which.
         let id = (p.ring * 1000.0) as u32;
         let tex = &look.rocks[crate::look::rock_art(1, p.rgb == col::ORE, id)];
@@ -1215,7 +1353,7 @@ fn draw_chunk(look: &Look, p: &crate::fx::Particle, f: f32) {
             look,
             tex,
             c,
-            r,
+            area_fit(tex, r),
             angle,
             rock_tint(p.rgb == col::ORE, fade),
             None,
@@ -1665,7 +1803,6 @@ fn ring_mesh(cx: f32, cy: f32, a: f32, b: f32, inner: Color, outer: Color) {
 /// drawPartner: P2's tug, a Mk II with a cutter at 0.8 scale in its class
 /// colours, a dashed line while latched to the cable's tail, and its tag.
 fn draw_partner(look: &Look, w: &World, t: f32, rng: &mut Rng, scale: f32) {
-    use cj_sim::parts::{Levels, Part};
     let Some(p) = &w.p2 else { return };
     let tail = w
         .me()
@@ -1693,18 +1830,32 @@ fn draw_partner(look: &Look, w: &World, t: f32, rng: &mut Rng, scale: f32) {
             crate::look::hex(col::CABLE),
         );
     }
-    let mods = cj_sim::mods::compute_mods(
-        &[Some(Part::Cannon), None, None, None, None],
-        &Levels::default(),
-        1,
-    );
     let f = tug::Frame::new(p.b.x as f32, p.b.y as f32, p.angle as f32, 0.8);
     let st = tug::TugState {
         t,
         thrust: p.thrust as f32,
         ..tug::TugState::default()
     };
-    tug::draw_tug(look, &f, &mods, &st, rng);
+    if crate::look::sprites() {
+        let art = &look.ships.players[crate::look::player_model(1)];
+        tug::draw_flame(look, &f, &st, rng);
+        draw_sprite(
+            look,
+            art,
+            v(p.b.x, p.b.y),
+            long_fit(art, TUG_LEN * 0.8),
+            p.angle as f32 + NOSE_UP,
+            ship_tint(None),
+            None,
+        );
+    } else {
+        let mods = cj_sim::mods::compute_mods(
+            &[Some(cj_sim::parts::Part::Cannon), None, None, None, None],
+            &cj_sim::parts::Levels::default(),
+            1,
+        );
+        tug::draw_tug(look, &f, &mods, &st, rng);
+    }
     let label = if p.linked { "P2 · LATCHED" } else { "P2" };
     crate::foes::tag(
         look,
@@ -1732,6 +1883,19 @@ fn draw_pvp_mark(look: &crate::look::Look, w: &World, p: usize, scale: f32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The first five pilot slots all fly different models, and later
+    /// slots take turns with them.
+    #[test]
+    fn pilot_slots_take_turns_with_the_player_models() {
+        use crate::look::player_model;
+        let first: std::collections::HashSet<usize> = (0..5).map(player_model).collect();
+        assert_eq!(first.len(), 5);
+        for slot in 0..40 {
+            assert!(player_model(slot) < 5);
+            assert_eq!(player_model(slot + 5), player_model(slot));
+        }
+    }
 
     /// Every rock gets art of its own size and kind, keeps the same art
     /// for the same id, and every variant gets used.

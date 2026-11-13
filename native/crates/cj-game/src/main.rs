@@ -866,6 +866,10 @@ impl App {
                 self.settings.effects = !self.settings.effects;
                 self.save_settings();
             }
+            Act::SetSprites => {
+                self.settings.sprites = !self.settings.sprites;
+                self.save_settings();
+            }
             Act::CycleHud => {
                 self.settings.hud_pct = self.settings.next_hud();
                 self.save_settings();
@@ -1304,6 +1308,7 @@ async fn main() {
         if app.settings_dirty {
             app.settings_dirty = false;
             look::set_colorblind(app.settings.colorblind);
+            look::set_sprites(app.settings.sprites);
             look::set_reduce_motion(app.settings.reduce_motion);
             app.music.enabled = app.settings.music;
             controls.bind(&app.settings);

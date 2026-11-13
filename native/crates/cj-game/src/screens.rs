@@ -54,6 +54,7 @@ pub enum Act {
     SetMotion,
     SetPalette,
     SetEffects,
+    SetSprites,
     CycleHud,
     CycleCoop,
     Rebind(crate::settings::Bind),
@@ -2834,6 +2835,14 @@ pub fn settings(
             Act::SetEffects,
         ),
         (
+            "set-sprites",
+            format!(
+                "Art style: {}",
+                if s.sprites { "painted" } else { "vector" }
+            ),
+            Act::SetSprites,
+        ),
+        (
             "set-hud",
             format!("HUD size: {}%", s.hud_pct),
             Act::CycleHud,
@@ -2855,23 +2864,9 @@ pub fn settings(
         if p {
             act = Some(a);
         }
-        // Tight spacing: seven rows plus the co-op note must clear the Back button.
+        // Tight spacing: eight rows must clear the Back button.
         ty += br.h + 4.0;
     }
-    let note = "Co-op: P2 flies a partner tug from the numpad (8 thrust, 4/6 turn, 5 brake, 0 fire, Enter latch) or the last connected gamepad (stick, RT, LT, RB, Y latch). Latch onto the tail of the cable to haul together.";
-    paragraph(
-        look,
-        u,
-        note,
-        x,
-        ty + 4.0,
-        420.0,
-        12.0,
-        Which::MonoLight,
-        c(col::MUTED),
-        1.4,
-    );
-
     let kx = r.x + 520.0;
     let kw = r.x + r.w - 36.0 - kx;
     section(look, u, "Controls", kx, &mut y);
@@ -2943,6 +2938,20 @@ pub fn settings(
         12.0,
         Which::MonoLight,
         c(col::CABLE),
+        1.4,
+    );
+    // The co-op note sits under the rebind message, clear of the rows.
+    let note = "Co-op: P2 flies a partner tug from the numpad (8 thrust, 4/6 turn, 5 brake, 0 fire, Enter latch) or the last connected gamepad (stick, RT, LT, RB, Y latch). Latch onto the tail of the cable to haul together.";
+    paragraph(
+        look,
+        u,
+        note,
+        kx,
+        my + 44.0,
+        kw,
+        12.0,
+        Which::MonoLight,
+        c(col::MUTED),
         1.4,
     );
 
