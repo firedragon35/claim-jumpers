@@ -54,6 +54,7 @@ pub enum Act {
     SetMotion,
     SetPalette,
     SetEffects,
+    CycleHud,
     CycleCoop,
     Rebind(crate::settings::Bind),
     ResetKeys,
@@ -2833,6 +2834,11 @@ pub fn settings(
             Act::SetEffects,
         ),
         (
+            "set-hud",
+            format!("HUD size: {}%", s.hud_pct),
+            Act::CycleHud,
+        ),
+        (
             "set-coop",
             format!("Local co-op (P2): {}", s.coop.label()),
             Act::CycleCoop,
@@ -2849,7 +2855,8 @@ pub fn settings(
         if p {
             act = Some(a);
         }
-        ty += br.h + 8.0;
+        // Tight spacing: seven rows plus the co-op note must clear the Back button.
+        ty += br.h + 4.0;
     }
     let note = "Co-op: P2 flies a partner tug from the numpad (8 thrust, 4/6 turn, 5 brake, 0 fire, Enter latch) or the last connected gamepad (stick, RT, LT, RB, Y latch). Latch onto the tail of the cable to haul together.";
     paragraph(

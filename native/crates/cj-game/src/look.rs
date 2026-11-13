@@ -6,7 +6,7 @@ use macroquad::miniquad::{BlendFactor, BlendState, BlendValue, Equation};
 use macroquad::prelude::*;
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 /// Colour tokens from the browser's COL table, as 0xRRGGBB.
 pub mod col {
@@ -52,6 +52,20 @@ const CB_PALETTE: [(u32, u32); 10] = [
 
 static COLORBLIND: AtomicBool = AtomicBool::new(false);
 static REDUCE_MOTION: AtomicBool = AtomicBool::new(false);
+/// The HUD's magnification while it is being drawn, as f32 bits; 1.0
+/// (0x3f800000) the rest of the time, so menus and the field are unaffected.
+static HUD_SCALE: AtomicU32 = AtomicU32::new(0x3f80_0000);
+
+/// Set while the HUD draws through a magnifying camera (main's frame
+/// loop), so its text rasterizes at the size it is shown and stays sharp,
+/// and so its buttons can map the mouse into HUD coordinates.
+pub fn set_hud_scale(k: f32) {
+    HUD_SCALE.store(k.to_bits(), Ordering::Relaxed);
+}
+
+pub fn hud_scale() -> f32 {
+    f32::from_bits(HUD_SCALE.load(Ordering::Relaxed))
+}
 
 /// Switch the palette (Settings.apply); every colour is looked up per draw.
 pub fn set_colorblind(on: bool) {
@@ -305,15 +319,21 @@ pub fn text_centered(text: &str, x: f32, y: f32, size: f32, font: &Font, color: 
 }
 
 /// Text with its left edge at `x` and its top at `y`; returns its width.
+/// Under a HUD scale `k`, glyphs rasterize at `size * k` pixels and are
+/// drawn at 1/k, so they land at `size` in HUD units but stay sharp after
+/// the camera magnifies them. At k = 1 this is exactly the plain call.
 pub fn text_left(text: &str, x: f32, y: f32, size: f32, font: &Font, color: Color) -> f32 {
-    let dims = measure_text(text, Some(font), size as u16, 1.0);
+    let k = hud_scale();
+    let px = (size * k) as u16;
+    let dims = measure_text(text, Some(font), px, 1.0 / k);
     draw_text_ex(
         text,
         x,
         y + dims.offset_y,
         TextParams {
             font: Some(font),
-            font_size: size as u16,
+            font_size: px,
+            font_scale: 1.0 / k,
             color,
             ..Default::default()
         },
@@ -321,9 +341,10 @@ pub fn text_left(text: &str, x: f32, y: f32, size: f32, font: &Font, color: Colo
     dims.width
 }
 
-/// Width of a run of text at `size`.
+/// Width of a run of text at `size` (in HUD units under a HUD scale).
 pub fn text_width(text: &str, size: f32, font: &Font) -> f32 {
-    measure_text(text, Some(font), size as u16, 1.0).width
+    let k = hud_scale();
+    measure_text(text, Some(font), (size * k) as u16, 1.0 / k).width
 }
 
 /// A five-point star (★ filled, ☆ hollow) centred on (x, y). None of the

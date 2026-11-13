@@ -864,6 +864,10 @@ impl App {
                 self.settings.effects = !self.settings.effects;
                 self.save_settings();
             }
+            Act::CycleHud => {
+                self.settings.hud_pct = self.settings.next_hud();
+                self.save_settings();
+            }
             Act::CycleCoop => {
                 self.settings.coop = self.settings.coop.next();
                 self.save_settings();
@@ -1430,27 +1434,41 @@ async fn main() {
             effects: app.settings.effects,
         });
         if matches!(app.screen, Screen::Play | Screen::Paused) {
+            // Edge arrows point at world positions: real window units.
             radar::indicators(&look, &app.world, (vw, vh), dpi);
+            // Everything else draws in HUD units through a camera that
+            // magnifies them by the player's HUD size.
+            // Capped so the HUD always keeps at least a 1280x720 layout:
+            // any bigger and its cards start to overlap.
+            let hs = app
+                .settings
+                .hud_scale()
+                .min((vw / 1280.0).min(vh / 720.0).max(1.0));
+            let hud_view = (vw / hs, vh / hs);
+            look::set_hud_scale(hs);
+            draw::screen_camera(hud_view);
             let blips = app.online.as_ref().map_or(&[][..], |o| o.session.blips());
-            radar::radar(&app.world, (vw, vh), blips);
+            radar::radar(&app.world, hud_view, (vw, vh), blips);
             hud::draw(
                 &look,
                 &app.world,
                 app.career.as_ref(),
-                (vw, vh),
+                hud_view,
                 controls.last_device,
             );
-            app.radio.draw(&look, app.world.t, (vw, vh));
+            app.radio.draw(&look, app.world.t, hud_view);
             // Online, holding Tab shows who is flying and how they're doing.
             if let Some(on) = app.online.as_ref().filter(|_| is_key_down(KeyCode::Tab)) {
-                online::player_list(&look, on.session.lobby.as_ref(), on.session.pilot, (vw, vh));
+                online::player_list(&look, on.session.lobby.as_ref(), on.session.pilot, hud_view);
             }
             if app.online.is_some() {
-                app.chat.draw(&look, get_time(), (vw, vh));
+                app.chat.draw(&look, get_time(), hud_view);
             }
-            if marge::draw_tutorial(&look, &app.world, (vw, vh)) && app.screen == Screen::Play {
+            if marge::draw_tutorial(&look, &app.world, hud_view) && app.screen == Screen::Play {
                 app.skip_training();
             }
+            look::set_hud_scale(1.0);
+            draw::screen_camera((vw, vh));
         }
         let scene = match app.screen {
             Screen::Play => music::Scene::Play,

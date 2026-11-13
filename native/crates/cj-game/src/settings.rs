@@ -206,6 +206,8 @@ pub struct Settings {
     pub colorblind: bool,
     /// Bloom, colour grade and the shader nebula (draw::render, post).
     pub effects: bool,
+    /// HUD size in percent: one of HUD_SIZES.
+    pub hud_pct: u16,
     pub coop: Coop,
     pub voice: bool,
     /// Primary-key overrides by action, as codes.
@@ -219,6 +221,7 @@ impl Default for Settings {
             reduce_motion: false,
             colorblind: false,
             effects: true,
+            hud_pct: 100,
             coop: Coop::Off,
             voice: true,
             keys: Vec::new(),
@@ -226,7 +229,24 @@ impl Default for Settings {
     }
 }
 
+/// The HUD sizes the Settings row cycles through, in percent.
+pub const HUD_SIZES: [u16; 3] = [100, 125, 150];
+
 impl Settings {
+    /// The HUD's magnification (1.0 at 100%).
+    pub fn hud_scale(&self) -> f32 {
+        f32::from(self.hud_pct) / 100.0
+    }
+
+    /// The next HUD size, wrapping back to 100%.
+    pub fn next_hud(&self) -> u16 {
+        let i = HUD_SIZES
+            .iter()
+            .position(|&p| p == self.hud_pct)
+            .unwrap_or(0);
+        HUD_SIZES[(i + 1) % HUD_SIZES.len()]
+    }
+
     /// Settings.load: every field type-checked; key codes must be plain,
     /// known to this build, and not reserved.
     pub fn from_json(text: Option<&str>) -> Settings {
@@ -240,6 +260,14 @@ impl Settings {
         s.reduce_motion = flag("reduceMotion").unwrap_or(s.reduce_motion);
         s.colorblind = flag("colorblind").unwrap_or(s.colorblind);
         s.effects = flag("effects").unwrap_or(s.effects);
+        if let Some(p) = raw
+            .get("hudScale")
+            .and_then(Value::as_u64)
+            .and_then(|p| u16::try_from(p).ok())
+            .filter(|p| HUD_SIZES.contains(p))
+        {
+            s.hud_pct = p;
+        }
         s.voice = flag("voice").unwrap_or(s.voice);
         if let Some(c) = raw
             .get("coop")
@@ -300,6 +328,7 @@ impl Settings {
             "reduceMotion": self.reduce_motion,
             "colorblind": self.colorblind,
             "effects": self.effects,
+            "hudScale": self.hud_pct,
             "coop": self.coop.key(),
             "voice": self.voice,
             "keys": keys,
@@ -388,6 +417,16 @@ mod tests {
         // A save from before the effects setting existed gets them on.
         assert!(s.effects);
         assert!(!Settings::from_json(Some(r#"{"effects":false}"#)).effects);
+        // HUD size: a listed size loads; anything else stays at 100%.
+        assert_eq!(s.hud_pct, 100);
+        assert_eq!(
+            Settings::from_json(Some(r#"{"hudScale":125}"#)).hud_pct,
+            125
+        );
+        for bad in ["110", "\"150\"", "-50", "70000"] {
+            let t = format!(r#"{{"hudScale":{bad}}}"#);
+            assert_eq!(Settings::from_json(Some(&t)).hud_pct, 100, "{bad}");
+        }
         assert_eq!(s.coop, Coop::Pad);
         // P is reserved and "Bogus!" isn't a key: both are dropped.
         assert_eq!(s.codes_for(Bind::Thrust), vec!["KeyI", "ArrowUp"]);
@@ -396,6 +435,22 @@ mod tests {
         assert_eq!(s.codes_for(Bind::Cut), vec!["Numpad0"]);
         assert_eq!(Settings::from_json(Some(&s.to_json())), s);
         assert_eq!(Settings::from_json(Some("[1]")), Settings::default());
+    }
+
+    /// The HUD row cycles 100 -> 125 -> 150 -> 100, and its scale follows.
+    #[test]
+    fn hud_size_cycles_and_scales() {
+        let mut s = Settings::default();
+        let mut seen = vec![];
+        for _ in 0..3 {
+            seen.push((s.hud_pct, s.hud_scale()));
+            s.hud_pct = s.next_hud();
+        }
+        assert_eq!(seen, vec![(100, 1.0), (125, 1.25), (150, 1.5)]);
+        assert_eq!(s.hud_pct, 100);
+        // An unlisted size (from a hand-edited struct) restarts the cycle.
+        s.hud_pct = 90;
+        assert_eq!(s.next_hud(), 125);
     }
 
     /// A 1.3.0 save that put Fire on B keeps it; PvP, new in 1.4.0 with B

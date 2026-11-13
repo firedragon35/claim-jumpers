@@ -7,6 +7,23 @@ and the port uses [Semantic Versioning](https://semver.org/) as defined in
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-11-12
+
+### Added
+
+- Settings: "HUD size" cycles 100%, 125% and 150% (saved as `hudScale` in
+  `settings.json`; 100% by default). It makes the in-flight HUD bigger:
+  readouts, bars, radar, Marge's dispatches, the training card, chat and
+  the pilot list. Text is drawn at the size it is shown, so it stays sharp.
+  The HUD always keeps at least a 1280x720 layout, so on smaller windows the
+  size is capped to stop its cards overlapping. The arrows at the screen
+  edge stay as they are, since they point at things in the field.
+
+### Changed
+
+- The rows on the Settings screen sit a little closer together to make room
+  for the new one.
+
 ## [1.6.0] - 2026-11-12
 
 ### Changed

@@ -384,7 +384,8 @@ pub fn draw_tutorial(look: &Look, w: &World, view: (f32, f32)) -> bool {
         ly += lh;
     }
     let br = Rect::new(x + 14.0, ly + 8.0, bw, bh);
-    let hover = br.contains(mouse_position().into());
+    // The HUD may be drawn magnified; the mouse is in window units.
+    let hover = br.contains(Vec2::from(mouse_position()) / crate::look::hud_scale());
     draw_rectangle_lines(
         br.x,
         br.y,

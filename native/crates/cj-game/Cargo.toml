@@ -1,6 +1,6 @@
 [package]
 name = "cj-game"
-version = "1.6.0"
+version = "1.7.0"
 description = "Claim Jumpers native Windows game: window, rendering and input around cj-sim."
 edition.workspace = true
 rust-version.workspace = true

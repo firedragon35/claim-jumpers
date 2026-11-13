@@ -32,7 +32,9 @@ fn sees(w: &World, x: f64, y: f64) -> bool {
 
 /// drawRadar: the whole field, square, in the top-right corner under the HUD.
 /// Online, `blips` are what the server reports beyond the view.
-pub fn radar(w: &World, view: (f32, f32), blips: &[cj_net::Blip]) {
+/// `view` lays out the panel (HUD units); `cam_view` is the window's real
+/// size, which sets the camera box on the map.
+pub fn radar(w: &World, view: (f32, f32), cam_view: (f32, f32), blips: &[cj_net::Blip]) {
     let (vw, vh) = view;
     let size = (vw.min(vh) * 0.44).clamp(192.0, 300.0).round();
     let (x0, y0) = (vw - size - 16.0, HUD_BOTTOM);
@@ -148,7 +150,10 @@ pub fn radar(w: &World, view: (f32, f32), blips: &[cj_net::Blip]) {
     }
     // The camera's view as a box.
     let z = w.cam.zoom;
-    let (hw, hh) = (f64::from(vw) / 2.0 / z, f64::from(vh) / 2.0 / z);
+    let (hw, hh) = (
+        f64::from(cam_view.0) / 2.0 / z,
+        f64::from(cam_view.1) / 2.0 / z,
+    );
     let (bx, by) = at(w.cam.x - hw, w.cam.y - hh);
     let box_c = Color::new(221.0 / 255.0, 229.0 / 255.0, 243.0 / 255.0, 0.35);
     draw_rectangle_lines(
