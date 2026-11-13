@@ -205,6 +205,8 @@ enum Cmd {
     Play(Voice),
     /// Engine loop targets: gain and low-pass cutoff in Hz.
     Thrust(f32, f32),
+    /// Where the engine is heard, -1 (left) to 1 (right).
+    EnginePan(f32),
     Mute(bool),
     /// Music bus target gain (glides with a 0.3 s time constant).
     MusicGain(f32),
@@ -411,6 +413,9 @@ struct Mixer {
     eng_gain_to: f32,
     eng_cut: f32,
     eng_cut_to: f32,
+    /// The engine's pan and its target (see `Cmd::EnginePan`).
+    eng_pan: f32,
+    eng_pan_to: f32,
     eng_bq: Biquad,
     eng_n: u32,
     /// Compressor gain reduction envelope, in dB.
@@ -537,15 +542,21 @@ impl Mixer {
             self.eng_bq
                 .set(Filter::Lowpass, self.eng_cut.max(20.0), self.sr);
         }
-        c += self.eng_bq.run(self.noise.next()) * self.eng_gain;
+        self.eng_pan += (self.eng_pan_to - self.eng_pan) * (1.0 - (-dt / 0.15).exp());
+        let engine = self.eng_bq.run(self.noise.next()) * self.eng_gain;
+        let (egl, egr) = Place {
+            pan: self.eng_pan,
+            ..Place::default()
+        }
+        .gains();
         c += self.ambience.next(&mut self.noise, self.sr);
         let [master, sfx, music, voice] = self.vol;
         // Only one-shot effects echo; the steady loops would turn to mush.
         let sample_rate = self.sr;
         let echo = self.echo.get_or_insert_with(|| Echo::new(sample_rate));
         let (el, er) = echo.run(sl, sr, dt);
-        sl = (sl + el + c) * sfx;
-        sr = (sr + er + c) * sfx;
+        sl = (sl + el + c + engine * egl) * sfx;
+        sr = (sr + er + c + engine * egr) * sfx;
         self.music_gain += (self.music_gain_to - self.music_gain) * (1.0 - (-dt / 0.3).exp());
         // The music dips under a radio line so the words come through.
         let duck_to = if self.speech.is_some() { DUCK } else { 1.0 };
@@ -602,6 +613,8 @@ impl Mixer {
             eng_gain_to: 0.0,
             eng_cut: 400.0,
             eng_cut_to: 400.0,
+            eng_pan: 0.0,
+            eng_pan_to: 0.0,
             eng_bq,
             eng_n: 0,
             comp_db: 0.0,
@@ -646,6 +659,7 @@ impl Mixer {
                     self.eng_gain_to = g;
                     self.eng_cut_to = c;
                 }
+                Cmd::EnginePan(p) => self.eng_pan_to = p,
                 Cmd::Mute(m) => self.muted = m,
             }
         }
@@ -673,6 +687,13 @@ pub struct Audio {
     rng: Noise,
     /// When the cable last creaked (see `set_field`).
     last_creak: f64,
+    /// When the hull last groaned and the heat warning last beeped.
+    last_groan: f64,
+    last_beep: f64,
+    /// When a nearby rival or lawman may next be heard on the radio.
+    next_chatter: f64,
+    /// When each rival (by id) last flew past, so one pass whooshes once.
+    flybys: std::collections::HashMap<u32, f64>,
     /// Why audio is off, if it is.
     pub error: Option<String>,
 }
@@ -701,6 +722,10 @@ impl Audio {
             clock: 0.0,
             last_rattle: -1.0,
             last_creak: -1.0,
+            last_groan: -1.0,
+            last_beep: -1.0,
+            next_chatter: 20.0,
+            flybys: std::collections::HashMap::new(),
             rng: Noise(0x9e37_79b9),
             error,
         }
@@ -893,9 +918,33 @@ impl Audio {
         }));
     }
 
-    /// The field's sounds for this frame: its four loops, and now and then
-    /// a creak from a taut cable (more often the harder it pulls).
+    /// The field's sounds for this frame: its four loops, now and then a
+    /// creak from a taut cable (more often the harder it pulls), the engine
+    /// swinging with your turns, rivals whooshing past, and the cockpit's
+    /// groans and heat beeps.
     pub fn set_field(&mut self, f: FieldSound) {
+        // The stern swings out opposite the turn, so the engine does too.
+        self.send(Cmd::EnginePan((-f.av / 5.0).clamp(-1.0, 1.0) as f32 * 0.35));
+        self.cockpit(&f);
+        if let Some((pan, gain)) = f.talker {
+            if self.clock >= self.next_chatter {
+                self.next_chatter = self.clock + f64::from(self.rand(CHATTER_GAP.0, CHATTER_GAP.1));
+                self.chatter(pan, gain);
+            }
+        }
+        for &(id, pan, gain) in &f.passing {
+            if self
+                .flybys
+                .get(&id)
+                .is_some_and(|&t| self.clock - t < FLYBY_GAP)
+            {
+                continue;
+            }
+            self.flybys.insert(id, self.clock);
+            self.flyby(pan, gain);
+        }
+        let now = self.clock;
+        self.flybys.retain(|_, t| now - *t < FLYBY_GAP);
         let levels = if self.muted {
             [0.0; 4]
         } else {
@@ -1560,6 +1609,131 @@ impl Audio {
         }
     }
 
+    /// A rival screaming past: a noise sweep and a falling tone, its pitch
+    /// dropping like a Doppler shift as it goes, placed where it passed.
+    fn flyby(&mut self, pan: f32, gain: f32) {
+        self.place = Place {
+            pan,
+            ..Place::default()
+        };
+        let g = gain.clamp(0.0, 1.0);
+        self.noise(
+            0.55,
+            NoiseOpts {
+                vol: 0.12 * g,
+                freq: 2600.0,
+                filter: Filter::Bandpass,
+                sweep_to: 450.0,
+                ..NOISE
+            },
+        );
+        self.tone(
+            420.0,
+            0.5,
+            ToneOpts {
+                wave: Wave::Sawtooth,
+                vol: 0.025 * g,
+                slide: 0.55,
+                attack: 0.05,
+                ..TONE
+            },
+        );
+        self.place = Place::default();
+    }
+
+    /// Someone else's radio: a squelch, a burst of garbled syllables
+    /// squeezed through a narrow band like a cheap handset, and a squelch
+    /// to close; placed where they are.
+    fn chatter(&mut self, pan: f32, gain: f32) {
+        self.place = Place {
+            pan,
+            ..Place::default()
+        };
+        let g = gain.clamp(0.0, 1.0);
+        let click = |a: &Audio, delay: f32| {
+            a.noise(
+                0.03,
+                NoiseOpts {
+                    vol: 0.05 * g,
+                    freq: 3000.0,
+                    filter: Filter::Highpass,
+                    delay,
+                    ..NOISE
+                },
+            )
+        };
+        click(self, 0.0);
+        let mut at = 0.06;
+        let n = self.rand(6.0, 11.0) as usize;
+        for _ in 0..n {
+            let len = self.rand(0.06, 0.15);
+            let formant = self.rand(700.0, 1800.0);
+            let glide = self.rand(0.7, 1.3);
+            let pitch = self.rand(130.0, 210.0);
+            let bend = self.rand(0.85, 1.15);
+            self.noise(
+                len,
+                NoiseOpts {
+                    vol: 0.06 * g,
+                    freq: formant,
+                    filter: Filter::Bandpass,
+                    delay: at,
+                    sweep_to: formant * glide,
+                },
+            );
+            self.tone(
+                pitch,
+                len,
+                ToneOpts {
+                    wave: Wave::Square,
+                    vol: 0.012 * g,
+                    slide: bend,
+                    delay: at,
+                    attack: 0.01,
+                    ..TONE
+                },
+            );
+            at += len + self.rand(0.01, 0.07);
+        }
+        click(self, at + 0.02);
+        self.place = Place::default();
+    }
+
+    /// The cockpit under strain: below `HURT_HULL` of its hull the frame
+    /// groans now and then, more often the worse it is; running hot toward
+    /// an overheat, a warning beep that quickens. Overheated, the existing
+    /// alarm takes over.
+    fn cockpit(&mut self, f: &FieldSound) {
+        if f.hull > 0.0 && f.hull < HURT_HULL {
+            let hurt = (1.0 - f.hull / HURT_HULL).clamp(0.0, 1.0) as f32;
+            let gap = 3.2 - 2.0 * hurt;
+            if self.clock - self.last_groan > f64::from(gap) {
+                self.last_groan = self.clock + f64::from(self.rand(0.0, 0.8));
+                let f0 = self.rand(70.0, 110.0);
+                self.tone(
+                    f0,
+                    0.7,
+                    ToneOpts {
+                        wave: Wave::Sawtooth,
+                        vol: 0.03 + 0.03 * hurt,
+                        slide: 0.6,
+                        attack: 0.12,
+                        vib: 6.0,
+                        vib_rate: 5.0,
+                        ..TONE
+                    },
+                );
+            }
+        }
+        if f.heat > HOT && !f.overheated {
+            let k = ((f.heat - HOT) / (1.0 - HOT)).clamp(0.0, 1.0);
+            if self.clock - self.last_beep > 0.6 - 0.4 * k {
+                self.last_beep = self.clock;
+                self.tone(1760.0, 0.05, ToneOpts { vol: 0.035, ..TONE });
+            }
+        }
+    }
+
     /// Coin "ba-ding": two square notes a fourth apart.
     fn bank(&self) {
         self.tone(988.0, 0.07, ToneOpts { vol: 0.08, ..TONE });
@@ -1633,18 +1807,68 @@ pub fn field_ambience(w: &cj_sim::World) -> FieldSound {
         .filter(|it| mine.contains(&it.id))
         .map(|it| it.tension)
         .fold(0.0, f64::max);
+    let passing = w
+        .jumpers
+        .iter()
+        .filter(|j| !j.dead)
+        .filter_map(|j| {
+            let (dx, dy) = (j.b.x - x, j.b.y - y);
+            let (vx, vy) = (j.b.vx - s.b.vx, j.b.vy - s.b.vy);
+            let (d, speed) = (dx.hypot(dy), vx.hypot(vy));
+            let away = dx * vx + dy * vy > 0.0;
+            (away && d < FLYBY_REACH && speed > FLYBY_SPEED).then(|| {
+                let pan = (dx / 300.0).clamp(-1.0, 1.0) as f32 * 0.8;
+                (j.id, pan, (speed / 500.0).min(1.0) as f32)
+            })
+        })
+        .collect();
     FieldSound {
         hum,
         crackle,
         scrape: scrape.min(1.0),
         bay: 1.0 - smoothstep(300.0, 1400.0, bay),
         tension,
+        av: s.av,
+        hull: s.hp / w.me().mods.max_hp,
+        heat: s.heat / 100.0,
+        overheated: s.overheated,
+        passing,
+        talker: talker(w, x, y),
     }
+}
+
+/// The nearest rival, sheriff or debt collector within `CHATTER_REACH`
+/// of (x, y), as (pan, loudness) for its radio chatter.
+fn talker(w: &cj_sim::World, x: f64, y: f64) -> Option<(f32, f32)> {
+    let jumpers = w.jumpers.iter().filter(|j| !j.dead).map(|j| (j.b.x, j.b.y));
+    let law = w
+        .sheriffs
+        .iter()
+        .filter(|s| !s.dead)
+        .map(|s| (s.b.x, s.b.y));
+    let collectors = w
+        .collectors
+        .iter()
+        .filter(|c| !c.dead)
+        .map(|c| (c.b.x, c.b.y));
+    jumpers
+        .chain(law)
+        .chain(collectors)
+        .map(|(sx, sy)| (sx - x, sy - y))
+        .filter(|(dx, dy)| dx.hypot(*dy) < CHATTER_REACH)
+        .min_by(|a, b| a.0.hypot(a.1).total_cmp(&b.0.hypot(b.1)))
+        .map(|(dx, dy)| {
+            let near = 1.0 - dx.hypot(dy) / CHATTER_REACH;
+            (
+                (dx / 700.0).clamp(-1.0, 1.0) as f32 * 0.85,
+                (0.35 + 0.65 * near) as f32,
+            )
+        })
 }
 
 /// What the field sounds like at the tug this frame, each 0 to 1 (see
 /// `field_ambience` and `Audio::set_field`).
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct FieldSound {
     /// The energy wall's hum.
     pub hum: f64,
@@ -1656,7 +1880,32 @@ pub struct FieldSound {
     pub bay: f64,
     /// The tautest link of your cable.
     pub tension: f64,
+    /// Your tug's turn rate (radians a second), for the engine's pan.
+    pub av: f64,
+    /// Hull left (0..1), heat (0..1), and whether the guns have overheated.
+    pub hull: f64,
+    pub heat: f64,
+    pub overheated: bool,
+    /// Rivals passing close and fast this frame: (id, pan, loudness).
+    pub passing: Vec<(u32, f32, f32)>,
+    /// The nearest rival, lawman or debt collector in earshot of their
+    /// radio chatter: (pan, loudness).
+    pub talker: Option<(f32, f32)>,
 }
+
+/// Seconds between bursts of someone else's radio chatter, at random in
+/// this range, and how far off it carries, px.
+const CHATTER_GAP: (f32, f32) = (18.0, 40.0);
+const CHATTER_REACH: f64 = 1500.0;
+
+/// Hull left below which the cockpit groans, and heat above which it beeps.
+const HURT_HULL: f64 = 0.4;
+const HOT: f64 = 0.8;
+/// A rival within this distance and this much faster than you, px and
+/// px/s, and moving away, has just flown past; one pass is heard once.
+const FLYBY_REACH: f64 = 240.0;
+const FLYBY_SPEED: f64 = 220.0;
+const FLYBY_GAP: f64 = 2.5;
 
 /// Rocks further than this from the tug aren't heard scraping, px.
 const SCRAPE_REACH: f64 = 900.0;
@@ -1782,6 +2031,40 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A rival racing away from close by has just flown past and is heard
+    /// on its side; one closing in, or drifting, is not.
+    #[test]
+    fn a_rival_racing_away_close_by_is_heard_flying_past() {
+        let mut w = cj_sim::World::new_shift(cj_sim::rng::Rng::seeded(2), (1280.0, 720.0));
+        w.rocks.clear();
+        let pl = w.view_pilot;
+        w.pilots[pl].ship.alive = true;
+        let (x, y) = (w.pilots[pl].ship.b.x, w.pilots[pl].ship.b.y);
+        w.pilots[pl].ship.b.vx = 0.0;
+        w.pilots[pl].ship.b.vy = 0.0;
+        let mut j = w.new_jumper(x + 100.0, y, None);
+        j.b.x = x + 100.0;
+        j.b.y = y;
+        j.b.vx = 400.0;
+        j.b.vy = 0.0;
+        w.jumpers = vec![j];
+        let f = field_ambience(&w);
+        assert_eq!(f.passing.len(), 1);
+        assert!(f.passing[0].1 > 0.0, "heard on the right");
+        // Coming at you, or slow, is not a pass.
+        w.jumpers[0].b.vx = -400.0;
+        assert!(field_ambience(&w).passing.is_empty());
+        w.jumpers[0].b.vx = 100.0;
+        assert!(field_ambience(&w).passing.is_empty());
+        // The same rival is in earshot of its radio, on the right; far off it is not.
+        let (pan, gain) = field_ambience(&w).talker.expect("in earshot");
+        assert!(pan > 0.0 && gain > 0.9);
+        w.sheriffs.clear();
+        w.collectors.clear();
+        w.jumpers[0].b.x = x + CHATTER_REACH + 10.0;
+        assert!(field_ambience(&w).talker.is_none());
+    }
 
     /// Rocks sliding against each other near the tug scrape; apart or far
     /// away they don't. The carrier's bay drones close to it, and the
@@ -1977,6 +2260,10 @@ mod tests {
             clock: 0.0,
             last_rattle: -1.0,
             last_creak: -1.0,
+            last_groan: -1.0,
+            last_beep: -1.0,
+            next_chatter: 20.0,
+            flybys: std::collections::HashMap::new(),
             rng: Noise(1),
             error: None,
         };
@@ -2025,6 +2312,10 @@ mod tests {
             clock: 0.0,
             last_rattle: -1.0,
             last_creak: -1.0,
+            last_groan: -1.0,
+            last_beep: -1.0,
+            next_chatter: 20.0,
+            flybys: std::collections::HashMap::new(),
             rng: Noise(1),
             error: None,
         };

@@ -8,7 +8,9 @@ rock uses the molten and gold-plated ones. Quiet Drift's plain rock also
 uses the ice and blue crystal pieces, and the Frontier's the exotic crystal
 ones (`BELT_ROCK_ART`). They are embedded in the exe by
 `crates/cj-game/src/look.rs` (`ROCK_ART`), which says which file draws
-which size and kind.
+which size and kind. Two ore nodes from the pack's `assets/ores`
+(`mixed_ore_node.png`, and `depleted_node.png` once the rock is half
+mined) are drawn on ore-bearing rocks (`PropArt`).
 
 `ships/`: 12 ship sprites from the same pack (`assets/ships`, plus
 `assets/cargo/cargo_hauler.png`): the five player models, four rival
@@ -20,7 +22,7 @@ the image; the sheriff, collector and hauler point right.
 same pack for drones and sentries, salvage by type and grade, wrecks and
 the derelict freighter, the carrier's hub and the refinery's vault.
 `PropArt` in `look.rs` says which draws what. The rest of the pack
-(ore nodes, other containers, the field sample
+(the other ore nodes, other containers, the field sample
 rocks and the leftover debris) isn't used yet. The keycard has no
 art in the pack; it is painted in code (`keycard_image` in `look.rs`).
 

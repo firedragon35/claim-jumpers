@@ -72,6 +72,8 @@ pub struct Music {
     /// Clock time (seconds) of the next step to schedule.
     next: f64,
     intensity: f32,
+    /// How rich the load on your line is (0..1, eased; see `wealth`).
+    wealth: f32,
     started: bool,
     /// Semitones the field music is transposed by (the belt's key).
     key: i8,
@@ -82,6 +84,12 @@ pub struct Music {
 /// A semitone above the root, in Hz.
 fn hz(semis: f32) -> f32 {
     ROOT * 2f32.powf(semis / 12.0)
+}
+
+/// How rich a load worth `value` credits sounds: nothing for scraps,
+/// full for 3,000 cr or more.
+pub fn wealth(value: f64) -> f32 {
+    ((value - 300.0) / 2700.0).clamp(0.0, 1.0) as f32
 }
 
 /// The key each belt plays in, in semitones from A: the quiet belts low
@@ -102,6 +110,7 @@ impl Music {
             step: 0,
             next: 0.0,
             intensity: 0.0,
+            wealth: 0.0,
             started: false,
             key: 0,
             scene: Scene::Menu,
@@ -145,6 +154,12 @@ impl Music {
         // Rise quickly into danger, settle slowly after it.
         let k = if target > self.intensity { 2.0 } else { 0.35 };
         self.intensity += (target.min(1.0) - self.intensity) * (k * dt).min(1.0);
+        let rich = if menu {
+            0.0
+        } else {
+            wealth(w.line_value(w.view_pilot))
+        };
+        self.wealth += (rich - self.wealth) * (0.8 * dt).min(1.0);
         let level = if !self.enabled {
             0.0
         } else {
@@ -214,6 +229,23 @@ impl Music {
             if x > 0.55 && (s16 == 4 || s16 == 12) {
                 a.music_noise(t, 0.12, 0.09, 1500.0);
             }
+        }
+        // A rich load on the line adds a bell answering the chord, and a
+        // high shimmer over it when it's a fortune.
+        let r = self.wealth;
+        if r > 0.25 && s16 % 4 == 2 {
+            let f = chord[(s16 / 4) as usize % 3] * 4.0;
+            a.note(f, Wave::Sine, t, step * 3.0, 0.015 + 0.03 * r, 0.0);
+        }
+        if r > 0.7 && s16 == 0 {
+            a.note(
+                chord[2] * 8.0,
+                Wave::Triangle,
+                t,
+                step * 14.0,
+                0.012,
+                6000.0,
+            );
         }
         // Arpeggio lead when it's really hot.
         if x > 0.65 {
@@ -313,6 +345,15 @@ mod tests {
         for b in cj_sim::field::BELTS {
             assert!(belt_key(b).abs() <= 6);
         }
+    }
+
+    /// A load's music layer starts above scraps and is full by 3,000 cr.
+    #[test]
+    fn richer_loads_sound_richer() {
+        assert_eq!(wealth(0.0), 0.0);
+        assert_eq!(wealth(300.0), 0.0);
+        assert!(wealth(1000.0) > 0.0 && wealth(1000.0) < wealth(2500.0));
+        assert_eq!(wealth(9000.0), 1.0);
     }
 
     /// The menu theme stays in its own chords; every field chord lies in a

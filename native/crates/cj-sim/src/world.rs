@@ -145,6 +145,9 @@ pub struct Pilot {
     pub arrests: u32,
     /// The co-pilot aboard and the accepted contract.
     pub crew: Option<crate::field::Crew>,
+    /// Seconds until the fixer can patch the hull again.
+    #[serde(skip)]
+    pub fixer_t: f64,
     pub contract: Option<crate::field::Contract>,
     /// Banked pieces by type (for delivery contracts).
     pub delivered: Vec<(ItemType, u32)>,
@@ -213,6 +216,7 @@ impl Pilot {
             fat_cable_ready_at: 0.0,
             in_cloud: false,
             habit_kills: Default::default(),
+            fixer_t: 0.0,
             impounded: false,
             impound_fee: 0.0,
             confiscated: 0.0,
@@ -855,6 +859,7 @@ impl World {
             let it = &mut self.items[i];
             it.angle += it.spin * dt;
             it.thrown_t = (it.thrown_t - dt).max(0.0);
+            it.knock_t = (it.knock_t - dt).max(0.0);
             if it.fuse > 0.0 {
                 it.fuse -= dt;
                 if it.fuse <= 0.0 {
@@ -948,6 +953,9 @@ impl World {
         self.screen_flash = (self.screen_flash - dt * 1.6).max(0.0);
         for pl in &mut self.pilots {
             pl.under_attack_t = (pl.under_attack_t - dt).max(0.0);
+        }
+        for p in 0..self.pilots.len() {
+            self.with_hearer(Some(p), |w| w.fixer_patch(p, dt));
         }
         self.sweep_dead();
         self.update_camera(dt);
@@ -1703,6 +1711,29 @@ impl World {
             let it = &mut self.items[i];
             it.value = js::round(it.value * crate::field::BROKER_RATE);
         }
+        let it = &mut self.items[i];
+        let sling = !it.towed
+            && it.thrown_t > 0.0
+            && it.owner == Some(p)
+            && it.b.vx.hypot(it.b.vy) >= SLING_SPEED;
+        if sling {
+            it.value = js::round(it.value * SLING_RATE);
+            let (x, y) = (it.b.x, it.b.y);
+            self.popup(x, y - 44.0, "SLINGSHOT".to_owned(), Tint::Cable);
+            let line = SLING_LINES[self.rng.index(SLING_LINES.len())];
+            self.radio_text(Radio::Bank, false, false, line.to_owned());
+        }
+        let it = &mut self.items[i];
+        // Salvage from your own claim (or your own spilled PvP cargo) pays
+        // a finder's premium.
+        if it.claim.is_some_and(|(c, _)| c == p) {
+            it.value = js::round(it.value * CLAIM_RATE);
+        }
+        if it.contraband() {
+            it.value = js::round(it.value * CONTRABAND_RATE);
+            let (x, y) = (it.b.x, it.b.y);
+            self.popup(x, y - 60.0, "CONTRABAND".to_owned(), Tint::Danger);
+        }
         let kind = self.items[i].kind;
         match self.pilots[p].delivered.iter_mut().find(|d| d.0 == kind) {
             Some(d) => d.1 += 1,
@@ -1782,6 +1813,52 @@ impl World {
             self.radio(Radio::BankBig, true, false);
         } else {
             self.radio(Radio::Bank, false, false);
+        }
+    }
+
+    /// The fixer aboard pilot `p`'s tug patches a badly holed hull, then
+    /// needs a minute before doing it again.
+    fn fixer_patch(&mut self, p: usize, dt: f64) {
+        let pl = &mut self.pilots[p];
+        if pl.crew != Some(crate::field::Crew::Fixer) {
+            return;
+        }
+        pl.fixer_t = (pl.fixer_t - dt).max(0.0);
+        let max = pl.mods.max_hp;
+        if pl.fixer_t > 0.0 || !pl.ship.alive || pl.ship.hp >= max * FIXER_PATCH_AT {
+            return;
+        }
+        pl.fixer_t = FIXER_GAP;
+        let s = &mut pl.ship;
+        s.hp = (s.hp + FIXER_PATCH).min(max);
+        let (x, y) = (s.b.x, s.b.y);
+        self.popup(x, y - 40.0, "HULL PATCHED".to_owned(), Tint::Cable);
+        self.sfx(Sfx::ShieldUp);
+        let line = "Okafor says the hull's patched. He also says stop doing that.";
+        self.radio_text(Radio::Repair, true, false, line.to_owned());
+    }
+
+    /// A hard knock to fragile cargo (a sealed pod or a flight recorder)
+    /// breaks some of what's inside: it loses part of its value.
+    pub(crate) fn knock_fragile(&mut self, i: usize) {
+        let it = &mut self.items[i];
+        if !matches!(it.kind, ItemType::Pod | ItemType::Blackbox) || it.knock_t > 0.0 {
+            return;
+        }
+        it.knock_t = FRAGILE_GAP;
+        let lost = js::round(it.value * FRAGILE_LOSS);
+        it.value -= lost;
+        let (x, y, hidden, towed) = (it.b.x, it.b.y, it.hidden, it.towed);
+        // A sealed pod's worth is a secret until it's opened in the bay.
+        let text = if hidden {
+            "DAMAGED".to_owned()
+        } else {
+            format!("DAMAGED -{}", fmt_credits(lost))
+        };
+        self.popup(x, y - 24.0, text, Tint::Danger);
+        if towed {
+            let line = "Careful. Whatever's in that rattles now, and the bay pays for intact.";
+            self.radio_text(Radio::Heavy, false, true, line.to_owned());
         }
     }
 

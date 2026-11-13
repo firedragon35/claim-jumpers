@@ -267,7 +267,7 @@ impl Crew {
             name: "Okafor",
             role: "Fixer",
             wage: 350.0,
-            perk: "Rival crews hold half the grudge for each kill.",
+            perk: "Rival crews hold half the grudge for each kill. Patches a badly holed hull once a minute.",
         };
         const BROKER: CrewDef = CrewDef {
             key: "broker",
@@ -489,7 +489,13 @@ pub enum Event {
     Boss,
     /// A paid escort: a freight hauler crosses to the bay.
     Convoy,
+    /// A shower of small, fast rocks streaks in from one edge at a tug.
+    Meteors,
 }
+
+/// A meteor shower: this many small rocks, at this speed, px/s.
+pub const METEOR_COUNT: usize = 10;
+pub const METEOR_SPEED: f64 = 300.0;
 
 /// Seconds into the shift when the event can fire, and the ion storm's length.
 pub const EVENT_WINDOW: (f64, f64) = (80.0, 160.0);
@@ -566,6 +572,19 @@ pub const CORE_ZAP_DAMAGE: f64 = 4.0;
 /// Most rogue cores a career can store.
 pub const CORES_MAX: u32 = 9;
 
+/* ------------------------------- Insurance ------------------------------- */
+
+/// Cargo insurance bought in the shop covers the next shift: the claim is
+/// INSURE_COVER of the cargo lost to rivals, collectors and wrecks, at most
+/// INSURE_CAP.
+pub const INSURE_COVER: f64 = 0.6;
+pub const INSURE_CAP: f64 = 5000.0;
+
+/// The premium for one shift's cover; bigger tugs haul more, so cost more.
+pub fn insurance_price(tug_class: usize) -> f64 {
+    250.0 + 150.0 * tug_class as f64
+}
+
 /* ------------------------------ Night shifts ------------------------------ */
 
 /// How far the radar sees on a night shift, in px.
@@ -603,7 +622,7 @@ pub fn grudge_one_stage_down(grudge: f64) -> f64 {
 
 use crate::career::{tier, Career, Tier};
 use crate::consts::{BAY_X, BAY_Y, CARRIER_X, CARRIER_Y};
-use crate::entities::{make_wreck, Body, Boss};
+use crate::entities::{make_rock_drifting, make_wreck, Body, Boss};
 use crate::events::{Radio, Sfx, Tint};
 use crate::world::World;
 
@@ -864,9 +883,15 @@ impl World {
             Some(k) => k,
             None => {
                 let pool: &[Event] = if self.hauler.is_some() {
-                    &[Event::Ion, Event::Derelict, Event::Boss]
+                    &[Event::Ion, Event::Derelict, Event::Boss, Event::Meteors]
                 } else {
-                    &[Event::Ion, Event::Derelict, Event::Boss, Event::Convoy]
+                    &[
+                        Event::Ion,
+                        Event::Derelict,
+                        Event::Boss,
+                        Event::Convoy,
+                        Event::Meteors,
+                    ]
                 };
                 pool[self.rng.index(pool.len())]
             }
@@ -878,6 +903,7 @@ impl World {
     pub fn start_event(&mut self, kind: Event) {
         match kind {
             Event::Convoy => self.spawn_hauler(true),
+            Event::Meteors => self.meteor_shower(),
             Event::Ion => {
                 self.ion_t = ION_STORM_TIME;
                 if self.pilots.iter().any(|pl| pl.ship.shield > 0.0) {
@@ -932,6 +958,27 @@ impl World {
                 self.radio_text(Radio::Boss, true, false, text);
             }
         }
+    }
+
+    /// Small rocks streak in from one edge toward a tug, spread so some
+    /// miss: dodge, or hide behind something big.
+    fn meteor_shower(&mut self) {
+        let (px, py) = self.edge_point(1500.0);
+        let p = self.nearest_pilot(px, py);
+        let (tx, ty) = (self.pilots[p].ship.b.x, self.pilots[p].ship.b.y);
+        let aim = (ty - py).atan2(tx - px);
+        for _ in 0..METEOR_COUNT {
+            let x = px + self.rng.range(-260.0, 260.0);
+            let y = py + self.rng.range(-260.0, 260.0);
+            let a = aim + self.rng.range(-0.25, 0.25);
+            let speed = METEOR_SPEED * self.rng.range(0.85, 1.2);
+            let mut r = make_rock_drifting(&mut self.rng, 1, x, y);
+            r.b.vx = a.cos() * speed;
+            r.b.vy = a.sin() * speed;
+            self.rocks.push(r);
+        }
+        let line = "Meteor shower coming in. Small, fast and a lot of them. Find some cover.";
+        self.radio_text(Radio::IonStorm, true, false, line.to_owned());
     }
 
     fn spawn_hauler(&mut self, paid: bool) {

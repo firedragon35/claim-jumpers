@@ -101,8 +101,18 @@ uniform float Aspect;
 // Shockwaves: centre (x, y in 0..1 of the view), ring radius and strength,
 // both in view heights; strength 0 is none.
 uniform vec4 Ripples[4];
+// Heat haze behind burning engines: centre (x, y in 0..1 of the view),
+// radius in view heights and strength; strength 0 is none.
+uniform vec4 Haze[2];
+uniform float Time;
 void main() {
     vec2 at = uv;
+    for (int i = 0; i < 2; i++) {
+        vec4 h = Haze[i];
+        vec2 d = (uv - h.xy) * vec2(Aspect, 1.0);
+        float f = exp(-dot(d, d) / max(h.z * h.z, 1e-6)) * h.w;
+        at += vec2(sin(uv.y * 190.0 + Time * 26.0), cos(uv.x * 170.0 + Time * 22.0)) * f;
+    }
     for (int i = 0; i < 4; i++) {
         vec4 r = Ripples[i];
         vec2 d = (uv - r.xy) * vec2(Aspect, 1.0);
@@ -247,6 +257,16 @@ void main() {
 const BLOOM_STRENGTH: f32 = 0.85;
 /// Shockwaves the composite bends the frame with at once (`Ripples[4]`).
 pub const RIPPLES: usize = 4;
+/// Engines the composite hazes the air behind at once (`Haze[2]`).
+pub const HAZE: usize = 2;
+
+/// What the composite bends the frame with: shockwaves and engine haze
+/// (see `COMPOSITE`), and the clock the haze shimmers to.
+pub struct Warp {
+    pub ripples: [[f32; 4]; RIPPLES],
+    pub haze: [[f32; 4]; HAZE],
+    pub t: f32,
+}
 /// Brightness (0–1, brightest channel) where glow starts.
 const BLOOM_THRESHOLD: f32 = 0.42;
 /// How far the nebula drifts per world unit the camera moves: matches
@@ -290,10 +310,10 @@ impl Mats {
                         .map(|&(n, t)| {
                             // The one array uniform.
                             let d = UniformDesc::new(n, t);
-                            if n == "Ripples" {
-                                d.array(RIPPLES)
-                            } else {
-                                d
+                            match n {
+                                "Ripples" => d.array(RIPPLES),
+                                "Haze" => d.array(HAZE),
+                                _ => d,
                             }
                         })
                         .collect(),
@@ -318,6 +338,8 @@ impl Mats {
                     ("Seed", Float1),
                     ("Aspect", Float1),
                     ("Ripples", Float4),
+                    ("Haze", Float4),
+                    ("Time", Float1),
                 ],
                 &["Bloom1", "Bloom2", "Bloom3"],
                 PipelineParams::default(),
@@ -520,7 +542,7 @@ impl Post {
     /// window, then hand the cameras back to the window. `seed` moves the
     /// grain; a constant seed holds it still.
     /// `ripples` are up to four shockwaves (see `COMPOSITE`'s `Ripples`).
-    pub fn finish(&mut self, view: (f32, f32), seed: f32, ripples: [[f32; 4]; RIPPLES]) {
+    pub fn finish(&mut self, view: (f32, f32), seed: f32, warp: Warp) {
         set_target(None);
         if !self.active {
             return;
@@ -552,7 +574,12 @@ impl Post {
         c.set_uniform("Strength", BLOOM_STRENGTH);
         c.set_uniform("Seed", seed);
         c.set_uniform("Aspect", view.0 / view.1.max(1.0));
-        c.set_uniform_array("Ripples", &ripples.map(|r| vec4(r[0], r[1], r[2], r[3])));
+        c.set_uniform_array(
+            "Ripples",
+            &warp.ripples.map(|r| vec4(r[0], r[1], r[2], r[3])),
+        );
+        c.set_uniform_array("Haze", &warp.haze.map(|r| vec4(r[0], r[1], r[2], r[3])));
+        c.set_uniform("Time", warp.t);
         crate::draw::screen_camera(view);
         gl_use_material(c);
         draw_texture_ex(

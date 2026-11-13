@@ -42,7 +42,7 @@ Thrust                  W or Up             RT or A
 Brake / reverse         S or Down           LT or D-pad down
 Turn                    A D or Left Right   Left stick or D-pad
 Fire                    Space or J          RB
-Hook nearest piece      E or K              Y
+Hook (or anchor a rock) E or K              Y
 Drop last piece         Q                   B
 Cut all                 X                   LB
 Strafe (side thrusters) Z / C               Right stick

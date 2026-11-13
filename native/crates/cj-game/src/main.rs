@@ -535,6 +535,7 @@ impl App {
             due: 0.0,
             contract: None,
             wage: 0.0,
+            insurance: 0.0,
             chain_note: String::new(),
             rep_delta: [0.0; 3],
             outcome: Outcome::Continue,
@@ -679,6 +680,7 @@ impl App {
                 due: 0.0,
                 contract: None,
                 wage: 0.0,
+                insurance: 0.0,
                 chain_note: String::new(),
                 rep_delta: [0.0; 3],
                 outcome,
@@ -991,6 +993,7 @@ impl App {
             | Act::Crew(_)
             | Act::Belt(_)
             | Act::Truce
+            | Act::Insure
             | Act::SellCore
             | Act::ReprogramCore => {
                 if let Some(req) = shop_request(a) {
@@ -1044,6 +1047,7 @@ fn shop_request(a: Act) -> Option<cj_net::ShopReq> {
         Act::Crew(c) => R::Crew(c),
         Act::Belt(b) => R::Vote(b),
         Act::Truce => R::Truce,
+        Act::Insure => R::Insure,
         Act::SellCore => R::SellCore,
         Act::ReprogramCore => R::ReprogramCore,
         _ => return None,
@@ -1482,12 +1486,15 @@ async fn main() {
             draw::screen_camera(hud_view);
             let blips = app.online.as_ref().map_or(&[][..], |o| o.session.blips());
             radar::radar(&app.world, hud_view, (vw, vh), blips);
+            let real = app.world.me().banked;
+            app.fx.banked_shown = hud::count_up(app.fx.banked_shown, real, get_frame_time().into());
             hud::draw(
                 &look,
                 &app.world,
                 app.career.as_ref(),
                 hud_view,
                 controls.last_device,
+                app.fx.banked_shown,
             );
             app.radio.draw(&look, app.world.t, hud_view);
             // Online, holding Tab shows who is flying and how they're doing.

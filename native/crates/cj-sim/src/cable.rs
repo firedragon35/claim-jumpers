@@ -103,9 +103,17 @@ impl World {
     }
 
     /// Attach the item nearest pilot `p`'s tug to the end of its chain.
+    /// With nothing to hook, the line anchors to a big rock in reach
+    /// instead; hooking again while anchored lets the rock go.
     pub fn try_hook(&mut self, p: usize) {
+        if self.pilots[p].ship.anchor.take().is_some() {
+            self.sfx(Sfx::Hook);
+            return;
+        }
         let Some(i) = self.find_hook_target(p) else {
-            self.sfx(Sfx::Deny);
+            if !self.try_anchor(p) {
+                self.sfx(Sfx::Deny);
+            }
             return;
         };
         if self.tow_mass(p) + self.items[i].b.mass > self.pilots[p].mods.winch_cap {
@@ -124,6 +132,43 @@ impl World {
             self.radio(Radio::Heavy, false, false);
         } else {
             self.radio(Radio::Hook, false, false);
+        }
+    }
+
+    /// Anchor pilot `p`'s line to the nearest medium or large rock within
+    /// hook range, at its current distance: the tug can then swing around
+    /// it or brake against it. False when there is none.
+    fn try_anchor(&mut self, p: usize) -> bool {
+        let s = &self.pilots[p].ship;
+        if !s.alive {
+            return false;
+        }
+        let reach = self.pilots[p].mods.hook_range;
+        let best = self
+            .rocks
+            .iter()
+            .filter(|r| !r.dead && r.size >= 2 && r.b.dist_to(&s.b) - r.b.r < reach)
+            .map(|r| (r.id, r.b.dist_to(&s.b)))
+            .min_by(|a, b| a.1.total_cmp(&b.1));
+        let Some((id, d)) = best else {
+            return false;
+        };
+        self.pilots[p].ship.anchor = Some((id, d));
+        self.sfx(Sfx::Hook);
+        true
+    }
+
+    /// Holds pilot `p`'s tug on its rock anchor; lets go when the rock is
+    /// gone or the tug is.
+    fn hold_anchor(&mut self, p: usize) {
+        let Some((id, len)) = self.pilots[p].ship.anchor else {
+            return;
+        };
+        match self.rocks.iter().position(|r| r.id == id && !r.dead) {
+            Some(r) if self.pilots[p].ship.alive => {
+                rope_constraint(&mut self.pilots[p].ship.b, &mut self.rocks[r].b, len);
+            }
+            _ => self.pilots[p].ship.anchor = None,
         }
     }
 
@@ -236,6 +281,9 @@ impl World {
         let mine = |p: usize| only.is_none_or(|o| o == p);
         for it in &mut self.items {
             it.jerk = 0.0;
+        }
+        for p in (0..self.pilots.len()).filter(|&p| mine(p)) {
+            self.hold_anchor(p);
         }
         let links: Vec<Vec<usize>> = (0..self.pilots.len())
             .map(|p| {

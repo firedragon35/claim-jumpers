@@ -103,6 +103,27 @@ pub const BAY_R: f64 = 120.0;
 pub const BAY_TRACTOR_REACH: f64 = 2.2;
 /// Tractor acceleration at the ring, px/s², falling to 0 at the reach.
 pub const BAY_TRACTOR_PULL: f64 = 260.0;
+/// A slingshot: cargo let go of (dropped or cut) that flies into the bay
+/// on its own at this speed or more, px/s, pays SLING_RATE times its value.
+/// Fast enough that the bay's tractor alone never makes one.
+pub const SLING_SPEED: f64 = 250.0;
+pub const SLING_RATE: f64 = 1.15;
+/// Salvage claims: the first tug to cut into a wreck stakes it. What comes
+/// out is held for that pilot for CLAIM_HOLD seconds (other tugs without
+/// PvP can't hook it), and the bay pays CLAIM_RATE for it when they bank it.
+pub const CLAIM_HOLD: f64 = 30.0;
+pub const CLAIM_RATE: f64 = 1.1;
+/// What Marge says to a slingshot (text only: these have no recording yet).
+/// One sealed pod in CONTRABAND_EVERY (by id) is contraband: the bay pays
+/// CONTRABAND_RATE for it, but a patrol that sees it on your line puts a
+/// wanted star on you.
+pub const CONTRABAND_EVERY: u32 = 4;
+pub const CONTRABAND_RATE: f64 = 2.0;
+pub const SLING_LINES: [&str; 3] = [
+    "Slingshot. Show-off. The bay crew is applauding, which costs me nothing.",
+    "Threw it right down the bay's throat. Fine. That was good.",
+    "Nice throw, hotshot. Do that every time and I might stop yelling.",
+];
 /// Distance from the bay centre inside which a parked tug is repaired and its shield recharges faster.
 pub const BAY_REPAIR_RANGE: f64 = 180.0;
 /// Hull points repaired per second inside BAY_REPAIR_RANGE.
@@ -227,6 +248,17 @@ pub const CREW_SPEED_MUL: f64 = 1.06;
 pub const CREW_FIRE_MUL: f64 = 0.88;
 /// Closing speed at which volatile cargo primes on impact.
 pub const VOLATILE_IMPACT: f64 = 400.0;
+/// Fragile cargo (sealed pods and flight recorders) knocked harder than
+/// this, px/s, loses FRAGILE_LOSS of its value, at most once every
+/// FRAGILE_GAP seconds so one crunch counts once.
+pub const FRAGILE_IMPACT: f64 = 260.0;
+pub const FRAGILE_LOSS: f64 = 0.15;
+pub const FRAGILE_GAP: f64 = 0.4;
+/// The fixer's field patch: once the hull drops below FIXER_PATCH_AT of
+/// its maximum, FIXER_PATCH hull points, then FIXER_GAP seconds to recover.
+pub const FIXER_PATCH_AT: f64 = 0.3;
+pub const FIXER_PATCH: f64 = 30.0;
+pub const FIXER_GAP: f64 = 60.0;
 /// Shove a blast gives a body of mass 1 at its centre, px/s.
 pub const BLAST_SHOVE: f64 = 420.0;
 
@@ -251,6 +283,17 @@ pub const JUMPER_HAUL_ACCEL: f64 = 210.0;
 pub const JUMPER_SEVER_TIME: f64 = 3.5;
 /// How close hunters circle the tug.
 pub const HUNTER_ORBIT: f64 = 230.0;
+/// A rival crew's temper. Steady crews play it straight; greedy ones go
+/// for the richest cargo however far it is; skittish ones bolt when hit.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Temper {
+    Steady,
+    Greedy,
+    Skittish,
+}
+/// Seconds a skittish rival runs after a hit.
+pub const SKITTISH_FLEE: f64 = 2.0;
+
 /// Rivals this close to a wingmate smashed by cargo flee for SCATTER_TIME.
 pub const SCATTER_RANGE: f64 = 600.0;
 pub const SCATTER_TIME: f64 = 4.0;

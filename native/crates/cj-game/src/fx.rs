@@ -73,6 +73,8 @@ pub struct Fx {
     /// Shockwaves bending the frame (blasts and EMP pulses): (x, y, reach,
     /// seconds left, seconds in all). See [`ripple`].
     pub ripples: Vec<(f64, f64, f64, f64, f64)>,
+    /// The banked total the HUD shows, counting up (see `hud::count_up`).
+    pub banked_shown: f64,
 }
 
 /// A shockwave's ring radius and strength (0..1), `life` of `max` seconds
@@ -96,6 +98,7 @@ impl Fx {
             engine: Vec::new(),
             lights: Vec::new(),
             ripples: Vec::new(),
+            banked_shown: 0.0,
         }
     }
 
@@ -352,10 +355,15 @@ impl Fx {
                     life: 1.4,
                 }),
                 Event::Laser { x0, y0, x1, y1 } => {
+                    let (mx, my) = ((x0 + x1) / 2.0, (y0 + y1) / 2.0);
+                    self.lights.push((mx, my, 140.0, col::CABLE, 0.1, 0.1));
                     self.beams.push((*x0, *y0, *x1, *y1, BEAM_TIME));
                 }
                 // A round striking something: a brief hot flash.
-                Event::Hit { x, y } => self.spark(*x, *y, 0.0, 0.0, 0.15, col::HAZARD, 3.0),
+                Event::Hit { x, y } => {
+                    self.lights.push((*x, *y, 70.0, col::HAZARD, 0.12, 0.12));
+                    self.spark(*x, *y, 0.0, 0.0, 0.15, col::HAZARD, 3.0)
+                }
                 Event::Strafe {
                     x,
                     y,
@@ -380,6 +388,11 @@ impl Fx {
     /// read: cargo faster than 220 px/s keeps its last 8 positions, and a
     /// slowed piece's trail shrinks a point a step.
     pub fn update_trails(&mut self, w: &World) {
+        // A missile's motor lights what it passes: a short light renewed
+        // every step it flies.
+        for m in &w.missiles {
+            self.lights.push((m.x, m.y, 110.0, col::HAZARD, 0.05, 0.05));
+        }
         const TRAIL_SPEED: f64 = 220.0;
         const TRAIL_LEN: usize = 8;
         self.trails
@@ -545,6 +558,17 @@ mod tests {
         assert!(fx.light_at(1000.0, 0.0, 20.0).is_none());
         fx.update(1.0);
         assert!(fx.light_at(0.0, 0.0, 20.0).is_none());
+    }
+
+    /// Laser beams and hits light their surroundings briefly; a missile
+    /// lights them for as long as it flies.
+    #[test]
+    fn weapons_light_the_rocks_they_pass() {
+        let mut fx = Fx::new(Rng::seeded(3));
+        fx.absorb([&Event::Hit { x: 0.0, y: 0.0 }]);
+        assert!(fx.light_at(30.0, 0.0, 10.0).is_some());
+        fx.update(0.5);
+        assert!(fx.light_at(30.0, 0.0, 10.0).is_none());
     }
 
     /// A big blast and an EMP pulse each send out a shockwave that grows

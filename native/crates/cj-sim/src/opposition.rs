@@ -1715,6 +1715,24 @@ impl World {
         }
     }
 
+    /// A patrol close enough to see pilot `p`'s line spots any contraband
+    /// on it it hasn't seen before: a wanted star for each.
+    fn spot_contraband(&mut self, p: usize, x: f64, y: f64) {
+        let chain = self.pilots[p].chain.clone();
+        for id in chain {
+            let Some(it) = self.items.iter_mut().find(|it| it.id == id) else {
+                continue;
+            };
+            if !it.contraband() || it.spotted {
+                continue;
+            }
+            it.spotted = true;
+            self.add_wanted(p, 1, x, y);
+            let line = "The law's had a look at that pod. Contraband. Run, or talk fast.";
+            self.radio_text(Radio::Heavy, true, true, line.to_owned());
+        }
+    }
+
     /// A wanted star fades after a stretch with nobody chasing its pilot.
     pub(crate) fn update_wanted_cooldown(&mut self, dt: f64) {
         for p in 0..self.pilots.len() {
@@ -1909,6 +1927,9 @@ impl World {
             && d < detect_range(self.pilots[p].wanted)
         {
             self.start_pursuit(k);
+        }
+        if alive && d < detect_range(1) && self.sheriffs[k].state == SheriffState::Patrol {
+            self.spot_contraband(p, s.x, s.y);
         }
         // A clean tug hauling cargo near a patrol: each second, a small
         // chance he decides to "inspect" the cargo, i.e. steal it.

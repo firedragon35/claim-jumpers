@@ -146,6 +146,9 @@ pub struct Ship {
     pub missile_reload_t: f64,
     #[serde(with = "crate::wire::f32_sparse")]
     pub missile_gap_t: f64,
+    /// The rock the tug's line is anchored to, by id, and the line's length.
+    #[serde(default)]
+    pub anchor: Option<(u32, f64)>,
 }
 
 impl Ship {
@@ -191,6 +194,7 @@ impl Ship {
             missiles: mods.missile_rack,
             missile_reload_t: 0.0,
             missile_gap_t: 0.0,
+            anchor: None,
         }
     }
 
@@ -217,6 +221,9 @@ pub struct Item {
     pub tint: Option<u32>,
     pub rare: bool,
     pub hidden: bool,
+    /// A patrol has seen this contraband on a line (server-side only).
+    #[serde(skip)]
+    pub spotted: bool,
     pub value: f64,
     /// Hit points; None is indestructible.
     pub hp: Option<f64>,
@@ -252,6 +259,11 @@ pub struct Item {
     pub claim: Option<(usize, f64)>,
     /// The rival (jumper id) dragging this item off, if any.
     pub hooked_by: Option<u32>,
+    /// Seconds before fragile cargo can be damaged again (see
+    /// `World::knock_fragile`).
+    // Server-side only: clients never see it, so it costs no bytes.
+    #[serde(skip)]
+    pub knock_t: f64,
     /// Seconds until a towed rogue core next tries to zap the tug.
     #[serde(with = "crate::wire::f32_sparse")]
     pub zap_t: f64,
@@ -275,6 +287,13 @@ impl Item {
                 ItemType::Blackbox | ItemType::Keycard | ItemType::Core
             )
             || self.value >= 800.0
+    }
+
+    /// Contraband pays double, and the law wants a word if it sees it. Set
+    /// by the id, not the rng (the field rolls as before) and not sent on
+    /// the wire (clients work it out the same way).
+    pub fn contraband(&self) -> bool {
+        self.kind == ItemType::Pod && self.id.is_multiple_of(CONTRABAND_EVERY)
     }
 
     /// This piece's grade name, such as "Scrap" or "Rare alloy".
@@ -346,6 +365,7 @@ pub fn make_item(
         tint: g.tint,
         rare: def.grades.len() > 1 && gi == def.grades.len() - 1,
         hidden: def.hidden,
+        spotted: false,
         value,
         hp: g.hp.or(def.hp),
         angle,
@@ -355,6 +375,7 @@ pub fn make_item(
         jerk: 0.0,
         tension: 0.0,
         thrown_t: 0.0,
+        knock_t: 0.0,
         fuse: 0.0,
         primed_by: crate::world::Blame::Unset,
         owner: None,
@@ -476,6 +497,9 @@ pub struct Wreck {
     pub flash: f64,
     /// Phase of the blinking emergency light.
     pub light: f64,
+    /// The pilot who staked a claim on it by cutting into it first.
+    #[serde(default)]
+    pub claim: Option<usize>,
     pub dead: bool,
 }
 
@@ -544,6 +568,7 @@ pub fn make_wreck(rng: &mut Rng, x: f64, y: f64, shift_no: i32) -> Wreck {
         pts,
         flash: 0.0,
         light: rng.angle(),
+        claim: None,
         dead: false,
     }
 }
@@ -596,6 +621,18 @@ pub struct Jumper {
 }
 
 /// Pick a hull variant, weighted by the rivals' grudge stage.
+impl Jumper {
+    /// This crew's temper, from its id: no random numbers drawn and nothing
+    /// sent on the wire. Bosses are always steady.
+    pub fn temper(&self) -> Temper {
+        match (self.boss.is_some(), self.id % 3) {
+            (true, _) | (_, 0) => Temper::Steady,
+            (_, 1) => Temper::Greedy,
+            _ => Temper::Skittish,
+        }
+    }
+}
+
 pub fn pick_variant(rng: &mut Rng, stage: usize) -> Variant {
     let total: f64 = VARIANTS.iter().map(|v| v.def().weights[stage]).sum();
     let mut roll = rng.next() * total;

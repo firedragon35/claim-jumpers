@@ -106,6 +106,8 @@ pub enum ShopReq {
     ReprogramCore,
     /// This player's vote for the next shift's belt.
     Vote(cj_sim::field::Belt),
+    /// Insure the next shift's cargo.
+    Insure,
 }
 
 impl ShopReq {
@@ -157,6 +159,7 @@ impl ShopReq {
             ShopReq::SellCore => plain(c.sell_core()),
             ShopReq::ReprogramCore => plain(c.reprogram_core()),
             ShopReq::Vote(b) => plain(c.pick_belt(b)),
+            ShopReq::Insure => plain(c.buy_insurance()),
         }
     }
 }

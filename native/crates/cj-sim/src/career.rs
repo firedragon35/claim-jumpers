@@ -295,13 +295,16 @@ pub struct Career {
     pub habits: Habits,
     /// Credits the rival crews have made from stolen cargo; buys their upgrades.
     pub war_chest: f64,
+    /// Cargo insurance is bought for the next shift.
+    pub insured: bool,
     /// Save fields this build doesn't use, kept verbatim.
     pub extra: Map<String, Value>,
 }
 
 /// Fields this build reads and writes itself; everything else in a save
 /// is carried through untouched.
-const OWN_KEYS: [&str; 27] = [
+const OWN_KEYS: [&str; 28] = [
+    "insured",
     "warChest",
     "habits",
     "crew",
@@ -365,6 +368,8 @@ pub struct Settlement {
     pub contract: Option<(Contract, bool)>,
     /// The co-pilot's wage, charged even on an overdrawn shift.
     pub wage: f64,
+    /// The insurance claim paid for lost cargo (0 when uninsured).
+    pub insurance: f64,
     /// What happened to an open contract chain (a sentence, or empty).
     pub chain_note: String,
     /// Standing change this shift, as [bank, law, rivals].
@@ -406,6 +411,7 @@ impl Career {
             cores: 0,
             habits: Habits::default(),
             war_chest: 0.0,
+            insured: false,
             extra: Map::new(),
         }
     }
@@ -684,6 +690,13 @@ impl Career {
         }
         let wage = self.crew.map_or(0.0, |c| c.def().wage);
         self.wallet -= wage;
+        let insurance = if self.insured {
+            js::round((w.pilots[p].stats.lost * INSURE_COVER).min(INSURE_CAP))
+        } else {
+            0.0
+        };
+        self.wallet += insurance;
+        self.insured = false;
         self.contract = None;
         self.wallet -= due;
         self.loan -= due;
@@ -758,6 +771,7 @@ impl Career {
             due,
             contract: job.map(|k| (k, job_done)),
             wage,
+            insurance,
             chain_note,
             rep_delta: [d.bank, d.law, d.rivals],
             outcome,
@@ -815,6 +829,7 @@ impl Career {
             }),
             "cores": self.cores,
             "warChest": self.war_chest,
+            "insured": self.insured,
             "habits": {
                 "cannon": self.habits.cannon,
                 "smash": self.habits.smash,
@@ -1035,6 +1050,7 @@ impl Career {
         }
         c.cores = (num("cores", 0.0, 0.0).floor() as u32).min(CORES_MAX);
         c.war_chest = num("warChest", 0.0, 0.0);
+        c.insured = raw.get("insured").and_then(Value::as_bool).unwrap_or(false);
         if let Some(h) = raw.get("habits") {
             let kills = |k: &str| {
                 h.get(k)
@@ -1248,6 +1264,26 @@ impl Career {
             "Truce bought for {} cr. The crews are back to \"{}\".",
             crate::world::fmt_credits(price),
             crate::consts::RIVAL_STAGES[stage - 1].name
+        ))
+    }
+
+    /// Insures the next shift's cargo (see `INSURE_COVER`).
+    pub fn buy_insurance(&mut self) -> ShopResult {
+        if self.insured {
+            return Err("Already insured for the next shift.".to_owned());
+        }
+        let price = insurance_price(self.tug_class);
+        if self.wallet < price {
+            return Err(format!(
+                "Need {} cr more.",
+                crate::world::fmt_credits(price - self.wallet)
+            ));
+        }
+        self.wallet -= price;
+        self.insured = true;
+        Ok(format!(
+            "Cargo insured for {} cr. Lose a load next shift and the bank pays back part of it.",
+            crate::world::fmt_credits(price)
         ))
     }
 

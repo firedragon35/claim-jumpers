@@ -623,6 +623,7 @@ fn draw_rock(look: &Look, rk: &Rock, fx: &Fx, belt: cj_sim::field::Belt) {
         if let Some(l) = light {
             blast_lit_rock(look, rk, l);
         }
+        draw_cracks(rk);
         return;
     }
     let tex = match crate::look::belt_rock_art(belt, rk.size, rk.veined, rk.id) {
@@ -642,10 +643,106 @@ fn draw_rock(look: &Look, rk: &Rock, fx: &Fx, belt: cj_sim::field::Belt) {
         flash,
         light,
     );
+    // Bigger ore-bearing rocks show where the ore is: a node set in the
+    // rock, mined out once the rock is half broken.
+    if rk.veined && rk.size >= 2 {
+        let max = cj_sim::consts::rock_size(rk.size).1;
+        let node = if rk.hp > max / 2.0 {
+            &look.props.ore_node
+        } else {
+            &look.props.depleted_node
+        };
+        let a = rk.id as f32 * 2.39;
+        let r = rk.b.r as f32;
+        let at = Xf::new(rk.b.x, rk.b.y, rk.angle).p(a.cos() * r * 0.3, a.sin() * r * 0.3);
+        draw_sprite_lit(
+            look,
+            node,
+            at,
+            area_fit(node, r * 0.32),
+            rk.angle as f32 + a,
+            ship_tint(),
+            flash,
+            light,
+        );
+    }
     if let Some((dx, dy, k, rgb)) = light {
         let r = rk.b.r as f32;
         let p = v(rk.b.x + dx * rk.b.r * 0.6, rk.b.y + dy * rk.b.r * 0.6);
         look.additive(|| look.glow(p.x, p.y, r * 0.5, rgb, false, k as f32 * 0.25));
+    }
+    draw_cracks(rk);
+}
+
+/// The bay's tractor beams: a shimmering line from the ring to each piece
+/// of cargo it is pulling in, brighter the closer the piece is.
+fn draw_tractor(look: &Look, w: &World, t: f32) {
+    use cj_sim::consts::{BAY_R, BAY_TRACTOR_REACH, BAY_X, BAY_Y};
+    let bay = v(BAY_X, BAY_Y);
+    let reach = (BAY_R * BAY_TRACTOR_REACH) as f32;
+    for it in &w.items {
+        if it.dead || matches!(it.kind, ItemType::Charge | ItemType::Keycard) {
+            continue;
+        }
+        let p = v(it.b.x, it.b.y);
+        let d = p.distance(bay);
+        if d >= reach {
+            continue;
+        }
+        let k = 1.0 - d / reach;
+        let shimmer = 0.75 + 0.25 * (t * 14.0 + it.id as f32).sin();
+        let from = bay + (p - bay) * (BAY_R as f32 * 0.85 / d.max(1.0)).min(1.0);
+        look.additive(|| {
+            draw_line(
+                from.x,
+                from.y,
+                p.x,
+                p.y,
+                2.0 + 4.0 * k,
+                rgba(col::CABLE, 0.18 * k * shimmer),
+            );
+            draw_line(
+                from.x,
+                from.y,
+                p.x,
+                p.y,
+                1.0,
+                rgba(col::TEXT, 0.35 * k * shimmer),
+            );
+        });
+    }
+}
+
+/// How many cracks a rock with `hp` of `max` hit points shows: one per
+/// quarter of its hull lost, none while whole.
+fn cracks(hp: f64, max: f64) -> usize {
+    let lost = (1.0 - hp / max.max(1e-9)).clamp(0.0, 1.0);
+    (lost * 4.0).ceil() as usize
+}
+
+/// Jagged cracks spreading from a damaged rock's middle, the same ones
+/// every frame (seeded by its id) and turning with it.
+fn draw_cracks(rk: &Rock) {
+    let n = cracks(rk.hp, cj_sim::consts::rock_size(rk.size).1);
+    if n == 0 {
+        return;
+    }
+    let xf = Xf::new(rk.b.x, rk.b.y, rk.angle);
+    let r = rk.b.r as f32;
+    let seed = rk.id as f32 * 0.7548;
+    for i in 0..n {
+        let a = seed * TAU + i as f32 * 2.39;
+        let len = r * (0.45 + 0.3 * (seed * 7.0 + i as f32).sin().abs());
+        let pts: Vec<Vec2> = (0..4)
+            .map(|k| {
+                let u = k as f32 / 3.0;
+                let jag = if k % 2 == 1 { 0.25 } else { -0.15 };
+                let b = a + jag;
+                xf.p(b.cos() * len * u, b.sin() * len * u)
+            })
+            .collect();
+        polyline(&pts, false, 1.6, rgba(0x0a0a10, 0.75));
+        polyline(&pts, false, 0.7, rgba(col::HAZARD, 0.35));
     }
 }
 
@@ -859,6 +956,28 @@ fn draw_sprite_lit(
 
 /// The strongest shockwaves on screen for the composite: centre in 0..1
 /// of the view, ring radius and push in view heights. None with reduced motion.
+/// Heat haze behind up to two burning engines, yours first, for the
+/// composite (see `post::Warp`). None with reduced motion.
+fn haze(w: &World, centre: Vec2, z: f32, (vw, vh): (f32, f32)) -> [[f32; 4]; crate::post::HAZE] {
+    let mut out = [[0.0; 4]; crate::post::HAZE];
+    if crate::look::reduce_motion() {
+        return out;
+    }
+    let me = w.view_pilot;
+    let order = std::iter::once(me).chain((0..w.pilots.len()).filter(|&p| p != me));
+    let burning = order.filter_map(|p| {
+        let s = &w.pilots[p].ship;
+        (s.alive && s.throttle > 0.0 && !s.sputtering).then_some(s)
+    });
+    for (o, s) in out.iter_mut().zip(burning) {
+        let back = v(s.b.x - s.angle.cos() * 34.0, s.b.y - s.angle.sin() * 34.0);
+        let p = (back - centre) * z;
+        let k = s.throttle.min(1.0) as f32;
+        *o = [0.5 + p.x / vw, 0.5 + p.y / vh, 16.0 * z / vh, 0.0022 * k];
+    }
+    out
+}
+
 fn ripples(
     fx: &Fx,
     centre: Vec2,
@@ -991,6 +1110,16 @@ fn draw_item_sprite(look: &Look, it: &Item, t: f32) -> bool {
         _ => {}
     }
     true
+}
+
+/// The tag over a rival with a temper worth knowing about.
+fn temper_tag(t: cj_sim::consts::Temper) -> Option<&'static str> {
+    use cj_sim::consts::Temper;
+    match t {
+        Temper::Steady => None,
+        Temper::Greedy => Some("GREEDY"),
+        Temper::Skittish => Some("SKITTISH"),
+    }
 }
 
 fn draw_item(look: &Look, it: &Item, t: f32, scale: f32) {
@@ -1379,6 +1508,16 @@ fn draw_shots(look: &Look, w: &World) {
 /// so the rope reads as rope.
 fn draw_cable(look: &Look, w: &World, p: usize) {
     let s = &w.pilots[p].ship;
+    // A line anchored to a rock runs from the stern to the rock's near face.
+    let rock = s
+        .anchor
+        .and_then(|(id, _)| w.rocks.iter().find(|r| r.id == id && !r.dead));
+    if let (true, Some(r)) = (s.alive, rock) {
+        let (x, y) = s.stern();
+        let (a, c) = (v(x, y), v(r.b.x, r.b.y));
+        let face = c + (a - c).normalize_or_zero() * r.b.r as f32 * 0.8;
+        glow_stroke(&[a, face], false, col::CABLE, 2.2, 1.0);
+    }
     if !s.alive || w.pilots[p].chain.is_empty() {
         return;
     }
@@ -1416,6 +1555,12 @@ fn draw_cable(look: &Look, w: &World, p: usize) {
         if hot > 0.0 {
             polyline(&pts, false, width, rgba(col::TEXT, hot));
         }
+        // A hard yank turns it red and makes it flicker: the cargo is
+        // rattling and swinging wide.
+        let strain = strain(tns);
+        if strain > 0.0 && ((w.t * 18.0).sin() > -0.3 || crate::look::reduce_motion()) {
+            polyline(&pts, false, width + 0.6, rgba(col::DANGER, strain));
+        }
         // ...and a halo of light builds around it.
         if tns > 0.2 {
             look.additive(|| {
@@ -1429,6 +1574,12 @@ fn draw_cable(look: &Look, w: &World, p: usize) {
         }
         a = b;
     }
+}
+
+/// How strained a cable link at `tension` (0..1) looks: none up to
+/// three-quarters, then rising to 1 at full tension.
+fn strain(tension: f32) -> f32 {
+    ((tension - 0.75) / 0.25).clamp(0.0, 1.0)
 }
 
 /// The shield's colour. Painted ships keep their own colours, so the
@@ -1899,6 +2050,13 @@ pub fn render(sc: Scene) {
             } else if wr.locked {
                 let s = "SEALED HOLD · NEEDS KEYCARD";
                 crate::foes::tag(sc.look, x, y, s, col::CABLE, scale);
+            } else if let Some(p) = wr.claim {
+                let (s, tint) = if p == w.view_pilot {
+                    ("YOUR CLAIM", col::CABLE)
+                } else {
+                    ("CLAIMED", col::MUTED)
+                };
+                crate::foes::tag(sc.look, x, y, s, tint, scale);
             }
         }
     }
@@ -1912,6 +2070,7 @@ pub fn render(sc: Scene) {
             draw_cable(sc.look, w, p);
         }
     }
+    draw_tractor(sc.look, w, t);
     for it in &w.items {
         if visible(it.b.x, it.b.y, it.b.r) {
             // drawTrail: fading cable-coloured strokes, thicker toward the piece.
@@ -1927,6 +2086,10 @@ pub fn render(sc: Scene) {
                 }
             }
             draw_item(sc.look, it, t, scale);
+            if it.contraband() {
+                let (x, y) = (it.b.x as f32, it.b.y as f32 - 22.0);
+                crate::foes::tag(sc.look, x, y, "CONTRABAND", col::DANGER, scale);
+            }
             if it.kind == ItemType::Keycard && !it.towed {
                 let (x, y) = (it.b.x as f32, it.b.y as f32 - 22.0);
                 crate::foes::tag(sc.look, x, y, "KEYCARD", col::CABLE, scale);
@@ -1948,10 +2111,12 @@ pub fn render(sc: Scene) {
     for j in &w.jumpers {
         if visible(j.b.x, j.b.y, j.b.r) {
             draw_jumper(sc.look, w, j);
+            let (x, y) = (j.b.x as f32, j.b.y as f32 - 38.0);
             if let Some(b) = &j.boss {
                 let name = b.name.to_uppercase();
-                let (x, y) = (j.b.x as f32, j.b.y as f32 - 38.0);
                 crate::foes::tag(sc.look, x, y, &name, col::HAZARD, scale);
+            } else if let Some(t) = temper_tag(j.temper()) {
+                crate::foes::tag(sc.look, x, y, t, col::MUTED, scale);
             }
         }
     }
@@ -2007,8 +2172,15 @@ pub fn render(sc: Scene) {
     } else {
         (t * 60.0).floor() % 97.0
     };
-    sc.post
-        .finish(sc.view, seed, ripples(sc.fx, centre, z, sc.view));
+    sc.post.finish(
+        sc.view,
+        seed,
+        crate::post::Warp {
+            ripples: ripples(sc.fx, centre, z, sc.view),
+            haze: haze(w, centre, z, sc.view),
+            t,
+        },
+    );
 
     // Screen-space overlays.
     screen_camera(sc.view);
@@ -2231,6 +2403,25 @@ mod tests {
         let nearest = stars.layers.last().expect("layers").f;
         assert!(nearest < DUST_PARALLAX && DUST_PARALLAX < 1.0);
         assert_eq!(stars.dust.len(), DUST_COUNT);
+    }
+
+    /// A whole rock shows no cracks; each quarter of hull lost adds one.
+    #[test]
+    fn rocks_crack_as_they_are_mined() {
+        assert_eq!(cracks(7.0, 7.0), 0);
+        assert_eq!(cracks(6.0, 7.0), 1);
+        assert_eq!(cracks(3.5, 7.0), 2);
+        assert_eq!(cracks(0.1, 7.0), 4);
+        assert_eq!(cracks(-2.0, 7.0), 4);
+    }
+
+    /// The cable only shows strain near full tension.
+    #[test]
+    fn the_cable_shows_strain_only_when_yanked_hard() {
+        assert_eq!(strain(0.5), 0.0);
+        assert_eq!(strain(0.75), 0.0);
+        assert!(strain(0.9) > 0.0 && strain(0.9) < 1.0);
+        assert_eq!(strain(1.0), 1.0);
     }
 
     /// Ships show no damage down to 40% hull, then more and more of it.

@@ -39,6 +39,7 @@ pub enum Act {
     Crew(Crew),
     Belt(Belt),
     Truce,
+    Insure,
     SellCore,
     ReprogramCore,
     OpenSettings,
@@ -1405,6 +1406,15 @@ pub fn report(
             ),
             None => ("Crew wages", "None".to_owned(), col::TEXT),
         },
+        (
+            "Insurance",
+            if st.insurance > 0.0 {
+                format!("+{} claim for lost cargo", cr(st.insurance))
+            } else {
+                "No claim".to_owned()
+            },
+            col::TEXT,
+        ),
         ("Loan installment", neg(st.due), col::DANGER),
         (
             "Wallet",
@@ -2539,6 +2549,22 @@ fn map_tab(look: &Look, u: &mut Ui, career: &Career, r: Rect) -> Option<Act> {
             c(col::MUTED),
             1.3,
         );
+        // The bank sells cargo insurance for the next shift.
+        if i == 0 {
+            let right = rr.x + rr.w - 12.0;
+            if career.insured {
+                status(look, u, "Insured", right, rr.y + 12.0, col::CABLE);
+            } else {
+                let price = cj_sim::field::insurance_price(career.tug_class);
+                status(look, u, &cr(price), right, rr.y + 12.0, col::HAZARD);
+                let lbl = "Insure cargo";
+                let br = ui::button_rect(look, 0.0, 0.0, Style::Buy, lbl);
+                let br = Rect::new(right - br.w, rr.y + 34.0, br.w, br.h);
+                if u.button(look, "insure", br, Style::Buy, lbl, career.wallet >= price) {
+                    act = Some(Act::Insure);
+                }
+            }
+        }
         if i == 2 {
             let right = rr.x + rr.w - 12.0;
             if truce_stage(career.grudge) > 0 {

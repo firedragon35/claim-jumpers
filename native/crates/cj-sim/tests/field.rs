@@ -35,6 +35,227 @@ fn step(w: &mut World) {
     w.step(&Input::default(), STEP);
 }
 
+/// With nothing to hook, the hook anchors the line to a big rock in reach:
+/// the tug can't fly further from it than when it hooked on; hooking again
+/// lets go.
+#[test]
+fn the_hook_anchors_to_a_big_rock_and_lets_go() {
+    let c = Career::new(Mode::Standard);
+    let mut w = quiet(&c, Rng::seeded(8));
+    w.rocks.clear();
+    w.items.clear();
+    let (x, y) = (w.pilots[0].ship.b.x, w.pilots[0].ship.b.y);
+    w.rocks
+        .push(make_rock_drifting(&mut w.rng, 3, x + 130.0, y));
+    w.rocks[0].b.vx = 0.0;
+    w.rocks[0].b.vy = 0.0;
+    w.try_hook(0);
+    let (_, len) = w.pilots[0].ship.anchor.expect("anchored");
+    w.pilots[0].ship.b.vx = -500.0;
+    for _ in 0..20 {
+        step(&mut w);
+    }
+    let (s, r) = (w.pilots[0].ship.b, w.rocks[0].b);
+    assert!((s.x - r.x).hypot(s.y - r.y) <= len + 1.0);
+    w.try_hook(0);
+    assert!(w.pilots[0].ship.anchor.is_none());
+    // A small rock is no anchor.
+    w.rocks[0].size = 1;
+    w.try_hook(0);
+    assert!(w.pilots[0].ship.anchor.is_none());
+}
+
+/// Bought insurance pays back part of the cargo lost that shift, once.
+#[test]
+fn insurance_pays_part_of_a_lost_load_for_one_shift() {
+    let mut c = Career::new(Mode::Standard);
+    c.wallet = 1000.0;
+    let price = insurance_price(c.tug_class);
+    c.buy_insurance().expect("affordable");
+    assert!(c.buy_insurance().is_err(), "once a shift");
+    assert_eq!(c.wallet, 1000.0 - price);
+    // It survives a save.
+    let c2 = Career::from_json(&c.to_json()).expect("loads");
+    assert!(c2.insured);
+    let mut w = quiet(&c, Rng::seeded(4));
+    w.pilots[0].stats.lost = 2000.0;
+    let st = c.settle(&w, 0);
+    assert_eq!(st.insurance, 2000.0 * INSURE_COVER);
+    assert!(!c.insured);
+    let st = c.settle(&w, 0);
+    assert_eq!(st.insurance, 0.0, "the cover was for one shift");
+}
+
+/// A contraband pod pays double at the bay, and a patrol that sees it on
+/// your line puts a wanted star on you, once.
+#[test]
+fn contraband_pays_double_and_draws_the_law() {
+    let c = Career::new(Mode::Standard);
+    let mut w = quiet(&c, Rng::seeded(6));
+    w.items.clear();
+    let mut pod = w.new_item(ItemType::Pod, BAY_X, BAY_Y, 0.0, 0.0);
+    pod.id = 4000 * CONTRABAND_EVERY;
+    assert!(pod.contraband());
+    pod.value = 500.0;
+    w.items.push(pod);
+    w.bank_item(0);
+    assert_eq!(w.pilots[0].banked, 500.0 * CONTRABAND_RATE);
+
+    let (x, y) = (w.pilots[0].ship.b.x, w.pilots[0].ship.b.y);
+    let mut pod = w.new_item(ItemType::Pod, x - 40.0, y, 0.0, 0.0);
+    pod.id = 4001 * CONTRABAND_EVERY;
+    w.items.push(pod);
+    let i = w.items.len() - 1;
+    w.attach_to_line(0, i);
+    w.spawn_sheriff(0, false);
+    let k = w.sheriffs.len() - 1;
+    w.sheriffs[k].b.x = x + 100.0;
+    w.sheriffs[k].b.y = y;
+    step(&mut w);
+    assert_eq!(w.pilots[0].wanted, 1);
+    step(&mut w);
+    assert_eq!(w.pilots[0].wanted, 1, "seen once");
+}
+
+/// A meteor shower sends a swarm of small fast rocks at the tug.
+#[test]
+fn a_meteor_shower_streaks_in_at_the_tug() {
+    let c = Career::new(Mode::Standard);
+    let mut w = quiet(&c, Rng::seeded(10));
+    let before = w.rocks.len();
+    w.start_event(Event::Meteors);
+    let new = &w.rocks[before..];
+    assert_eq!(new.len(), METEOR_COUNT);
+    let s = w.pilots[0].ship.b;
+    for r in new {
+        assert_eq!(r.size, 1);
+        let closing = (s.x - r.b.x) * r.b.vx + (s.y - r.b.y) * r.b.vy;
+        assert!(closing > 0.0 && r.b.vx.hypot(r.b.vy) > METEOR_SPEED * 0.8);
+    }
+}
+
+/// Rival tempers: a greedy crew goes for a rich piece far off over a
+/// cheap one close by; a skittish crew bolts when hit.
+#[test]
+fn greedy_rivals_reach_for_riches_and_skittish_ones_bolt() {
+    let c = Career::new(Mode::Standard);
+    let mut w = quiet(&c, Rng::seeded(11));
+    w.items.clear();
+    let (x, y) = (BAY_X - 1500.0, BAY_Y);
+    let mut j = w.new_jumper(x, y, None);
+    j.boss = None;
+    j.id = 3 * 5000 + 1;
+    assert_eq!(j.temper(), Temper::Greedy);
+    w.jumpers.push(j);
+    let mut near = w.new_item(ItemType::Scrap, x + 60.0, y, 0.0, 0.0);
+    near.value = 100.0;
+    let mut far = w.new_item(ItemType::Scrap, x + 2000.0, y, 0.0, 0.0);
+    far.value = 600.0;
+    let far_id = far.id;
+    w.items.push(near);
+    w.items.push(far);
+    step(&mut w);
+    assert_eq!(w.jumpers[0].target, Some(far_id), "greedy");
+    w.jumpers[0].id = 3 * 5000;
+    assert_eq!(w.jumpers[0].temper(), Temper::Steady);
+    w.jumpers[0].retarget = 0.0;
+    step(&mut w);
+    assert_ne!(w.jumpers[0].target, Some(far_id), "steady");
+    w.jumpers[0].id = 3 * 5000 + 2;
+    w.jumpers[0].flee_t = 0.0;
+    w.hurt_jumper(0, 1.0, None);
+    assert!(w.jumpers[0].flee_t >= SKITTISH_FLEE, "skittish");
+}
+
+/// Cutting into a wreck first stakes a claim: its salvage is held for you
+/// and pays a finder's premium at the bay.
+#[test]
+fn the_first_cut_into_a_wreck_stakes_a_claim() {
+    let c = Career::new(Mode::Standard);
+    let mut w = quiet(&c, Rng::seeded(12));
+    w.items.clear();
+    let wr = cj_sim::entities::make_wreck(&mut w.rng, BAY_X + 600.0, BAY_Y, 3);
+    w.wrecks = vec![wr];
+    let hp = w.wrecks[0].hp;
+    w.damage_wreck(0, hp * 0.6);
+    assert_eq!(w.wrecks[0].claim, Some(0));
+    let i = w.items.len().checked_sub(1).expect("a piece came out");
+    let (owner, until) = w.items[i].claim.expect("held for the claimant");
+    assert_eq!(owner, 0);
+    assert!(until > w.t);
+    w.items[i].value = 1000.0;
+    w.bank_item(i);
+    assert_eq!(w.pilots[0].banked, 1000.0 * CLAIM_RATE);
+}
+
+/// The fixer patches a badly holed hull once, then needs a minute.
+#[test]
+fn the_fixer_patches_a_holed_hull_once_a_minute() {
+    let c = Career::new(Mode::Standard);
+    let mut w = quiet(&c, Rng::seeded(9));
+    w.pilots[0].crew = Some(Crew::Fixer);
+    let max = w.pilots[0].mods.max_hp;
+    w.pilots[0].ship.hp = max * 0.1;
+    step(&mut w);
+    let patched = w.pilots[0].ship.hp;
+    assert!(patched >= max * 0.1 + FIXER_PATCH - 1.0, "{patched}");
+    w.pilots[0].ship.hp = max * 0.1;
+    step(&mut w);
+    assert!(w.pilots[0].ship.hp < max * 0.1 + 1.0);
+    // Without the fixer, nothing.
+    w.pilots[0].crew = None;
+    w.pilots[0].fixer_t = 0.0;
+    step(&mut w);
+    assert!(w.pilots[0].ship.hp < max * 0.1 + 1.0);
+}
+
+/// A sealed pod knocked hard into a rock loses part of its value, once
+/// for one crunch; sturdy salvage knocked the same way keeps all of it.
+#[test]
+fn fragile_cargo_loses_value_on_a_hard_knock() {
+    let c = Career::new(Mode::Standard);
+    let crash = |kind: ItemType| {
+        let mut w = quiet(&c, Rng::seeded(6));
+        w.rocks.clear();
+        let (x, y) = (BAY_X + 900.0, BAY_Y + 900.0);
+        w.rocks.push(make_rock_drifting(&mut w.rng, 3, x, y));
+        w.rocks[0].b.vx = 0.0;
+        w.rocks[0].b.vy = 0.0;
+        let gap = w.rocks[0].b.r + 40.0;
+        let mut it = w.new_item(kind, x - gap, y, 600.0, 0.0);
+        it.value = 1000.0;
+        w.items.push(it);
+        for _ in 0..30 {
+            step(&mut w);
+        }
+        w.items.last().expect("still there").value
+    };
+    assert_eq!(crash(ItemType::Pod), 1000.0 * (1.0 - FRAGILE_LOSS));
+    assert_eq!(crash(ItemType::Engine), 1000.0);
+}
+
+/// Cargo let go of and flying into the bay fast pays a slingshot bonus;
+/// the same cargo drifting in, or still on the line, pays its plain value.
+#[test]
+fn a_fast_throw_into_the_bay_pays_a_slingshot_bonus() {
+    let c = Career::new(Mode::Standard);
+    let bank = |vx: f64, thrown: bool, towed: bool| {
+        let mut w = quiet(&c, Rng::seeded(4));
+        let mut it = w.new_item(ItemType::Engine, BAY_X, BAY_Y, vx, 0.0);
+        it.value = 1000.0;
+        it.owner = Some(0);
+        it.thrown_t = if thrown { 1.0 } else { 0.0 };
+        it.towed = towed;
+        w.items.push(it);
+        w.bank_item(w.items.len() - 1);
+        w.pilots[0].banked
+    };
+    assert_eq!(bank(SLING_SPEED + 50.0, true, false), 1000.0 * SLING_RATE);
+    assert_eq!(bank(SLING_SPEED - 50.0, true, false), 1000.0);
+    assert_eq!(bank(SLING_SPEED + 50.0, false, false), 1000.0);
+    assert_eq!(bank(SLING_SPEED + 50.0, true, true), 1000.0);
+}
+
 #[test]
 fn bank_standing_moves_installments_and_a_truce_drops_the_grudge_a_stage() {
     let mut c = Career::new(Mode::Standard);

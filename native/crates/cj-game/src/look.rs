@@ -444,6 +444,9 @@ pub fn keycard_image() -> Image {
 pub struct PropArt {
     /// Painted in code (see `keycard_image`).
     pub keycard: Texture2D,
+    /// An ore node set in an ore-bearing rock, and the same node mined out.
+    pub ore_node: Texture2D,
+    pub depleted_node: Texture2D,
     pub security_drone: Texture2D,
     pub mining_drone: Texture2D,
     pub sentry: Texture2D,
@@ -511,6 +514,8 @@ impl PropArt {
             pod: png(art_png!("items/rare_cargo")),
             charge: png(art_png!("items/hazardous_material_container")),
             keycard: mipmapped(Texture2D::from_image(&keycard_image())),
+            ore_node: png(rock_png!("mixed_ore_node")),
+            depleted_node: png(rock_png!("depleted_node")),
             wrecks: vec![
                 png(art_png!("wrecks/structural_frame")),
                 png(art_png!("wrecks/fuel_tank_leaking")),

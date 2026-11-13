@@ -442,6 +442,9 @@ impl World {
                     self.prime_reactor_by(i, by);
                     return;
                 }
+                if rel > FRAGILE_IMPACT {
+                    self.knock_fragile(i);
+                }
                 let me_b = self.items[i].b;
                 let power = rel * me_b.mass;
                 match other {

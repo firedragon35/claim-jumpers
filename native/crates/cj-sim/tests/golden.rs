@@ -161,6 +161,7 @@ fn build(sc: &Value, init: &Value) -> World {
             pts: Vec::new(),
             flash: 0.0,
             light: PI,
+            claim: None,
             dead: false,
         });
     }

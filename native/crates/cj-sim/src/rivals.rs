@@ -44,6 +44,12 @@ impl World {
     /// towed cargo double (stealing from you is the business).
     fn choose_jumper_target(&self, j: usize) -> Option<u32> {
         let jm = &self.jumpers[j];
+        // Greed barely minds the distance.
+        let far = if jm.temper() == Temper::Greedy {
+            0.1
+        } else {
+            0.4
+        };
         let mut best = None;
         let mut best_score = f64::NEG_INFINITY;
         for it in &self.items {
@@ -54,7 +60,7 @@ impl World {
             if d > 2400.0 {
                 continue;
             }
-            let score = it.value * if it.towed { 2.0 } else { 1.0 } - d * 0.4;
+            let score = it.value * if it.towed { 2.0 } else { 1.0 } - d * far;
             if score > best_score {
                 best = Some(it.id);
                 best_score = score;

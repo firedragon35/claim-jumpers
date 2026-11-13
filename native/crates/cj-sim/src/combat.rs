@@ -357,6 +357,12 @@ impl World {
             self.sealed_hold_hit(i);
             return;
         }
+        if w.claim.is_none() {
+            if let Some(p) = self.blamed() {
+                self.stake_claim(i, p);
+            }
+        }
+        let w = &mut self.wrecks[i];
         let before = w.hp;
         w.hp -= n;
         w.flash = 0.08;
@@ -371,6 +377,17 @@ impl World {
         if self.wrecks[i].hp <= 0.0 {
             self.break_wreck(i);
         }
+    }
+
+    /// Pilot `p` cut into wreck `i` first: it's their claim.
+    fn stake_claim(&mut self, i: usize, p: usize) {
+        self.wrecks[i].claim = Some(p);
+        let b = self.wrecks[i].b;
+        self.with_hearer(Some(p), |w| {
+            w.popup(b.x, b.y - b.r - 30.0, "CLAIM STAKED".to_owned(), Tint::Cable);
+            let line = "Claim's filed. What comes out of that hull is yours. The bay pays a finder's premium.";
+            w.radio_text(Radio::Derelict, false, false, line.to_owned());
+        });
     }
 
     /// Throw the next piece out of a wreck. Crabs hiding inside stow away
@@ -390,6 +407,8 @@ impl World {
             w.vy + a.sin() * sp,
         );
         let (id, x, y) = (it.id, it.b.x, it.b.y);
+        let mut it = it;
+        it.claim = self.wrecks[i].claim.map(|p| (p, self.t + CLAIM_HOLD));
         self.items.push(it);
         if self.wrecks[i].crabs > 0 && self.rng.next() < 0.5 {
             self.wrecks[i].crabs -= 1;
@@ -445,6 +464,9 @@ impl World {
         jm.hp -= n;
         jm.flash = 0.1;
         if jm.hp > 0.0 {
+            if jm.temper() == Temper::Skittish {
+                jm.flee_t = jm.flee_t.max(SKITTISH_FLEE);
+            }
             return;
         }
         jm.dead = true;

@@ -7,6 +7,31 @@ and the port uses [Semantic Versioning](https://semver.org/) as defined in
 
 ## [Unreleased]
 
+## [1.15.0] - 2026-11-13
+
+### Added
+- Salvage claims: the first tug to cut into a wreck stakes a claim on it, tagged YOUR CLAIM. What comes out is held for you for 30 seconds (other tugs without PvP can't hook it), and the bay pays 10% more for it.
+- Cargo insurance: buy cover for the next shift on the standing tab (the bank row). It pays back 60% of the cargo you lose that shift, up to 5,000 cr, and the shift report shows the claim. Older saves load uninsured.
+- Smuggling: one sealed pod in four is contraband, tagged in the field. It pays double at the bay, but a patrol that sees it on your line gives you a wanted star.
+- Rival tempers: greedy crews go for the richest cargo however far it is, and skittish ones bolt when hit. Both are tagged over their ships.
+- A new field event: a meteor shower of small, fast rocks streaks in from one edge at a tug.
+- Rock anchors: the hook key with nothing to hook anchors your line to a big rock in reach, so you can swing around it or brake against it. Press it again to let go.
+- Slingshot: a piece you throw into the bay fast pays 15% more.
+- Fragile cargo: sealed pods and flight recorders lose 15% of their value in a hard knock.
+- The fixer now patches a badly holed hull, once a minute.
+- The cable flickers red when it is yanked hard.
+- Rocks crack as they are mined, and ore-bearing rocks show their ore nodes (worn down once half mined).
+- The bay's tractor beam shows as a shimmer reaching out to cargo coming in.
+- Heat haze ripples behind burning engines (with effects on; off with reduced motion).
+- Laser fire, bullet hits and missiles light the rocks around them.
+- The banked total on the HUD counts up.
+- Sound: the engine swings left and right as you turn, rivals whoosh past, the hull groans when badly damaged, a beep warns before the guns overheat, and nearby rivals and lawmen can be heard on their radios.
+- The music adds a bell, and then a shimmer, as the load on your line gets richer.
+- Marge says something about a slingshot, damaged cargo, a staked claim, contraband and the meteor shower (as text: these lines have no recording yet).
+
+### Notes
+- Ideas already in the game were left as they are: shifting market prices (the belt conditions on the sector map), escort contracts (the convoy), cable upgrades (the winch and grapple) and a shared co-op cable (the latch). A fuel budget was left out because it overlaps engine heat.
+
 ## [1.14.0] - 2026-11-13
 
 ### Added

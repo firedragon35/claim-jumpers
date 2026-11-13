@@ -46,14 +46,33 @@ fn meter(look: &Look, name: &str, x: f32, y: f32, w: f32, frac: f32, fill: u32) 
     draw_rectangle_lines(bx, by, bw, 8.0, 1.0, crate::look::hex(col::PANEL_EDGE));
 }
 
-pub fn draw(look: &Look, w: &World, career: Option<&Career>, view: (f32, f32), device: Device) {
+/// The banked total as shown: it counts up to the real total over about
+/// half a second, so a delivery ticks in; a drop (a new shift) shows at once.
+pub fn count_up(shown: f64, real: f64, dt: f64) -> f64 {
+    if real <= shown || real - shown < 1.0 {
+        return real;
+    }
+    (shown + (real - shown) * (dt * 8.0).min(1.0))
+        .max(shown + 1.0)
+        .min(real)
+}
+
+/// `banked` is the total to show (see [`count_up`]).
+pub fn draw(
+    look: &Look,
+    w: &World,
+    career: Option<&Career>,
+    view: (f32, f32),
+    device: Device,
+    banked: f64,
+) {
     let (vw, vh) = view;
     let (pad, top) = (16.0, 12.0);
 
     // Left: banked credits and what's on the line.
     label(look, "Banked", pad, top, crate::look::hex(col::MUTED));
     text_left(
-        &fmt_credits(w.me().banked),
+        &fmt_credits(banked.round()),
         pad,
         top + 16.0,
         34.0,
@@ -424,5 +443,27 @@ mod pvp_tests {
         assert_eq!(pvp_line(&p).as_deref(), Some("PVP ON"));
         p.combat_t = 0.4;
         assert_eq!(pvp_line(&p).as_deref(), Some("PVP ON · COMBAT LOCK 1"));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::count_up;
+
+    /// A delivery ticks up to the new total within about a second; a lower
+    /// total (a new shift) shows at once.
+    #[test]
+    fn the_banked_total_counts_up_and_drops_at_once() {
+        let mut shown = 0.0;
+        let mut steps = 0;
+        while shown < 1000.0 {
+            let next = count_up(shown, 1000.0, 1.0 / 60.0);
+            assert!(next > shown && next <= 1000.0);
+            shown = next;
+            steps += 1;
+        }
+        assert!((10..=60).contains(&steps), "{steps}");
+        assert_eq!(count_up(1000.0, 0.0, 1.0 / 60.0), 0.0);
+        assert_eq!(count_up(999.5, 1000.0, 1.0 / 60.0), 1000.0);
     }
 }
