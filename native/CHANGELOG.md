@@ -7,6 +7,20 @@ and the port uses [Semantic Versioning](https://semver.org/) as defined in
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-11-12
+
+### Changed
+
+- Rocks and wrecks are lit from one direction. Their bodies shade from a
+  lit upper-left side to a dark far side, and their outlines catch a
+  bright rim on the lit edges and fade on the shadowed ones, so they read
+  as solid objects rather than outlines. Wrecks also show an inner line of
+  hull plating. This needs no effects and is always on.
+- With Glow and effects on, a radiation cloud is a churning green gas with
+  a pulsing rim, and the edge of the belt is a rippling energy wall that
+  brightens as you fly toward it. The dashed lines still mark the exact
+  hazard edge and field edge, fainter.
+
 ## [1.5.0] - 2026-11-12
 
 ### Added

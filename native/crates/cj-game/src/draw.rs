@@ -185,6 +185,86 @@ pub(crate) fn circle_pts(c: Vec2, r: f32, n: usize) -> Vec<Vec2> {
         .collect()
 }
 
+/// Light falls on the field from the upper left, fixed in world space so
+/// the lit side stays put while a body spins (as the rock highlight does).
+/// `lit` is +1 on an edge facing the light and -1 on one facing away.
+const LIGHT_TOWARD: Vec2 = Vec2::new(-0.6, -0.8);
+
+fn lit(centre: Vec2, p: Vec2) -> f32 {
+    (p - centre).normalize_or_zero().dot(LIGHT_TOWARD)
+}
+
+/// A colour scaled toward brighter (`k` > 1) or darker (`k` < 1).
+fn shade(c: Color, k: f32) -> Color {
+    Color::new(
+        (c.r * k).min(1.0),
+        (c.g * k).min(1.0),
+        (c.b * k).min(1.0),
+        c.a,
+    )
+}
+
+/// `a` blended toward `b` by `k` (0..1), alpha included.
+fn mix_col(a: Color, b: Color, k: f32) -> Color {
+    Color::new(
+        a.r + (b.r - a.r) * k,
+        a.g + (b.g - a.g) * k,
+        a.b + (b.b - a.b) * k,
+        a.a + (b.a - a.a) * k,
+    )
+}
+
+/// Fill a star-shaped polygon as a fan whose rim vertices are lit from
+/// LIGHT_TOWARD: up to `lift` brighter on the lit side and up to `sink`
+/// darker on the far side, blending smoothly across the body (the GPU
+/// interpolates vertex colours). One mesh, so no extra draw calls.
+fn shaded_fan(centre: Vec2, pts: &[Vec2], base: Color, lift: f32, sink: f32) {
+    let n = pts.len();
+    if n < 3 || n > u16::MAX as usize - 1 {
+        fill_fan(centre, pts, base);
+        return;
+    }
+    let mut vertices = Vec::with_capacity(n + 1);
+    vertices.push(Vertex::new(centre.x, centre.y, 0.0, 0.0, 0.0, base));
+    for &p in pts {
+        let l = lit(centre, p);
+        let k = if l > 0.0 {
+            1.0 + lift * l
+        } else {
+            1.0 + sink * l
+        };
+        vertices.push(Vertex::new(p.x, p.y, 0.0, 0.0, 0.0, shade(base, k)));
+    }
+    let mut indices = Vec::with_capacity(n * 3);
+    for i in 0..n {
+        indices.extend_from_slice(&[0, (i + 1) as u16, ((i + 1) % n + 1) as u16]);
+    }
+    draw_mesh(&Mesh {
+        vertices,
+        indices,
+        texture: None,
+    });
+}
+
+/// A closed outline lit from LIGHT_TOWARD: edges facing the light are
+/// drawn in `rim`, fading through `edge` to `dim` on the far side. Gives
+/// solid bodies a lit rim and lets their shadowed outline recede.
+fn lit_outline(centre: Vec2, pts: &[Vec2], width: f32, rim: Color, edge: Color, dim: Color) {
+    let n = pts.len();
+    for i in 0..n {
+        let (a, b) = (pts[i], pts[(i + 1) % n]);
+        let l = lit(centre, (a + b) * 0.5);
+        let c = if l > 0.0 {
+            mix_col(edge, rim, l)
+        } else {
+            mix_col(edge, dim, -l)
+        };
+        draw_line(a.x, a.y, b.x, b.y, width, c);
+        // Round joints, so corners don't notch at this width.
+        draw_circle(b.x, b.y, width / 2.0, c);
+    }
+}
+
 /// A rock or scrap outline: radius multipliers around a circle (polyPath).
 fn shape_pts(xf: &Xf, shape: &[ShapePt], r: f64) -> Vec<Vec2> {
     shape
@@ -279,9 +359,12 @@ impl Stars {
 
 /* ------------------------------ The field ------------------------------ */
 
-/// The field's dashed edge, from `lo` to `hi` on both axes.
-fn draw_boundary(t: f32, lo: f64, hi: f64) {
+/// The field's dashed edge, from `lo` to `hi` on both axes. With effects
+/// on, an energy wall glows along it (brighter as `ship` nears it) and the
+/// dashes, still marking the exact line, are fainter.
+fn draw_boundary(post: &crate::post::Post, view: Rect, ship: Vec2, t: f32, lo: f64, hi: f64) {
     let (lo, hi) = (lo as f32, hi as f32);
+    let wall = post.edge_wall(view, lo, hi, ship, t, col::HAZARD);
     let pts = [vec2(lo, lo), vec2(hi, lo), vec2(hi, hi), vec2(lo, hi)];
     dashed(
         &pts,
@@ -290,7 +373,7 @@ fn draw_boundary(t: f32, lo: f64, hi: f64) {
         40.0,
         t * 20.0,
         6.0,
-        rgba(col::HAZARD, 0.35),
+        rgba(col::HAZARD, if wall { 0.2 } else { 0.35 }),
     );
 }
 
@@ -385,17 +468,25 @@ fn draw_wreck(wr: &Wreck, t: f32) {
         .map(|&(x, y)| xf.p(x as f32, y as f32))
         .collect();
     let flash = wr.flash > 0.0;
-    fill_fan(
-        xf.o,
-        &pts,
-        crate::look::hex(if flash { 0x1c3337 } else { col::WRECK_FILL }),
-    );
-    polyline(
-        &pts,
-        true,
-        2.5,
-        crate::look::hex(if flash { col::TEXT } else { col::WRECK }),
-    );
+    if flash {
+        fill_fan(xf.o, &pts, crate::look::hex(0x1c3337));
+        polyline(&pts, true, 2.5, crate::look::hex(col::TEXT));
+    } else {
+        shaded_fan(xf.o, &pts, crate::look::hex(col::WRECK_FILL), 1.1, 0.55);
+        // Inner plating: the hull outline inset, so the hull reads as
+        // thick armour rather than a thin shell.
+        let inner: Vec<Vec2> = pts.iter().map(|&p| xf.o + (p - xf.o) * 0.78).collect();
+        polyline(&inner, true, 1.0, rgba(col::WRECK, 0.16));
+        let edge = crate::look::hex(col::WRECK);
+        lit_outline(
+            xf.o,
+            &pts,
+            2.5,
+            mix_col(edge, WHITE, 0.45),
+            edge,
+            shade(edge, 0.55),
+        );
+    }
     // Ribs: broken frame lines across the hull.
     let r = wr.b.r as f32;
     for i in -2..=2 {
@@ -438,11 +529,11 @@ fn draw_rock(look: &Look, rk: &Rock) {
     let r = rk.b.r as f32;
     let pts = shape_pts(&xf, &rk.shape, rk.b.r);
     let flash = rk.flash > 0.0;
-    fill_fan(
-        xf.o,
-        &pts,
-        crate::look::hex(if flash { 0x2b3448 } else { col::ROCK_FILL }),
-    );
+    if flash {
+        fill_fan(xf.o, &pts, crate::look::hex(0x2b3448));
+    } else {
+        shaded_fan(xf.o, &pts, crate::look::hex(col::ROCK_FILL), 1.3, 0.6);
+    }
     // The browser fills a radial gradient clipped to the outline. Without
     // clipping, a smaller soft highlight keeps the light inside the rock.
     look.glow(
@@ -465,12 +556,19 @@ fn draw_rock(look: &Look, rk: &Rock) {
             Color::new(200.0 / 255.0, 215.0 / 255.0, 235.0 / 255.0, 0.08),
         );
     }
-    polyline(
-        &pts,
-        true,
-        2.0,
-        crate::look::hex(if flash { col::TEXT } else { col::ROCK }),
-    );
+    if flash {
+        polyline(&pts, true, 2.0, crate::look::hex(col::TEXT));
+    } else {
+        let edge = crate::look::hex(col::ROCK);
+        lit_outline(
+            xf.o,
+            &pts,
+            2.0,
+            mix_col(edge, WHITE, 0.55),
+            edge,
+            shade(edge, 0.5),
+        );
+    }
     if rk.veined {
         // Gold seams mark ore-bearing rock.
         let c = rgba(col::ORE, 0.85);
@@ -949,12 +1047,16 @@ fn js_num(v: f64) -> String {
 }
 
 /// The dashed ring and label over the piece the claw would grab.
-/// A radiation cloud: a green wash and a marching edge, fading as it ends.
-fn draw_radiation(look: &Look, cl: &RadCloud, t: f32, scale: f32) {
+/// A radiation cloud: churning gas with effects on (a flat green wash
+/// without), and a marching edge at the exact hazard radius, fading as it
+/// ends.
+fn draw_radiation(look: &Look, post: &crate::post::Post, cl: &RadCloud, t: f32, scale: f32) {
     const GREEN: u32 = 0x7dff5a;
     let fade = (cl.t / 3.0).min(1.0) as f32;
     let (p, r) = (v(cl.x, cl.y), RAD_CLOUD_RADIUS as f32);
-    draw_circle(p.x, p.y, r, rgba(GREEN, 0.10 * fade));
+    if !post.radiation(p, r, t, fade) {
+        draw_circle(p.x, p.y, r, rgba(GREEN, 0.10 * fade));
+    }
     dashed(
         &circle_pts(p, r, 72),
         true,
@@ -1235,7 +1337,18 @@ pub fn render(sc: Scene) {
     let (cx, cy) = (w.cam.x, w.cam.y);
     let visible = |x: f64, y: f64, r: f64| (x - cx).abs() < hw + r && (y - cy).abs() < hh + r;
 
-    draw_boundary(t, w.edge_lo, w.edge_hi);
+    let view_rect = Rect::new(
+        centre.x - vw / 2.0 / z,
+        centre.y - vh / 2.0 / z,
+        vw / z,
+        vh / z,
+    );
+    let ship = if w.me().ship.alive {
+        v(w.me().ship.b.x, w.me().ship.b.y)
+    } else {
+        v(w.cam.x, w.cam.y)
+    };
+    draw_boundary(sc.post, view_rect, ship, t, w.edge_lo, w.edge_hi);
     draw_carrier(sc.look, t, scale);
     // The refinery's pull field can be larger than the screen.
     if let Some(r) = &w.refinery {
@@ -1286,7 +1399,7 @@ pub fn render(sc: Scene) {
     }
     for cl in &w.clouds {
         if visible(cl.x, cl.y, RAD_CLOUD_RADIUS) {
-            draw_radiation(sc.look, cl, t, scale);
+            draw_radiation(sc.look, sc.post, cl, t, scale);
         }
     }
     sc.look.additive(|| {
@@ -1559,5 +1672,21 @@ mod tests {
             (bottom_right.x - 1.0).abs() < 1e-5 && (bottom_right.y + 1.0).abs() < 1e-5,
             "{bottom_right:?}"
         );
+    }
+
+    /// The light sits up and to the left: edges facing it are lit, the
+    /// far side is shadowed, and shading never pushes a channel past 1.
+    #[test]
+    fn bodies_are_lit_from_the_upper_left() {
+        let c = vec2(0.0, 0.0);
+        assert!(lit(c, vec2(-10.0, -10.0)) > 0.9);
+        assert!(lit(c, vec2(10.0, 10.0)) < -0.9);
+        assert!(lit(c, vec2(10.0, -10.0)).abs() < 0.2);
+        // A point at the centre has no direction: unlit, not NaN.
+        assert_eq!(lit(c, c), 0.0);
+        let s = shade(Color::new(0.8, 0.5, 0.2, 0.7), 2.0);
+        assert_eq!((s.r, s.g, s.b, s.a), (1.0, 1.0, 0.4, 0.7));
+        let m = mix_col(BLACK, WHITE, 0.25);
+        assert!((m.r - 0.25).abs() < 1e-6 && m.a == 1.0);
     }
 }

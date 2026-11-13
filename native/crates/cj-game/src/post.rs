@@ -113,17 +113,14 @@ void main() {
     gl_FragColor = vec4(c, 1.0);
 }"#;
 
-/// Domain-warped value-noise clouds in three colours with darker dust
-/// lanes. Kept dim (peak brightness well under the bloom threshold) so
-/// the background never glows or competes with the play field.
-const NEBULA: &str = r#"#version 100
+/// Header shared by the noise shaders: value noise and 5-octave fbm
+/// (each roughly 0-1). A macro, not a const, so `concat!` can splice it
+/// into each shader's source at compile time.
+macro_rules! noise_glsl {
+    () => {
+        r#"#version 100
 precision highp float;
 varying vec2 pos;
-uniform vec2 Offset;
-uniform float Time;
-uniform vec3 ColA;
-uniform vec3 ColB;
-uniform vec3 ColC;
 float hash(vec2 p) {
     p = fract(p * vec2(123.34, 456.21));
     p += dot(p, p + 45.32);
@@ -146,6 +143,21 @@ float fbm(vec2 p) {
     }
     return v;
 }
+"#
+    };
+}
+
+/// Domain-warped value-noise clouds in three colours with darker dust
+/// lanes. Kept dim (peak brightness well under the bloom threshold) so
+/// the background never glows or competes with the play field.
+const NEBULA: &str = concat!(
+    noise_glsl!(),
+    r#"
+uniform vec2 Offset;
+uniform float Time;
+uniform vec3 ColA;
+uniform vec3 ColB;
+uniform vec3 ColC;
 void main() {
     vec2 p = (pos + Offset) / 560.0;
     vec2 q = vec2(fbm(p + vec2(Time * 0.006, 0.0)), fbm(p + vec2(5.2, 1.3)));
@@ -155,7 +167,66 @@ void main() {
     col = mix(col, ColC, smoothstep(0.5, 0.85, q.y) * 0.7);
     float dust = smoothstep(0.5, 0.75, fbm(p * 2.4 + q * 2.0));
     gl_FragColor = vec4(col * 1.25, density * 0.6 * (1.0 - 0.6 * dust));
-}"#;
+}"#
+);
+
+/// A radiation cloud in world units: churning green gas with a ragged
+/// edge and a pulsing rim at the hazard radius. Drawn on a square around
+/// the cloud; everything outside the rim fades to nothing.
+const CLOUD: &str = concat!(
+    noise_glsl!(),
+    r#"
+uniform vec2 Centre;
+uniform float Radius;
+uniform float Time;
+uniform float Fade;
+void main() {
+    float r = length(pos - Centre) / Radius;
+    vec2 p = pos / 90.0;
+    vec2 q = vec2(fbm(p + vec2(Time * 0.15, 0.0)),
+                  fbm(p + vec2(3.1, 7.7) - vec2(0.0, Time * 0.12)));
+    float n = fbm(p + 2.0 * q);
+    float body = smoothstep(1.0, 0.55, r + (n - 0.5) * 0.35);
+    float rim = smoothstep(0.08, 0.0, abs(r + (n - 0.5) * 0.08 - 0.98));
+    rim *= 0.6 + 0.4 * sin(Time * 3.0);
+    vec3 col = mix(vec3(0.16, 0.6, 0.2), vec3(0.6, 1.0, 0.42), n);
+    float wisp = smoothstep(0.35, 0.8, n);
+    float a = (body * (0.1 + 0.4 * wisp) + rim * 0.45) * Fade;
+    gl_FragColor = vec4(col, a);
+}"#
+);
+
+/// The field's edge as an energy wall, in world units over the visible
+/// part of the field. `d` is the signed distance to the square edge
+/// (positive outside). A bright core line and a soft glow both widen and
+/// brighten as the ship nears the edge; outside, a faint haze marks the
+/// space you can't fly into.
+const WALL: &str = concat!(
+    noise_glsl!(),
+    r#"
+uniform vec2 Bounds;
+uniform vec2 Ship;
+uniform float Time;
+uniform vec3 Col;
+float edge(vec2 p) {
+    vec2 c = vec2((Bounds.x + Bounds.y) * 0.5);
+    vec2 q = abs(p - c) - vec2((Bounds.y - Bounds.x) * 0.5);
+    return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0);
+}
+void main() {
+    float d = edge(pos);
+    vec2 c = vec2((Bounds.x + Bounds.y) * 0.5);
+    float along = abs(pos.x - c.x) > abs(pos.y - c.y) ? pos.y : pos.x;
+    float n = fbm(vec2(along / 140.0, Time * 0.35));
+    float near = 1.0 - smoothstep(120.0, 900.0, -edge(Ship));
+    float ripple = 0.6 + 0.4 * sin(along / 28.0 - Time * 4.0);
+    float core = exp(-abs(d) / (2.5 + 3.5 * near)) * ripple;
+    float glow = exp(-abs(d) / (30.0 + 50.0 * near));
+    float haze = d > 0.0 ? 0.05 + 0.04 * n : 0.0;
+    float a = core * (0.25 + 0.4 * near) + glow * (0.04 + 0.14 * near) * (0.5 + n) + haze;
+    gl_FragColor = vec4(Col * (0.7 + 0.3 * core), clamp(a, 0.0, 1.0));
+}"#
+);
 
 /// How much of the blurred glow is added back to the frame.
 const BLOOM_STRENGTH: f32 = 0.85;
@@ -171,6 +242,8 @@ struct Mats {
     blur: Material,
     composite: Material,
     nebula: Material,
+    cloud: Material,
+    wall: Material,
 }
 
 impl Mats {
@@ -227,6 +300,28 @@ impl Mats {
                     ("ColA", Float3),
                     ("ColB", Float3),
                     ("ColC", Float3),
+                ],
+                &[],
+                alpha_blend,
+            )?,
+            cloud: mat(
+                CLOUD,
+                &[
+                    ("Centre", Float2),
+                    ("Radius", Float1),
+                    ("Time", Float1),
+                    ("Fade", Float1),
+                ],
+                &[],
+                alpha_blend,
+            )?,
+            wall: mat(
+                WALL,
+                &[
+                    ("Bounds", Float2),
+                    ("Ship", Float2),
+                    ("Time", Float1),
+                    ("Col", Float3),
                 ],
                 &[],
                 alpha_blend,
@@ -319,7 +414,7 @@ impl Post {
     /// effects are on this frame. Returns false so the caller can fall
     /// back to the sprite nebulae.
     pub fn nebula(&self, cam: Vec2, t: f32, view: (f32, f32)) -> bool {
-        let Some(m) = self.mats.as_ref().filter(|_| self.active) else {
+        let Some(m) = self.on() else {
             return false;
         };
         let rgb = |hex: u32| {
@@ -335,6 +430,58 @@ impl Post {
         n.set_uniform("ColC", rgb(0x14505a));
         gl_use_material(n);
         draw_rectangle(0.0, 0.0, view.0, view.1, WHITE);
+        gl_use_default_material();
+        true
+    }
+
+    /// The materials, while this frame's effects are on.
+    fn on(&self) -> Option<&Mats> {
+        self.mats.as_ref().filter(|_| self.active)
+    }
+
+    /// Draw a radiation cloud's gas over the world camera. `fade` (0-1)
+    /// thins it as the cloud ends. Returns false when effects are off.
+    pub fn radiation(&self, centre: Vec2, radius: f32, t: f32, fade: f32) -> bool {
+        let Some(m) = self.on() else {
+            return false;
+        };
+        let c = &m.cloud;
+        c.set_uniform("Centre", centre);
+        c.set_uniform("Radius", radius);
+        c.set_uniform("Time", t);
+        c.set_uniform("Fade", fade);
+        gl_use_material(c);
+        let r = radius * 1.1; // room for the ragged edge
+        draw_rectangle(centre.x - r, centre.y - r, r * 2.0, r * 2.0, WHITE);
+        gl_use_default_material();
+        true
+    }
+
+    /// Draw the energy wall along the field's edge (`lo`..`hi` on both
+    /// axes) over `view`, the visible world rectangle, brightening as
+    /// `ship` nears it. Skipped when the edge is nowhere near the view.
+    /// Returns false when effects are off.
+    pub fn edge_wall(&self, view: Rect, lo: f32, hi: f32, ship: Vec2, t: f32, rgb: u32) -> bool {
+        let Some(m) = self.on() else {
+            return false;
+        };
+        // The glow reaches about 400 units; past that the view is all interior.
+        let reach = 400.0;
+        let inside = view.x > lo + reach
+            && view.y > lo + reach
+            && view.right() < hi - reach
+            && view.bottom() < hi - reach;
+        if inside {
+            return true;
+        }
+        let c = Color::from_hex(rgb);
+        let w = &m.wall;
+        w.set_uniform("Bounds", vec2(lo, hi));
+        w.set_uniform("Ship", ship);
+        w.set_uniform("Time", t);
+        w.set_uniform("Col", vec3(c.r, c.g, c.b));
+        gl_use_material(w);
+        draw_rectangle(view.x, view.y, view.w, view.h, WHITE);
         gl_use_default_material();
         true
     }
