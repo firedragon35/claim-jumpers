@@ -161,9 +161,10 @@ play as you, with your careers, on any other server you play on.
 
 MARGE'S VOICE
 -------------
-Marge speaks through Windows' own speech voices. If she is silent, check
-that a speech voice is installed (Settings > Time & language > Speech), or
-press V. Her lines always show on the radio panel either way.
+Marge's lines and the cockpit callouts are recordings built into the game,
+so no speech voice needs to be installed. If she is silent, press V (her
+voice may be off) and check the Voice volume under Settings. Her lines
+always show on the radio panel either way.
 
 
 UNINSTALLING

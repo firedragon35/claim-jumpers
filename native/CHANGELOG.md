@@ -7,6 +7,11 @@ and the port uses [Semantic Versioning](https://semver.org/) as defined in
 
 ## [Unreleased]
 
+## [1.17.1] - 2026-11-16
+
+### Fixed
+- The player README's MARGE'S VOICE section described the old Windows speech voices. It now says her lines are recordings built into the game, and points to the V key and the Voice volume if she's silent.
+
 ## [1.17.0] - 2026-11-13
 
 Follow-up decisions from the 1.15.0 audit. Online players all need this
