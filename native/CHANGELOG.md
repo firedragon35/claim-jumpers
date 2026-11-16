@@ -9,525 +9,325 @@ and the port uses [Semantic Versioning](https://semver.org/) as defined in
 
 ## [1.17.0] - 2026-11-13
 
-The owner's decisions on the 1.15.0 audit's open questions. Everyone on a
-server needs this version: the login changed.
+Follow-up decisions from the 1.15.0 audit. Online players all need this
+version, because the login changed.
 
 ### Fixed
-- Online, each career's rival crews grow only from the cargo stolen from that pilot, and only the pilot who downs a boss weakens their crews (the whole field's loot and boss kill used to reach every career). Marge's shop remarks about a boss follow the same rule.
-- Cargo insurance pays only on your own towed cargo that was destroyed or taken. Cargo that paid an arrest's fine, and loose cargo a rival took near you, no longer count.
+- Online, a career's rival crews now grow only from cargo stolen from that pilot, and only the pilot who downs a boss weakens their crews. Before, the whole field's loot and boss kills counted for every career. Marge's shop remarks about bosses follow the same rule.
+- Cargo insurance only pays out for your own towed cargo that was destroyed or taken. Cargo lost to an arrest fine, or loose cargo a rival grabbed near you, no longer counts.
 
 ### Changed
-- Online login no longer sends your secret. Each connection gets a fresh challenge from the server and the game answers with a proof, so a login copied off the network can't be replayed. A server meeting you for the first time is sent a fingerprint of your identity once. Careers and keys saved by earlier servers keep working.
-- A server stopped in the middle of a shift settles that shift first, so every pilot keeps what they banked. The host's Stop server button says how many pilots it stops for.
-- Daily challenges count toward your lifetime records: deaths, rivals scrapped, bosses and kills by hull. Earnings and achievements stay with careers.
+- Online login no longer sends your secret. The server sends a fresh challenge for each connection and the game answers with a proof, so a captured login can't be replayed. The first time a server sees you, it gets a fingerprint of your identity. Careers and keys saved by older servers still work.
+- Stopping a server mid-shift settles the shift first, so nobody loses what they banked. The host's Stop server button shows how many pilots it will disconnect.
+- Daily challenges now count toward lifetime records (deaths, rivals scrapped, bosses, kills by hull). Earnings and achievements are still career-only.
 
 ### Added
-- The bank's insurance offer shows what it covers (60% of your towed cargo lost, up to 5,000 cr) and what you lost last shift.
-- Credits for the sprite art in the player README.
+- The bank's insurance offer shows what it covers (60% of towed cargo lost, up to 5,000 cr) and how much you lost last shift.
+- Sprite art credits in the player README.
 
 ## [1.16.0] - 2026-11-13
 
-From the 1.15.0 audit: its confirmed bugs, and the improvements that need no
-owner decision, new art or recordings, new dependency or extra hardware.
+Bug fixes and quick improvements from the 1.15.0 audit.
 
 ### Fixed
-- Online, a crab latched on one tug no longer slows every pilot's thrust.
-- Online, the pause card's way out takes two presses and says what it does: "Leave server", or for a host "Stop server" (it stops the shift for everyone). It no longer claims the shift is paused while it goes on.
-- Escape and gamepad B now go back from the Join, Settings, Records, Leaderboard and Sound test screens.
+- Online, a crab latched onto one tug slowed everyone's thrust.
+- Online, leaving from the pause card now takes two presses and says what it does ("Leave server", or "Stop server" for the host, which ends the shift for everyone). It also no longer claims the shift is paused.
+- Escape and gamepad B go back from the Join, Settings, Records, Leaderboard and Sound test screens.
 - Quitting a daily challenge from the pause card shows its report.
-- Joining no longer freezes the window while the host's name is looked up.
-- A damaged profile.json, board.json or settings.json is kept as a .bad.json copy, with a warning, instead of being overwritten with fresh defaults.
-- Marge's "hull low" call, the hull alarm and the HUD's hull colour all use 30% of the tug's own hull, so armour no longer separates them.
+- The window no longer freezes while a host name is looked up on the Join screen.
+- A damaged profile.json, board.json or settings.json is kept as a .bad.json copy with a warning, instead of being silently replaced with defaults.
+- The "hull low" call, the hull alarm and the HUD's hull colour all trigger at 30% of the tug's own hull, so armour no longer throws them out of step.
 
 ### Added
-- Settings: fullscreen (also F11), mono sound, and sound while the game is in the background. Older settings files load with the old behaviour.
-- A single-player shift pauses when the window loses focus or the gamepad in use disconnects.
+- New settings: fullscreen (also F11), mono sound, and sound while the game is in the background. Old settings files keep the old behaviour.
+- Single player pauses when the window loses focus or the active gamepad disconnects.
 - F12 saves a screenshot to the screenshots folder in the save folder.
-- Quitting a shift from the pause card shows the shift's report before the title.
-- End shift now takes two presses, like Main menu. An armed button disarms by itself after 3 seconds.
-- Join: type host:port for a server on another port, paste with Ctrl+V, and pick from the last five servers joined.
-- Online: a badge under the meters with the pilots flying and the round trip. F3 also shows round trip, packet loss, traffic and unconfirmed inputs, and the time each frame spends simulating and drawing.
-- Other tugs online turn smoothly between snapshots, as do rocks, cargo and the opposition.
-- Backing plates behind the HUD's banked block, meters and key hint, so the field doesn't run through them.
-- Messages queue instead of replacing each other (an achievement no longer hides the host's address).
-- The title's difficulty text gives each mode's installment and damage scale and when debt collectors start; the keyboard and gamepad guides list every control.
-- The pilot name shows how it will be saved, and how many characters are left, while you type it.
-- The leaderboard says it holds this PC's shifts.
-- In training, Marge's panel no longer repeats the training card.
-- The career keeps its last three shifts as career.1.json to career.3.json.
-- game.log records problems that were invisible in the release build (sound, recordings, saves, shaders), and a crash writes crash.log, which the next launch points out.
-- A splash screen is drawn before the start-up date check, which can take 1.5 seconds offline.
-- Hosted and dedicated servers write a health line to server.log once a minute (pilots, overruns, slowest step).
-- For testing: CJ_NET_JITTER_MS and CJ_NET_LOSS_PCT add jitter and loss to a client's connection.
+- Quitting a shift from the pause card shows the shift report before the title.
+- End shift needs two presses, like Main menu. An armed button resets after 3 seconds.
+- Join screen: `host:port` for servers on another port, Ctrl+V to paste, and a list of the last five servers.
+- Online: a badge under the meters with the pilot count and round-trip time. F3 adds round trip, packet loss, traffic, unconfirmed inputs, and simulate and draw time per frame.
+- Other tugs, rocks, cargo and the opposition move smoothly between online snapshots.
+- Backing plates behind the HUD's banked block, meters and key hint, so the field doesn't show through.
+- Messages queue up instead of overwriting each other, so an achievement no longer hides the host's address.
+- The title screen's difficulty text shows each mode's installment and damage scale and when debt collectors start. The keyboard and gamepad guides list every control.
+- The pilot name field shows how the name will be saved and how many characters are left.
+- The leaderboard says it only holds shifts from this PC.
+- During training, Marge's panel no longer repeats the training card.
+- The last three careers are kept as career.1.json to career.3.json.
+- game.log records sound, recording, save and shader problems that the release build used to hide. A crash writes crash.log, and the next launch points to it.
+- A splash screen shows during the start-up date check, which can take 1.5 seconds offline.
+- Servers write a health line to server.log once a minute (pilots, overruns, slowest step).
+- For testing: CJ_NET_JITTER_MS and CJ_NET_LOSS_PCT add jitter and packet loss to a client.
 
 ### Changed
-- The sound mixer sounds at most 64 voices, dropping the oldest effect (never music) past that, and never reallocates on the audio thread. Particles past the cap drop the oldest without shifting the list.
-- The glow effects' render targets are rebuilt once a window resize settles, not on every frame of the drag.
-- The title screen reads career.json only after it has changed.
-- CI builds the release exe and keeps it as a download, and audits the dependencies against RustSec advisories. The toolchain is pinned to 1.99.1 (rust-toolchain.toml).
-- Tests: a randomised decoder test for client messages, mixer limits and mono, save backups, the log, recent servers, network impairment, and an ignored simulation timing baseline (docs/performance.md).
+- The mixer plays at most 64 voices, dropping the oldest effect (never the music), and never allocates on the audio thread. The particle cap drops the oldest particles without shifting the list.
+- Glow render targets are rebuilt once a window resize finishes, not on every frame of the drag.
+- The title screen only re-reads career.json when it has changed.
+- CI builds the release exe as a download and checks dependencies against RustSec advisories. The toolchain is pinned to 1.99.1 (rust-toolchain.toml).
+- New tests: randomised client message decoding, mixer limits and mono, save backups, the log, recent servers, network impairment, and an ignored simulation timing baseline (docs/performance.md).
 
 ## [1.15.0] - 2026-11-13
 
 ### Added
-- Salvage claims: the first tug to cut into a wreck stakes a claim on it, tagged YOUR CLAIM. What comes out is held for you for 30 seconds (other tugs without PvP can't hook it), and the bay pays 10% more for it.
-- Cargo insurance: buy cover for the next shift on the standing tab (the bank row). It pays back 60% of the cargo you lose that shift, up to 5,000 cr, and the shift report shows the claim. Older saves load uninsured.
-- Smuggling: one sealed pod in four is contraband, tagged in the field. It pays double at the bay, but a patrol that sees it on your line gives you a wanted star.
-- Rival tempers: greedy crews go for the richest cargo however far it is, and skittish ones bolt when hit. Both are tagged over their ships.
-- A new field event: a meteor shower of small, fast rocks streaks in from one edge at a tug.
-- Rock anchors: the hook key with nothing to hook anchors your line to a big rock in reach, so you can swing around it or brake against it. Press it again to let go.
-- Slingshot: a piece you throw into the bay fast pays 15% more.
+- Salvage claims. The first tug to cut into a wreck stakes a claim, tagged YOUR CLAIM. For 30 seconds, tugs without PvP can't hook what comes out, and the bay pays 10% more for it.
+- Cargo insurance, bought for the next shift on the standing tab (bank row). It pays back 60% of cargo lost that shift, up to 5,000 cr, and the report shows the claim. Old saves load uninsured.
+- Smuggling. One sealed pod in four is contraband and tagged in the field. It pays double, but a patrol that sees it on your line gives you a wanted star.
+- Rival tempers. Greedy crews chase the richest cargo however far away it is, and skittish ones bolt when hit. Both are tagged over their ships.
+- New field event: a meteor shower of small, fast rocks from one edge of the field, aimed at a tug.
+- Rock anchors. Pressing hook with nothing in range anchors your line to a nearby big rock, so you can swing around it or brake against it. Press it again to let go.
+- Slingshot bonus: cargo thrown into the bay at speed pays 15% more.
 - Fragile cargo: sealed pods and flight recorders lose 15% of their value in a hard knock.
-- The fixer now patches a badly holed hull, once a minute.
-- The cable flickers red when it is yanked hard.
-- Rocks crack as they are mined, and ore-bearing rocks show their ore nodes (worn down once half mined).
-- The bay's tractor beam shows as a shimmer reaching out to cargo coming in.
-- Heat haze ripples behind burning engines (with effects on; off with reduced motion).
-- Laser fire, bullet hits and missiles light the rocks around them.
-- The banked total on the HUD counts up.
-- Sound: the engine swings left and right as you turn, rivals whoosh past, the hull groans when badly damaged, a beep warns before the guns overheat, and nearby rivals and lawmen can be heard on their radios.
-- The music adds a bell, and then a shimmer, as the load on your line gets richer.
-- Marge says something about a slingshot, damaged cargo, a staked claim, contraband and the meteor shower (as text: these lines have no recording yet).
+- The fixer patches a badly holed hull once a minute.
+- The cable flickers red when it's yanked hard.
+- Rocks crack as they're mined, and ore rocks show their ore nodes (worn down past half).
+- The bay's tractor beam shimmers out toward incoming cargo.
+- Heat haze behind burning engines (with effects on, off with reduced motion).
+- Laser fire, bullet hits and missiles light up nearby rocks.
+- The HUD's banked total counts up.
+- Sound: the engine pans as you turn, rivals whoosh past, the hull groans when badly damaged, a beep warns before the guns overheat, and you can hear nearby rivals and lawmen on their radios.
+- The music adds a bell, then a shimmer, as your load gets more valuable.
+- Marge comments on slingshots, damaged cargo, claims, contraband and meteor showers (text only for now, no recordings yet).
 
 ### Notes
-- Ideas already in the game were left as they are: shifting market prices (the belt conditions on the sector map), escort contracts (the convoy), cable upgrades (the winch and grapple) and a shared co-op cable (the latch). A fuel budget was left out because it overlaps engine heat.
+- Some audit ideas were already in the game and were left alone: shifting prices (belt conditions), escort contracts (the convoy), cable upgrades (winch and grapple) and a shared co-op cable (the latch). A fuel budget was skipped because engine heat already covers it.
 
 ## [1.14.0] - 2026-11-13
 
 ### Added
-- Sound comes from where it happens. Effects in the field are placed left or right of your tug, and distant ones are quieter and muffled. Online play hears the same.
-- Settings: volume for master, effects, music and voice (100, 75, 50, 25 or 0%), in a new Sound column. Saved in settings.json; older settings files load with everything at 100%.
-- An EMP pulse has its own electric zap, and a falling engine whine when it knocks out a ship's engines. Both are in the sound test.
-- The music dips while Marge or the cockpit is speaking, so the words come through.
-- More music: the field music moves through four chord progressions, eight bars each, and every belt plays in its own key. The menus have a calmer theme of their own. Short stings mark banking a load, a jackpot, a new wanted star and a boss crew arriving.
-- Space echo: effects ring a little in open space and more near the carrier's and the refinery's hulls.
-- Field sounds: rocks grinding against each other (and against your cargo), the carrier's bay drone as you come in, and a taut cable creaking.
-- Painted rocks and ships are lit in the world: a steady light from the upper left stays put while they turn, and an explosion now lights only the side of a painted rock that faces it.
-- A shockwave ripples out from big explosions and EMP pulses, bending the picture as it passes (with effects on; off with reduced motion).
-- Quiet Drift has ice and blue crystal rocks, and the Frontier exotic crystal rocks, among the usual ones. Ore-bearing rock keeps its own look.
-- Painted ships show their damage below 40% hull: the paint darkens, smoke drifts off them and sparks spit from the hull. Your tug and rivals both show it.
+- Positional sound. Field effects pan left and right relative to your tug, and distant ones are quieter and muffled. This works online too.
+- Volume settings for master, effects, music and voice (100, 75, 50, 25 or 0%) in a new Sound column. Old settings files load at 100%.
+- EMP pulses get their own electric zap, plus a falling engine whine when they knock out a ship. Both are in the sound test.
+- Music ducks while Marge or the cockpit is talking.
+- More music. Field music cycles through four chord progressions of eight bars each, and each belt has its own key. The menus get a calmer theme. Short stings mark banking a load, a jackpot, a new wanted star and a boss crew arriving.
+- Space echo: effects ring slightly in open space and more near the carrier and refinery hulls.
+- Field sounds: rocks grinding on each other and on cargo, the carrier's bay drone as you come in, and a creaking taut cable.
+- Painted rocks and ships are lit from a fixed upper-left light that stays put as they turn. Explosions light only the side of a painted rock facing them.
+- Big explosions and EMP pulses send out a shockwave that bends the picture (with effects on, off with reduced motion).
+- Quiet Drift gets ice and blue crystal rocks, and the Frontier exotic crystal ones. Ore rocks keep their own look.
+- Painted ships show damage below 40% hull: darker paint, smoke and sparks. This applies to your tug and to rivals.
 - The keycard is painted to match the rest of the field.
-- A deeper, fainter layer of stars, and dust drifting just behind the field.
-- The tug's burning engine lights the stern of its painted hull.
+- A deeper, fainter star layer, and dust drifting just behind the field.
+- The engine glow lights the back of the painted tug.
 
 ### Changed
-- Painted art is sharper when drawn small (it is now mipmapped), with less shimmer as it turns.
+- Painted art is mipmapped, so it's sharper when small and shimmers less as it turns.
 
 ## [1.13.0] - 2026-11-13
 
 ### Changed
-- The rest of the field is painted in the painted art style. Security drones, mining drones and sentries (red when rogue) have their own art. Salvage is painted by type and grade: scrap fragments, iron, copper, cobalt and platinum ore, hull plating, engines, reactor cores, ingots, the rogue core, the flight recorder, sealed pods and mining charges, with rare pieces on a glow of their colour. Keycards stay as they were. Wrecks are drawn as debris, and the derelict freighter as a long derelict hull. The salvage carrier is the collection hub, and the refinery's hub is the mining vault, with its jaws, sockets and countdown unchanged. Warning rings, beacons, cracks and emergency lights still show. Vector style is unchanged, and collision is unchanged.
-- Painted salvage is drawn 15% larger, and painted rivals, the law, debt collectors and haulers 30% larger, so they stand out in the field. Collision is unchanged.
-- In painted style a pilot's paint job (or online slot colour) colours its shield instead of tinting the ship, so the ship art keeps its own colours. Vector tugs still wear their paint on the hull.
-- Missiles are drawn 10% larger and torpedoes 15% larger, in both art styles.
+- The rest of the field now uses painted art: security drones, mining drones and sentries (red when rogue), and salvage by type and grade (scrap, each ore, plating, engines, reactor cores, ingots, the rogue core, the flight recorder, sealed pods and mining charges). Rare pieces sit on a glow of their colour. Wrecks are drawn as debris, the derelict freighter as a long hull, the carrier as the collection hub and the refinery as the mining vault, with its jaws, sockets and countdown unchanged. Warning rings, beacons, cracks and emergency lights still show. Vector style and collision are unchanged.
+- Painted salvage is 15% bigger, and painted rivals, law, debt collectors and haulers 30% bigger, so they stand out. Collision is unchanged.
+- In painted style, a pilot's paint job (or online slot colour) tints its shield instead of the ship, so the art keeps its colours. Vector tugs still wear the paint on the hull.
+- Missiles are drawn 10% bigger and torpedoes 15% bigger, in both styles.
 
 ### Added
-- Missiles and torpedoes set off an EMP pulse when they explode (90 px for a missile, 160 px for a torpedo). Hostiles caught in it (rivals, the law and debt collectors you have provoked, security drones and angry mining crews) lose their engines for 10 seconds: they drift on their momentum and can still turn and shoot, but cannot chase, flee or tow. Blue arcs crackle over a disabled ship. Your tug, co-op partners and the hauler are never caught.
-- Explosions light up the rocks around them for a moment, in the blast's colour. Vector rocks catch it the way the 1.6.0 lighting works, with a bright rim on the faces toward the blast and a glow on that side. Painted rocks get a wash of the blast's light.
-- Field ambience: the energy wall at the edge of the belt hums louder as you fly toward it, over the same stretch where its glow brightens. Radiation crackles like a Geiger counter: a few clicks at the edge of a cloud, a rattle at its heart. Both play only while flying and stop with mute.
+- Missile and torpedo explosions set off an EMP (90 px for a missile, 160 px for a torpedo). Hostiles caught in it lose their engines for 10 seconds: they drift and can still turn and shoot, but can't chase, flee or tow. Blue arcs crackle over disabled ships. This covers rivals, security drones, angry mining crews, and the law and debt collectors once you've provoked them. Your tug, co-op partners and the hauler are never affected.
+- Explosions briefly light nearby rocks in the blast's colour. Vector rocks get a bright rim and glow on the side facing the blast, and painted rocks get a wash of light.
+- Field ambience: the energy wall at the edge of the belt hums louder as you approach it, and radiation crackles like a Geiger counter, from a few clicks at a cloud's edge to a rattle at its centre. Both only play while flying and respect mute.
 
 ## [1.12.0] - 2026-11-12
 
 ### Changed
-- Ships are drawn with painted sprites from the art pack. Each pilot slot flies its own player model (miner, fighter, interceptor, heavy, scout, then round again), washed in its paint job or online slot colour. Rivals use a model per hull (skiff, cutter, gunship, brute), and the sheriff, Galactic SWAT, debt collector and convoy hauler have their own art. Thrust flames, shields, hit flashes, hunter heat, light bars and tags still show. Bought parts show on the tug in the shop, no longer in the field. Collision is unchanged.
+- Ships use painted sprites. Each pilot slot flies its own model (miner, fighter, interceptor, heavy, scout, then repeat), tinted with its paint job or online colour. Rivals have a model per hull (skiff, cutter, gunship, brute), and the sheriff, Galactic SWAT, debt collector and convoy hauler have their own art. Thrust flames, shields, hit flashes, hunter heat, light bars and tags still show. Bought parts show on the tug in the shop but not in the field. Collision is unchanged.
 
 ### Added
-- Settings: "Art style" switches rocks and ships between the painted sprites and the original vector outlines (painted by default; saved as `sprites` in settings.json). Vector style shows bought parts on the tug again. The co-op note moves under the controls to make room.
+- An "Art style" setting switches rocks and ships between painted sprites and the original vector outlines (painted by default, saved as `sprites` in settings.json). Vector style shows bought parts on the tug again. The co-op note moves under the controls to make room.
 
 ## [1.11.0] - 2026-11-12
 
 ### Changed
-- Rocks are drawn with painted sprites from the asteroid art pack: cratered grey rock and molten or gold-plated ore rock in three sizes, with several variants each. A rock keeps the same art as it tumbles, and hits still flash it white. Chunks thrown off a breaking rock use the small rock art. Collision is unchanged.
+- Rocks use painted sprites from the asteroid art pack: grey cratered rock and molten or gold-veined ore rock in three sizes, with several variants each. A rock keeps its art as it tumbles, and hits still flash it white. Chunks from a breaking rock use the small rock art. Collision is unchanged.
 
 ## [1.10.0] - 2026-11-12
 
 ### Added
-- Bundled, distinct neural voice recordings for Marge and cockpit warnings, including tutorial and sound-test dialogue. Live numbers and names use recorded phrase and number assets. Runtime speech synthesis and installed-voice dependencies are removed; text, mute, interruption, and routine-line throttling remain available.
-
+- Recorded neural voices for Marge and the cockpit warnings, covering training and sound-test lines too. Live numbers and names are built from recorded phrases and number words. The game no longer needs a speech engine or an installed Windows voice. Text, mute, interruptions and the limit on routine lines all still work.
 
 ## [1.9.0] - 2026-11-12
 
 ### Added
-
-- F3 shows a frame-time overlay on any screen: frames per second, the
-  average frame time, the slowest frame of the last two seconds (red when
-  it's below 60 fps), the particle count and whether effects are on. It is
-  hidden by default and not saved.
+- F3 toggles a frame-time overlay on any screen: frames per second, average frame time, the slowest frame in the last two seconds (red below 60 fps), the particle count and whether effects are on. It starts hidden and isn't saved.
 
 ### Changed
-
-- The player README lists F3, mentions the Glow and effects and HUD size
-  settings, and suggests F3 and turning effects off when the game runs
-  slowly.
+- The player README lists F3, mentions the Glow and effects and HUD size settings, and suggests F3 and turning effects off if the game runs slowly.
 
 ## [1.8.0] - 2026-11-12
 
 ### Added
-
-- Thruster trails: a burning engine leaves a short glowing ribbon behind the
-  tug that thins and fades over a third of a second. Every pilot's tug has
-  one, online too.
-- A rock that breaks throws tumbling chunks along with its dust, lit like
-  the rocks and edged in gold when it held ore.
+- Thruster trails. A burning engine leaves a short glowing ribbon that thins and fades over a third of a second. Every pilot's tug has one, online too.
+- Breaking rocks throw tumbling chunks along with the dust, lit like the rocks and edged in gold if the rock held ore.
 
 ### Changed
-
-- The cable whitens smoothly as it tightens, and a soft halo builds around
-  it, instead of switching colour at one tension.
+- The cable whitens gradually as it tightens and builds a soft halo, instead of switching colour at a single tension.
 
 ## [1.7.0] - 2026-11-12
 
 ### Added
-
-- Settings: "HUD size" cycles 100%, 125% and 150% (saved as `hudScale` in
-  `settings.json`; 100% by default). It makes the in-flight HUD bigger:
-  readouts, bars, radar, Marge's dispatches, the training card, chat and
-  the pilot list. Text is drawn at the size it is shown, so it stays sharp.
-  The HUD always keeps at least a 1280x720 layout, so on smaller windows the
-  size is capped to stop its cards overlapping. The arrows at the screen
-  edge stay as they are, since they point at things in the field.
+- A "HUD size" setting: 100%, 125% or 150% (saved as `hudScale` in settings.json, 100% by default). It scales the in-flight HUD: readouts, bars, radar, Marge's messages, the training card, chat and the pilot list. Text is drawn at its final size, so it stays sharp. The HUD never lays out smaller than 1280x720, so on small windows the size is capped to stop panels overlapping. The arrows at the screen edge keep their size, since they point at things in the field.
 
 ### Changed
-
-- The rows on the Settings screen sit a little closer together to make room
-  for the new one.
+- Settings rows sit a little closer together to fit the new one.
 
 ## [1.6.0] - 2026-11-12
 
 ### Changed
-
-- Rocks and wrecks are lit from one direction. Their bodies shade from a
-  lit upper-left side to a dark far side, and their outlines catch a
-  bright rim on the lit edges and fade on the shadowed ones, so they read
-  as solid objects rather than outlines. Wrecks also show an inner line of
-  hull plating. This needs no effects and is always on.
-- With Glow and effects on, a radiation cloud is a churning green gas with
-  a pulsing rim, and the edge of the belt is a rippling energy wall that
-  brightens as you fly toward it. The dashed lines still mark the exact
-  hazard edge and field edge, fainter.
+- Rocks and wrecks are lit from one direction, shading from the upper left to a dark far side, with a bright rim on the lit edges. They read as solid objects instead of outlines. Wrecks also show an inner line of hull plating. This doesn't need effects and is always on.
+- With Glow and effects on, radiation clouds are churning green gas with a pulsing rim, and the belt edge is a rippling energy wall that brightens as you approach. Fainter dashed lines still mark the exact hazard and field edges.
 
 ## [1.5.0] - 2026-11-12
 
 ### Added
-
-- Glow and effects. The field is drawn off-screen and finished with a bloom
-  pass, so bright things (thrusters, shots, the cable, cargo, sparks) glow
-  while rocks and the background stay dark. A gentle colour grade and faint
-  film grain finish the frame; reduced motion holds the grain still. The HUD
-  and menus are drawn after it and stay sharp.
-- A procedural nebula behind the stars, in the same colours and with the
-  same parallax as the old nebula glows, which it replaces while effects
-  are on.
-- Settings: "Glow and effects" turns all of it off (on by default; saved as
-  `effects` in `settings.json`). If the graphics driver can't compile the
-  effects, they stay off and the field draws as before.
+- Glow and effects. The field is drawn off-screen and finished with a bloom pass, so bright things (thrusters, shots, the cable, cargo, sparks) glow while rocks and the background stay dark. A light colour grade and faint film grain finish the frame, and reduced motion holds the grain still. The HUD and menus are drawn on top and stay sharp.
+- A procedural nebula behind the stars, in the old nebula's colours and parallax. It replaces the old one while effects are on.
+- A "Glow and effects" setting turns all of this off (on by default, saved as `effects` in settings.json). If the graphics driver can't compile the effects, they stay off and the field draws as before.
 
 ## [1.4.6] - 2026-11-11
 
 Fixes from a third repository audit.
 
 ### Fixed
-
-- An online game could crash when a new shift started. If a player had left
-  during the last shift, the others moved down a pilot slot; a player whose
-  Welcome to the new shift was lost on the way (it is resent 300 ms later)
-  took the new shift's first snapshots with their old pilot number, which
-  could be past the new shift's pilots. A snapshot made for another pilot is
-  now dropped until the Welcome arrives.
-- Hosting used more upload than it needed to. Tugs, salvage, rocks and shots
-  sent every number at full size 20 times a second; their timers and levels,
-  which mostly rest at zero, now travel as one byte while they do, and their
-  headings and spins at half size. A snapshot is a quarter smaller with the
-  pilots spread out and two fifths smaller with everyone at the bay: about
-  0.55 Mbit/s per pilot, where it was 0.75. Hull, shield and credit figures
-  are sent exactly, as before.
-- A shop request that went through was saved on the spot, waiting for the
-  disk on the server's step loop, so a changed client sending requests as
-  fast as the rate limit allows could make the break stutter for everyone.
-  The server now saves changed careers once a second, when the next shift
-  starts, when a lobby player leaves, and when it stops.
-- A player whose game crashed or lost its network, and who joined again
-  before the server had noticed, was told their pilot was already flying
-  and had to wait for the old connection to time out. With the right
-  identity the new connection now takes over the pilot (or the place in the
-  lobby) at once, and the old one is told why it was disconnected.
+- An online game could crash when a new shift started. When a player left during a shift, the others moved down a pilot slot. If a player's Welcome message for the next shift got lost (it's resent after 300 ms), their first snapshots used the old pilot number, which could be out of range. Snapshots meant for another pilot are now ignored until the Welcome arrives.
+- Hosting used more upload than necessary. Tugs, salvage, rocks and shots sent every value at full size 20 times a second. Timers and levels that sit at zero most of the time now take one byte while they do, and headings and spins are sent at half size. Snapshots are a quarter smaller with pilots spread out and two fifths smaller with everyone at the bay, about 0.55 Mbit/s per pilot instead of 0.75. Hull, shield and credit values are still exact.
+- Shop purchases were saved to disk on the server's step loop, so a modified client spamming requests at the rate limit could make the break stutter for everyone. The server now saves changed careers once a second, at the start of each shift, when a lobby player leaves, and when it stops.
+- A player whose game crashed or lost its connection and rejoined before the server noticed was told their pilot was already flying and had to wait for the old connection to time out. With the right identity, the new connection now takes over the pilot (or lobby place) straight away, and the old one is told why it was dropped.
 
 ### Changed
-
-- `tools/package.ps1` stops if the working tree has uncommitted changes, and
-  prints the commit it packages, so every release zip matches a commit.
-- The player guide says how much upload hosting needs (about 0.6 Mbit/s for
-  each pilot, more while everyone is in one place), and the multiplayer
-  design note carries the measured figures beside its estimate.
+- `tools/package.ps1` refuses to run with uncommitted changes and prints the commit it packages, so every release zip matches a commit.
+- The player guide gives the upload needed for hosting (about 0.6 Mbit/s per pilot, more with everyone in one place), and the multiplayer design note lists the measured numbers next to its estimate.
 
 ## [1.4.5] - 2026-11-11
 
 Fixes from a second repository audit.
 
 ### Fixed
-
-- The shop's contract offers and every belt's condition were only saved
-  once the player bought or picked something, so going back to the title
-  and pressing Continue rolled a fresh set, as often as the player liked.
-  Online, a player waiting in the lobby could do the same by leaving and
-  joining again during the break. The roll is now saved as soon as it is
-  made, offline and on servers.
-- A script that joined a server with a new player id and left the lobby,
-  over and over, wrote a key and a career to disk each time without end,
-  flushing each one on the server's step loop. A server now lets in at most
-  as many players new to it per minute as its player limit; past that a
-  new id is told the server is busy and to try again in a minute, and
-  nothing is written. Players the server already knows still get in.
-- A hosted server's `server.log` was only started again when hosting began,
-  so a long session could grow it without limit. It now starts again past
-  1 MB during a session too, keeping the full one as `server.old.log`.
-- A pilot whose name was only in scripts the game's fonts can't draw
-  became "Pilot N" when joining mid-shift but "New pilot" in the lobby, so
-  two such players in the lobby looked the same. Each now gets a
-  "Pilot N" nobody else on the server has.
+- The shop's contract offers and the belt conditions were only saved once the player bought or picked something, so going back to the title and pressing Continue rerolled them as often as you liked. Online, a lobby player could do the same by leaving and rejoining during the break. Rolls are now saved as soon as they're made, offline and online.
+- A script could join a server with a new player id and leave again, over and over, and the server wrote a key and a career to disk every time. A server now accepts at most its player limit of new players per minute. Past that, a new id is told the server is busy and to try again in a minute, and nothing is written. Known players still get in.
+- A hosted server's server.log only restarted when hosting began, so a long session could grow it forever. It now also restarts past 1 MB mid-session, keeping the previous one as server.old.log.
+- A pilot whose name only used scripts the fonts can't draw showed as "Pilot N" when joining mid-shift but "New pilot" in the lobby, so two of them looked identical. Each now gets a unique "Pilot N".
 
 ### Changed
-
-- The Join screen and the player guide now say that the game sends each
-  server you join your pilot's identity (`mp_id.txt`, the same for every
-  server), so a host could use it to play as you elsewhere: join only hosts
-  you trust.
+- The Join screen and the player guide explain that the game sends your pilot identity (`mp_id.txt`, the same for every server) to each server you join, so a host could use it to play as you elsewhere. Only join hosts you trust.
 
 ## [1.4.4] - 2026-11-11
 
 A follow-up fix from the independent audit.
 
 ### Fixed
-
-- When a server couldn't save the key that binds a career to its owner's
-  secret, it let the player in anyway and saved their career with no key,
-  so the next player using that id with any secret could claim it. The
-  server now turns the player away and writes no career until the key can
-  be saved. A key that can't be read turns them away too, as before.
-- A player turned away for that reason is now told the server couldn't
-  save their pilot and to ask the host to check its disk, instead of being
-  told the server knows their pilot from another install.
+- If a server couldn't save the key that ties a career to its owner's secret, it let the player in anyway and saved the career without a key, so anyone using that id could claim it later. The server now turns the player away and writes nothing until the key can be saved. A key that can't be read still turns them away.
+- A player turned away for that reason is told the server couldn't save their pilot and to ask the host to check its disk, instead of being told the server knows their pilot from another install.
 
 ## [1.4.3] - 2026-11-11
 
 More online fixes from the independent audit.
 
 ### Fixed
-
-- A server loaded a saved career by the player's id alone, so once it
-  had restarted, or had forgotten a player who left, anyone using that id
-  with any secret could take over the career. Each career on a server now
-  belongs to the secret that first claimed it, and any other is refused.
-  The server keeps only a SHA-256 fingerprint of the secret
-  (`<player>.key` beside the career), never the secret itself. Careers
-  saved by 1.4.2 and earlier keep working: the first player back claims
-  them.
-- Online, a player who reconnected during the break between shifts got
-  their tug back but couldn't shop or vote for the next belt until they
-  had flown another shift. They now get their career as they return.
+- Servers loaded saved careers by player id alone, so after a restart, or once a player had left and been forgotten, anyone with that id and any secret could take the career. Each career now belongs to the secret that first claimed it, and other secrets are refused. The server only stores a SHA-256 fingerprint of the secret (`<player>.key` next to the career). Careers saved by 1.4.2 and earlier still work: the first player back claims them.
+- Online, a player who reconnected during the break got their tug back but couldn't shop or vote until they'd flown another shift. They now get their career back right away.
 
 ### Changed
-
 - The server uses the `sha2` crate (RustCrypto) for those fingerprints.
 
 ## [1.4.2] - 2026-11-11
 
-Online fixes from an independent audit: one player's shift no longer
-changes another's.
+Online fixes from an independent audit, so one player's shift no longer
+affects another's.
 
 ### Fixed
-
-- Online, the end of a shift gave each pilot with a drone bay every
-  pilot's surviving sentries, so drones multiplied from shift to shift
-  past the bay's limit. Each career now gets back only its own.
-- Online, a pilot who joined a shift already under way (including the
-  first player into a freshly started server) flew without their sentries,
-  and the end of the shift then saved their bay empty. They now launch on
-  arrival.
-- Online, a debt collector impounding one tug ended the shift for
-  everyone. Now only that tug leaves the field, for the rest of the shift
-  (its load floats free and its stars are cleared, as for a wreck); the
-  others fly on, and the shift ends early only once every tug in it is
-  impounded. The impounded player's HUD says "IMPOUNDED · BACK NEXT SHIFT".
-  Single player is unchanged.
-- Online, a player who arrived during the break between shifts could not
-  open the shop until they had flown a shift. They now get their career,
-  with the break's offers, as they arrive.
-- Online, arresting one pilot called off the law units chasing other
-  wanted pilots. Only the arrested pilot's pursuers stand down now.
+- Online, the end of a shift gave every pilot with a drone bay everyone's surviving sentries, so drones multiplied past the bay's limit. Each career now only gets its own back.
+- Online, a pilot who joined a shift already in progress (including the first player on a fresh server) flew without their sentries, and the end of the shift then saved their bay as empty. Sentries now launch on arrival.
+- Online, a debt collector impounding one tug ended the shift for everyone. Now only that tug leaves the field for the rest of the shift (its load floats free and its stars are cleared, as with a wreck). Everyone else keeps flying, and the shift only ends early if every tug is impounded. The impounded player's HUD shows "IMPOUNDED · BACK NEXT SHIFT". Single player is unchanged.
+- Online, a player who arrived during the break couldn't open the shop until they'd flown a shift. They now get their career, with that break's offers, when they arrive.
+- Online, arresting one pilot called off the law chasing other wanted pilots. Now only the arrested pilot's pursuers stand down.
 
 ## [1.4.1] - 2026-11-11
 
 Fixes from the repository audit.
 
 ### Fixed
-
-- Online, a player who lost the connection and came back in the same
-  shift could not steer, hook, drop, cut or switch PvP for about as long
-  as they had already flown: the server kept the old connection's message
-  numbers and dropped the new connection's as repeats.
-- Online, paying off the loan in the break traded the tug up without a
-  word (the shop kept showing its last sentence). It now says
-  "Loan paid off. Traded up: …" with the new tug and loan.
-- Pilot names keep only letters the game's fonts can draw (ASCII and
-  Latin), as chat lines already did. Other scripts showed as blanks on
-  every player's screen, and Cyrillic or Greek lookalikes let one player
-  pass as another. A saved name or local leaderboard entry in another
-  script loses those letters when it is loaded.
-- A server that falls more than 0.25 s behind (the PC slept, a VM was
-  paused) skips the lost time instead of running every missed step at
-  once, which jumped the shift clock and flew the tugs on stale controls.
+- Online, a player who dropped and rejoined in the same shift couldn't steer, hook, drop, cut or toggle PvP for about as long as they'd already flown. The server kept the old connection's message numbers and threw away the new ones as repeats.
+- Online, paying off the loan during the break traded the tug up silently (the shop kept showing its previous message). It now says "Loan paid off. Traded up: …" with the new tug and loan.
+- Pilot names only keep letters the fonts can draw (ASCII and Latin), like chat already did. Other scripts showed as blanks for everyone, and Cyrillic or Greek lookalikes let one player impersonate another. Saved names and local leaderboard entries in other scripts lose those letters on load.
+- A server that falls more than 0.25 s behind (sleeping PC, paused VM) now skips the lost time instead of running every missed step at once, which made the shift clock jump and flew tugs on stale controls.
 
 ### Changed
-
-- Single player and the server apply shop requests through one function
-  (`cj_net::ShopReq::apply`), so the two shops can't drift apart. An offer
-  number past the offers is refused there instead of being used as an
-  index.
+- Single player and the server handle shop requests through the same function (`cj_net::ShopReq::apply`), so the two shops can't drift apart. An out-of-range offer number is refused there instead of being used as an index.
 
 ## [1.4.0] - 2026-11-11
 
-Opt-in PvP on servers whose host allows it, and a play-test cut-off.
+Opt-in PvP on servers that allow it, and a play-test cut-off.
 
 ### Added
-
-- PvP, off unless the host allows it (Launch screen: "PvP: On"; headless
-  server: `--pvp`). Everyone starts each shift Protected. B (D-pad up)
-  in the bay starts 10 seconds of arming; then the tug is PvP, shown to
-  every pilot by a red ring and a PVP tag, and to its own pilot on the
-  HUD. A PvP pilot can hurt any tug; whoever they hurt may fire back for
-  30 seconds after each attack. Ramming hurts only between two PvP tugs.
-  The PvP key can be changed under Settings; if an earlier version's
-  settings already put another action on B, that action keeps it and PvP
-  moves to a free key.
-- A combat lock: attacking, or being hit while PvP, holds a pilot in PvP
-  for 30 seconds. PvP can't be switched off (in the bay) during it, and a
-  player who leaves mid-fight leaves the tug in the field until it ends.
-- On belts with law, the first hit in a fight earns the attacker a wanted
-  star and a PvP wreck two more; firing back earns none. A PvP wreck's
-  cargo is held for 20 seconds for its owner and PvP pilots, PvP wrecks
-  pay no bounty, and the Tab list counts them as kills.
-
-- A copyright notice: "Copyright © 2026, 2027 Neil Bruggeman. All rights
-  reserved." on the opening screen, in the player README and on the
-  exe's Details tab.
-- Play-test builds stop working on 1 June 2027. From then on the game
-  shows only a screen saying the build has expired, and asks the player
-  to get a newer one; saves are left untouched. `--smoke` fails past
-  that date. The date comes from network time (`time.google.com`), so
-  setting the PC's clock back doesn't help; offline, the PC's clock is
-  used.
+- PvP, off unless the host allows it (Launch screen "PvP: On", or `--pvp` on the headless server). Everyone starts each shift Protected. Pressing B (D-pad up) in the bay starts 10 seconds of arming, then the tug is PvP, shown to everyone by a red ring and a PVP tag and to its pilot on the HUD. A PvP pilot can hurt any tug, and anyone they hurt can fire back for 30 seconds after each attack. Ramming only does damage between two PvP tugs. The PvP key can be rebound in Settings. If an older settings file already had another action on B, that action keeps it and PvP moves to a free key.
+- Combat lock. Attacking, or being hit while PvP, keeps a pilot in PvP for 30 seconds. PvP can't be turned off in the bay during it, and a player who leaves mid-fight leaves their tug in the field until it ends.
+- On belts with law, the first hit in a fight earns the attacker a wanted star, and a PvP wreck earns two more. Firing back earns none. A PvP wreck's cargo is held for 20 seconds for its owner and PvP pilots, PvP wrecks pay no bounty, and the Tab list counts them as kills.
+- A copyright notice ("Copyright © 2026, 2027 Neil Bruggeman. All rights reserved.") on the opening screen, in the player README and on the exe's Details tab.
+- Play-test builds stop working on 1 June 2027. After that the game only shows a screen saying the build has expired and asking the player to get a newer one. Saves aren't touched. `--smoke` fails after that date. The date comes from network time (`time.google.com`), so winding back the PC clock doesn't help. Offline, the PC clock is used.
 
 ## [1.3.0] - 2026-11-11
 
-Online co-op: up to 20 pilots share one shift.
+Online co-op for up to 20 pilots in one shift.
 
 ### Added
-
-- The game opens asking how to play: Single player, Host server or Join
-  remote host. Hosting runs the server in your game, for up to 2 to 20
-  pilots (the field grows with the crowd) at a career difficulty you pick.
-  Joining looks the server up first and shows how many pilots are on it,
-  or that it is full. The port is always 47820 (UDP). There's also a
-  headless `cj-server` for running a server without the game.
-- Your own tug and shots respond at once, however far away the server is.
-  The server decides everything, and corrections stay small even over a
-  laggy link that loses packets.
-- Every pilot's tug and tow line is drawn, each other pilot in their own
-  colour. Nearby players' sounds fade with distance, and the radar shows
-  what the server reports beyond your view.
-- Tab shows every pilot with this shift's credits, kills and deaths.
-  Enter opens a public chat, shown in the bottom-left corner over the
-  field.
-- Shift follows shift. In the break you see your own report, shop with
-  your career on that server (every purchase is checked by the server),
-  and vote for the next belt among those everyone's tug can fly. The next
-  shift starts when everyone is ready, or after 90 seconds.
-- Each server keeps its own career for each player, separate from your
-  single-player career, in the difficulty the host chose. A host's
-  careers are kept for the next time they host.
-- Players who join in a shift's last minute wait in the lobby for the
-  next one. A player who drops out keeps their tug and cargo safely out of
-  the field until they return.
-- Hints when nobody can get in: allowing the game through Windows
-  Firewall, and the address to give out. The player guide has a new
-  PLAYING ONLINE section, covering LAN play, port forwarding and Tailscale.
+- The game opens with a choice: Single player, Host server or Join remote host. Hosting runs the server inside your game for 2 to 20 pilots (the field grows with the player count) at a career difficulty you choose. Joining looks the server up first and shows how many pilots are on it, or that it's full. The port is always 47820 (UDP). A headless `cj-server` runs a server without the game.
+- Your own tug and shots respond instantly, however far away the server is. The server has the final say, and corrections stay small even on a laggy connection that drops packets.
+- Every pilot's tug and tow line is drawn, each in their own colour. Nearby players' sounds fade with distance, and the radar shows what the server reports beyond your view.
+- Tab shows every pilot with this shift's credits, kills and deaths. Enter opens public chat, shown bottom-left over the field.
+- Shifts run back to back. In the break you see your own report, shop with your career on that server (the server checks every purchase), and vote on the next belt from those everyone's tug can fly. The next shift starts when everyone is ready, or after 90 seconds.
+- Each server keeps a separate career for each player, apart from their single-player career, at the difficulty the host chose. A host's careers are kept for the next time they host.
+- Players who join in a shift's last minute wait in the lobby for the next one. A player who drops keeps their tug and cargo safely out of the field until they return.
+- Help for when nobody can connect: allowing the game through Windows Firewall, and which address to give out. The player guide has a new PLAYING ONLINE section covering LAN play, port forwarding and Tailscale.
 
 ### Changed
-
-- Other players' shots stop at your tug, but never hurt it. Damage between
-  players comes with opt-in PvP in a later version.
-- Radiation clouds burn every tug inside them. Rival and law bolts hit any
-  tug in their path, and a refinery drone takes turns between the tugs in
-  range.
-- Long messages wrap on screen instead of running off a narrow window.
+- Other players' shots stop at your tug but never hurt it. Player damage arrives with opt-in PvP in a later version.
+- Radiation clouds burn every tug inside them. Rival and law bolts hit any tug in their path, and refinery drones take turns between the tugs in range.
+- Long messages wrap instead of running off the edge of a narrow window.
 
 ### Notes
-
-- Online play is IPv4 only, and the connection is not encrypted.
+- Online play is IPv4 only, and the connection isn't encrypted.
 
 ## [1.2.0] - 2026-11-09
 
 ### Added
-
-- Rival crews buy upgrades with cargo they steal: tougher hulls at 3,000 cr,
-  then faster engines at 6,000, then quicker guns at 10,000 (level 2 at most
-  on Relaxed). Taking down a boss crew empties half their war chest. The
-  report says when they upgrade, and Map & standing shows their level.
+- Rival crews spend stolen cargo on upgrades: tougher hulls at 3,000 cr, faster engines at 6,000, then quicker guns at 10,000 (capped at level 2 on Relaxed). Taking down a boss crew halves their war chest. The report says when they upgrade, and Map & standing shows their level.
 
 ### Changed
-
-- Rival standing fades 10% toward zero each shift, unless that shift pushed
-  it further from zero.
+- Rival standing drifts 10% back toward zero each shift, unless that shift pushed it further out.
 
 ## [1.1.0] - 2026-11-09
 
-This version is the lead: the browser game is now a frozen baseline at 1.0.7.
+From this version on, the native game leads. The browser game is frozen at 1.0.7.
 
 ### Added
-
-- A destroyed reactor leaves a radiation cloud for 25 seconds. Inside it,
-  shields are out and the hull burns slowly. Clouds never settle over the bay.
-- A wrecked tug throws out a shockwave that shoves and damages what's nearby.
+- A destroyed reactor leaves a radiation cloud for 25 seconds. Inside it, shields are down and the hull slowly burns. Clouds never settle over the bay.
+- A wrecked tug lets out a shockwave that pushes and damages anything nearby.
 - Wanted stars fade one every 20 seconds while nobody is chasing you.
 - Level 5 cannons fire instant lasers.
-- Rivals hunting you sidestep incoming shots: skiffs most, brutes never.
+- Rivals hunting you dodge incoming shots. Skiffs dodge the most, brutes never.
 - Missiles and torpedoes can lose their lock, less often at higher levels.
-- Crews adapt to how you usually kill them, and Marge warns you when they do.
-- New refinery charges arrive if none are left and the vault is still shut.
+- Crews adapt to the way you usually kill them, and Marge warns you when they do.
+- New refinery charges show up if none are left and the vault is still shut.
 - `tools/stage.ps1` builds a separate stage copy with its own saves.
 
 ### Changed
-
-- Your shots pass through cargo you're towing, including reactors.
+- Your shots pass through the cargo you're towing, reactors included.
 
 ### Fixed
-
-- Enemy bolts hit the escorted hauler's whole drawn hull, so they no longer
-  pass through its tail and corners.
+- Enemy bolts hit the whole drawn hull of the escorted hauler, so they no longer pass through its tail and corners.
 
 ## [1.0.4] - 2026-11-09
 
-Brings the port in line with the browser game's 1.0.6 and 1.0.7 review fixes.
-Golden traces are re-recorded from browser 1.0.7.
+Catches up with the browser game's 1.0.6 and 1.0.7 review fixes. Golden
+traces re-recorded from browser 1.0.7.
 
 ### Fixed
-
-- Rivals, drones and collectors crashing into rocks no longer earn bounties,
-  grudge or tally. Nor do reactors you didn't set off: one knocked while not
-  towed or thrown, or shot by enemy fire. Wrecked Kessler jaws always count on
-  the kill tally, as in the browser.
-- A blast or torpedo no longer also hits the fragments it just made, so
-  boulders split instead of vanishing.
-- A crab on the hull lets go of the cargo it crawled off, so banking that
-  cargo no longer kills it.
-- The refinery drifts around the carrier instead of possibly towards it.
-- Cargo taken in an arrest counts in the report's Stolen / lost figure.
+- Rivals, drones and collectors crashing into rocks no longer earn bounties, grudge or tally. Neither do reactors you didn't set off (knocked while not towed or thrown, or shot by enemy fire). Wrecked Kessler jaws always count on the kill tally, as in the browser.
+- A blast or torpedo no longer hits the fragments it just created, so boulders split instead of vanishing.
+- A crab on the hull lets go of the cargo it crawled off, so banking that cargo no longer kills it.
+- The refinery drifts around the carrier rather than sometimes toward it.
+- Cargo taken in an arrest counts toward the report's Stolen / lost figure.
 - Contract offers survive a restart instead of being rerolled.
-- A chain step and an ordinary offer with the same target no longer both show
-  as accepted.
-- Paying off the loan in the shop shows a blank report instead of the last
-  shift's figures and replay.
+- A chain step and a normal offer with the same target no longer both show as accepted.
+- Paying off the loan in the shop shows a blank report instead of the last shift's figures and replay.
 - The net and hook prompts show rebound keys.
 - The cuff meter follows the sheriff closest to making the arrest.
 - Night-shift arrows no longer reveal contacts the radar can't see.
@@ -535,127 +335,68 @@ Golden traces are re-recorded from browser 1.0.7.
 ## [1.0.3] - 2026-11-09
 
 ### Fixed
-
-- A career file that can't be read or parsed is copied to `career.bad.json`
-  before a new career can replace it. Saves are flushed to disk before the
-  final rename, so a power cut can't leave an empty file.
-- Save failures now show a warning on screen; the release build has no
-  console, so they used to be invisible.
-- Skipping training is remembered, as finishing it is. After "Replay
-  training", a skip no longer brings training back every shift.
-- Local co-op: the camera frames both tugs and zooms out as they spread
-  apart, as in the browser.
-- Opening Settings from the pause card no longer moves the shift's cargo and
-  clock behind it.
-- An enemy shot at exactly the edge of hearing no longer produces invalid
-  sound samples.
-- A key that is another action's fixed key can't be rebound (it would have
-  triggered both actions), as in the browser.
-- Sound comes back after the output device is lost, such as when a headset
-  is unplugged, and when a device appears after a silent start.
-- SWAT, stun and rogue bolts have their browser sizes and colours.
+- A career file that can't be read or parsed is copied to career.bad.json before a new career replaces it. Saves are flushed to disk before the final rename, so a power cut can't leave an empty file.
+- Save failures show a warning on screen. The release build has no console, so they used to go unnoticed.
+- Skipping training is remembered, just like finishing it. After "Replay training", skipping no longer brings training back every shift.
+- Local co-op: the camera frames both tugs and zooms out as they spread apart, as in the browser.
+- Opening Settings from the pause card no longer moves the shift's cargo and clock in the background.
+- An enemy shot right at the edge of hearing no longer produces invalid sound samples.
+- A key that is another action's fixed key can't be rebound, since it would trigger both actions (same as the browser).
+- Sound recovers when the output device is lost (a headset unplugged, say) and when a device appears after starting silent.
+- SWAT, stun and rogue bolts use the browser's sizes and colours.
 
 ### Added
-
-- Gamepad rumble on hull hits, reactor blasts and being netted, as in the
-  browser.
+- Gamepad rumble on hull hits, reactor blasts and being netted, as in the browser.
 
 ### Changed
-
-- `--smoke` exits non-zero unless every screen was captured and the career
-  reached disk at shift 2; `tools/package.ps1` stops a smoke run that hangs.
-- The minimum Rust version is corrected to 1.89, which the locked `uuid`
-  dependency already required.
-- `tools/package.ps1` builds with `--locked`, so a release ships exactly the
-  dependency versions in `Cargo.lock`.
+- `--smoke` exits non-zero unless every screen was captured and the career reached disk at shift 2. `tools/package.ps1` stops a smoke run that hangs.
+- The minimum Rust version is corrected to 1.89, which the locked `uuid` dependency already needed.
+- `tools/package.ps1` builds with `--locked`, so releases ship exactly the dependency versions in Cargo.lock.
 
 ### Removed
-
-- The short spoken variants of radio lines, which were never read out; Marge
-  reads the full line, as the browser does.
-- `spikes/m0-spike`, the Milestone 0 technology test. It remains in git history.
+- Short spoken versions of radio lines, which were never used. Marge reads the full line, as in the browser.
+- `spikes/m0-spike`, the Milestone 0 technology test. It's still in the git history.
 
 ## [1.0.2] - 2026-11-08
 
 ### Changed
-
-- Clippy findings fixed so the lint can be enforced: a redundant match guard
-  in the physics separation step, a test helper that now uses
-  `slice::contains`, and a collapsed `if` in the exhaust particle emitter.
-  Two intentional cases are documented with `#[allow]` instead: `Rng::next`
-  keeps the name that mirrors the browser's `Math.random()`, and the spark
-  constructor keeps its eight particle fields as arguments. No change to
-  gameplay, the random sequence, saves, controls or the package layout.
-- `spikes/m0-spike` is no longer a default workspace member (plain
-  `cargo build` and `cargo test` skip it; `cargo run -p m0-spike` still works).
+- Fixed the clippy warnings so the lint can be enforced: a redundant match guard in physics separation, a test helper switched to `slice::contains`, and a collapsed `if` in the exhaust particles. Two deliberate cases are marked `#[allow]` instead: `Rng::next` keeps its name to mirror the browser's `Math.random()`, and the spark constructor keeps its eight particle arguments. No change to gameplay, the random sequence, saves, controls or the package layout.
+- `spikes/m0-spike` is no longer a default workspace member, so plain `cargo build` and `cargo test` skip it (`cargo run -p m0-spike` still works).
 
 ### Repository
-
-- Added `native/scripts/check.sh` (sanitization, version sync, rustfmt, clippy,
-  tests), a pre-commit hook, and CI workflows for the simulation (Ubuntu) and
-  the game (Windows). Not part of the shipped exe.
+- Added `native/scripts/check.sh` (sanitization, version sync, rustfmt, clippy, tests), a pre-commit hook, and CI for the simulation (Ubuntu) and the game (Windows). None of this ships in the exe.
 
 ## [1.0.1] - 2026-11-07
 
 ### Fixed
-
-- Every screen drew upside down: menus, HUD and the field were mirrored top
-  to bottom, so text was unreadable, mouse clicks landed on the mirror image
-  of a button, and turning looked reversed. macroquad 0.4's
-  `Camera2D::from_display_rect` points Y up; all three cameras now use
-  `display_camera()`, which points Y down as the browser canvas does.
-- Pausing did nothing: P, Esc and the gamepad's Start opened the pause card
-  and closed it again in the same frame.
-- The `--smoke` screenshots were saved upside down once the window drew
-  upright (they had flipped the image to undo the mirrored cameras).
+- Everything drew upside down. Menus, the HUD and the field were flipped top to bottom, so text was unreadable, clicks hit the mirror image of a button, and turning looked reversed. macroquad 0.4's `Camera2D::from_display_rect` points Y up, so all three cameras now use `display_camera()`, which points Y down like the browser canvas.
+- Pausing did nothing: P, Esc and Start opened the pause card and closed it again in the same frame.
+- `--smoke` screenshots came out upside down once the window drew the right way up (they had been flipped to undo the mirrored cameras).
 
 No change to saves, controls or the package layout.
 
 ## [1.0.0] - 2026-11-07
 
-First release: every system of the browser game ported, packaged as
-`ClaimJumpers-1.0.0-windows-x64.zip` by `tools/package.ps1`. See the
-README for the full feature list.
+First release, with every system of the browser game ported, packaged as
+`ClaimJumpers-1.0.0-windows-x64.zip` by `tools/package.ps1`. The README has
+the full feature list.
 
-The 1.0.0 zip handed out on this date has the bugs fixed in 1.0.1. The
-fixes reached the repository before the commit that recorded 1.0.0
-(883d7bf), so a build of that commit already has them but still reports
-1.0.0; 1.0.1 is the first version number that guarantees them.
+The 1.0.0 zip handed out that day still has the bugs fixed in 1.0.1. Those
+fixes landed before the commit that recorded 1.0.0 (883d7bf), so a build of
+that commit already includes them but still says 1.0.0. 1.0.1 is the first
+version number guaranteed to have them.
 
 ## Development milestones (before 1.0.0)
 
-Per-milestone checks recorded while the port was built, moved here from the README in 1.0.2.
-All runs were on Windows 11 Pro (build 26300).
+Checks recorded for each milestone while the port was built, moved here from
+the README in 1.0.2. Every run was a release build on Windows 11 Pro
+(build 26300), started from an unrelated folder.
 
-- Windows 11 Pro (build 26300), release build run from an unrelated
-  folder: all M0 checks passed (see the Milestone 0 report in the commit
-  history).
-- Windows 11 Pro (build 26300): the M1 release build's `--smoke` run, from
-  an unrelated folder, exits cleanly with the scripted tow in place.
-- Windows 11 Pro (build 26300): the M2 release build's `--smoke` run, from
-  an unrelated folder, exits cleanly with the cannon firing, a rival
-  shooting back, the sound stream open and the screenshot as expected.
-- Windows 11 Pro (build 26300): the M3 release build's `--smoke` tour, from
-  an unrelated folder, exits cleanly: the shift settles (1,840 earned, 800
-  installment, 1,040 in the wallet), the shop buys and mounts a part, the
-  career is saved and reloaded by the title, and all six screenshots look
-  as expected.
-- Windows 11 Pro (build 26300): the M4 release build's `--smoke` tour, from
-  an unrelated folder, exits cleanly with the law pursuing, a collector,
-  the refinery's drones, a mining crew, missiles and sentries all live,
-  and all six screenshots look as expected.
-- Windows 11 Pro (build 26300): the M5 part 1 release build's `--smoke`
-  tour, from an unrelated folder, exits cleanly with an ion storm, a boss
-  crew, an escorted hauler, a sealed hold and its keycard and a contract
-  live; the report settles the missed contract; the shop accepts a
-  contract, hires a co-pilot and buys a truce; and all eight screenshots
-  look as expected.
-- Windows 11 Pro (build 26300): the M5 part 2 release build's `--smoke`
-  tour, from an unrelated folder, exits cleanly with training running
-  (it reached step 3 of 5), Marge's radio panel showing her lines, the
-  speech synthesizer found (3 English voices; speech is off for the check
-  run), and the report replaying a highlight.
-- Windows 11 Pro (build 26300): the M5 part 3 release build's `--smoke`
-  tour, from an unrelated folder, exits cleanly through the new title
-  menu, settings, records, the leaderboard (with the tour's own shift on
-  it) and the sound test, and all twelve screenshots look as expected.
+- M0: all checks passed (see the Milestone 0 report in the commit history).
+- M1: `--smoke` exits cleanly with the scripted tow in place.
+- M2: `--smoke` exits cleanly with the cannon firing, a rival shooting back, the sound stream open and the screenshot as expected.
+- M3: the `--smoke` tour exits cleanly. The shift settles (1,840 earned, 800 installment, 1,040 in the wallet), the shop buys and mounts a part, the title saves and reloads the career, and all six screenshots look right.
+- M4: the `--smoke` tour exits cleanly with the law in pursuit, a collector, the refinery's drones, a mining crew, missiles and sentries all active, and all six screenshots look right.
+- M5 part 1: the `--smoke` tour exits cleanly with an ion storm, a boss crew, an escorted hauler, a sealed hold and its keycard, and a contract all active. The report settles the missed contract, the shop accepts a contract, hires a co-pilot and buys a truce, and all eight screenshots look right.
+- M5 part 2: the `--smoke` tour exits cleanly with training running (it reached step 3 of 5), Marge's lines on the radio panel, the speech synthesizer found (3 English voices, with speech off for the check), and the report replaying a highlight.
+- M5 part 3: the `--smoke` tour exits cleanly through the new title menu, settings, records, the leaderboard (with the tour's own shift on it) and the sound test, and all twelve screenshots look right.

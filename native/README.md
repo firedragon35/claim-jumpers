@@ -4,6 +4,9 @@ A native Rust port of Claim Jumpers for Windows 10 and 11. This is the lead
 version of the game. The browser game (`claim-jumpers-game`) it was ported
 from is a frozen baseline at its 1.0.7, and new gameplay is built here first.
 
+**Current phase: playtesting and refinement.** The features are in. Work
+now goes into balance, feel, bug fixes and polish from play-test feedback.
+
 **Status: release 1.17.0, online co-op and opt-in PvP for up to 20 pilots (all systems ported, packaged for Windows; history in [CHANGELOG.md](CHANGELOG.md)).** A career of
 five-minute shifts: fly the tug, tow and fight for salvage, and bank it at
 the carrier, against rival crews, debt collectors who net and tow the tug

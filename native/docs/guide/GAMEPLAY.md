@@ -20,8 +20,9 @@ the tug, and go out for the next shift.
 7. [The shift report and the loan](#the-shift-report-and-the-loan)
 8. [Outfitting between shifts](#outfitting-between-shifts)
 9. [Belts and conditions](#belts-and-conditions)
-10. [Playing with others](#playing-with-others)
-11. [Tips](#tips)
+10. [Playing with others](#playing-with-others): co-op, hosting, joining
+    and PvP
+11. [Strategy tips](#strategy-tips)
 
 ---
 
@@ -283,26 +284,188 @@ better belts need a bigger tug to get a permit.
 
 ## Playing with others
 
-- **Local co-op.** Turn it on in Settings. Player 2 flies a partner tug from
-  the numpad or a second gamepad, and can **latch** onto the tail of your
-  cable (Enter, or Y on the gamepad) to haul with you.
-- **Online.** Choose **Host server** or **Join remote host**. Up to 20
-  pilots can share a shift, each with their own career on that server.
-  Between shifts everyone votes on the next belt. **PvP** is opt-in: the
-  host has to allow it, and each pilot arms it in the bay with **B**. The
-  player README (`README.txt` in the release) covers LAN play, port
-  forwarding and Tailscale.
+### Local co-op
 
-## Tips
+Turn on **Local co-op (P2)** in Settings. Player 2 flies a partner tug from
+the numpad (8 thrust, 4 / 6 turn, 5 brake, 0 fire) or from a second
+gamepad. Player 2 can **latch** onto the tail of your cable (Enter on the
+numpad, or Y on the gamepad) and pull, so the two of you haul one load
+together.
 
-- **Bank often.** Cargo on the line is cargo a rival can steal. A few quick
-  runs beat one big haul that never gets home.
-- **Watch the winch meter.** Overloading makes the tug sluggish, and heavy
-  trains swing into rocks.
-- **Treat reactors gently,** or throw them at a rival on purpose.
-- **Keep a cushion for the installment.** It grows every shift, and Marge
-  is right about not spending all of it.
-- **Accept contracts that fit your plan,** like a banking target on an ore
-  boom belt.
-- **Stay clean on law belts.** Wanted stars snowball. Fly to the bay to
-  shake them.
+### Online: hosting a server
+
+Up to 20 pilots can share one shift. Everyone needs the same version of the
+game.
+
+1. On the opening screen, set up the server with the buttons under
+   **Host server**:
+   - **Host for up to N players** cycles 2, 4, 8, 12, 16 and 20 pilots. It
+     starts at 4. The field gets bigger for more pilots.
+   - **Careers** sets the difficulty of every career on the server: Relaxed,
+     Standard (the default) or Hard.
+   - **PvP** is **Off** by default. Turn it on to let pilots fight each
+     other (see [PvP](#pvp)).
+2. Press **Host server**. Your game runs the server and joins it, and the
+   address other players need is shown on screen.
+3. The first time you host, Windows Firewall may ask whether to allow
+   Claim Jumpers. Allow it on **private networks**, or nobody else can
+   connect.
+
+**Default port: UDP 47820.** The server built into the game always uses
+this port, on every network adapter. Only the separate headless server can
+use another port:
+
+```bash
+cj-server --port 47820 --players 8 --mode standard
+```
+
+The headless server also takes `--pvp` to allow PvP and `--careers DIR` to
+choose where careers are saved.
+
+Where players connect from decides what the host needs to do:
+
+| Players are… | What to do |
+|---|---|
+| On the same home network | Nothing more. Give them the address your game shows (it looks like `192.168.x.x`). |
+| Over the internet | Forward **UDP port 47820** on your router to your PC and give out your public address. Some internet providers block this (carrier-grade NAT). |
+| Over the internet, and port forwarding doesn't work | Install [Tailscale](https://tailscale.com) on every PC, put them on the same tailnet, and give out your Tailscale address (it looks like `100.x.y.z`). |
+
+Hosting over the internet uses your upload speed: about 0.6 Mbit/s for each
+pilot, and up to 1.5 Mbit/s each while everyone is in one place, such as the
+bay. That's about 3 Mbit/s for 4 pilots and 8 Mbit/s for 8. If the shift
+stutters for everyone at once, host fewer pilots.
+
+The server runs inside your game, so the session ends when you leave. To
+end it, open the pause card and press **Stop server** twice. It settles the
+current shift first, so everyone keeps what they banked.
+
+### Online: joining a server
+
+1. Choose **Join remote host**.
+2. Type the host's address and press **Find server**. Ctrl+V pastes. For a
+   headless server on a different port, type `address:port`. The **Recent**
+   list keeps the last five servers you joined.
+3. The game shows how many pilots are connected, or that the server is
+   full. Press **Join**.
+
+A player who joins in a shift's last minute waits in the lobby for the next
+shift. To leave, open the pause card and press **Leave server** twice.
+
+### Online: how a shared shift works
+
+- **Separate careers.** Each server keeps its own career for you, separate
+  from your single-player career, so you start fresh on every server.
+- **Between shifts** everyone gets a break to read their report, shop, and
+  vote on the next belt. Only belts that every pilot's tug can fly count.
+  The next shift starts when everyone is ready, or after 90 seconds.
+- **Online keys.** **Tab** shows every pilot with this shift's credits,
+  kills and deaths. **Enter** opens the chat: type a message and press Enter
+  to send it, or Esc to cancel.
+- **The shift doesn't pause.** The pause card is a menu, and the shift keeps
+  running behind it.
+- **Without PvP** other pilots' shots and rams stop at your tug, but never
+  hurt it.
+
+### PvP
+
+PvP only works on servers whose host allows it, and every pilot starts each
+shift **Protected**.
+
+- **Arming.** Fly into the bay and press **B** (D-pad up). After 10 seconds
+  of arming you're PvP, and everyone sees a red ring and a PVP tag on your
+  tug.
+- **Who can hurt whom.** A PvP pilot can hurt any tug. Anyone they hurt can
+  fire back at them for 30 seconds after each attack. Ramming only does
+  damage when both tugs are PvP.
+- **Combat lock.** Attacking, or being hit while PvP, locks you in combat
+  for 30 seconds. You can't switch PvP off until it ends, and if you leave
+  the game your tug stays in the field until then.
+- **The law.** On belts with law, the first hit in a fight earns the
+  attacker a wanted star, and wrecking the tug earns two more. Firing back
+  earns none.
+- **Loot.** For 20 seconds, only its owner and PvP pilots can pick up a
+  wrecked tug's cargo. PvP wrecks pay no bounty.
+
+### Online safety
+
+- **Join only hosts you trust.** `mp_id.txt` in your save folder is how
+  servers recognise you, so keep it to yourself. Your game proves it holds
+  that identity without sending it. But the first time you join a server, it
+  gives the server a fingerprint of the identity, the same for every server.
+  A host running a modified copy of the game could keep it and play as you,
+  with your careers, on other servers you use.
+- **The connection isn't encrypted,** so don't share anything private in
+  the chat.
+
+## Strategy tips
+
+### Making money
+
+- **Bank often.** Anything on your cable can be stolen, and anything still
+  on it when the clock runs out isn't banked. Several quick runs beat one
+  big haul that never gets home.
+- **Go for value per tonne.** You can tow 16 t (26 t with the reinforced
+  winch). An engine weighs 7 t, while a flight recorder pays 950 cr for
+  half a tonne. Ore and ingots are compact earners.
+- **Throw cargo into the bay.** A piece that enters the bay fast pays 15%
+  more. Line up, build some speed and cut it loose toward the ring.
+- **Be first into a wreck.** Cutting it open stakes your claim: what spills
+  out is yours alone for 30 seconds and sells for 10% more.
+- **Handle fragile cargo gently.** Sealed pods and flight recorders lose
+  15% of their value in a hard knock.
+- **Gamble on contraband with care.** It pays double, but a patrol that
+  spots it on your line gives you a wanted star. It's safest on the lawless
+  Frontier or when no patrol is nearby.
+- **Pick belts by condition.** A night shift pays 30% more if you can work
+  with short-range radar. An ore boom makes ore and ingots sell for 50%
+  more. A salvage glut adds three wrecks but cuts prices by 15%.
+
+### Staying alive
+
+- **Park at the carrier to heal.** Near the bay, your hull repairs and your
+  shield recharges faster. Reaching the bay also clears your wanted stars.
+- **Respect reactors.** A hard knock primes them, and a cracked core blows
+  easily. Drop one with **Q** if it starts to go, or throw it at a rival on
+  purpose.
+- **Use the rocks.** With nothing in hook range, the hook key anchors your
+  line to a big rock, so you can swing round it or brake hard against it.
+- **Watch your heat.** The cannon and side thrusters share a heat sink, and
+  chained afterburner bursts overheat the engine.
+- **Wiggle out of nets.** A debt collector's net tears as you wiggle. Auto-
+  defense missiles shoot nets down before they land.
+- **Don't let a wreck cost you twice.** It takes a deductible (500 cr on
+  Standard) from the shift, and any sentries you carry go rogue.
+
+### Fighting
+
+- **Cargo is your best weapon.** A heavy piece swung hard and cut loose hits
+  harder than the cannon.
+- **Mix up how you kill.** Rival crews adapt to whichever method you use
+  most: the cannon, cargo smashes or missiles.
+- **Read the tags.** Greedy crews go for the richest cargo, so use it as
+  bait. Skittish crews bolt when hit, so one shot can drive them off.
+- **Use missile EMPs.** Their blasts knock out the engines of hostiles
+  caught in them for 10 seconds, which leaves rivals drifting. Collectors and
+  the law are only affected once you've provoked them.
+- **Don't shoot debt collectors.** Destroying one earns a wanted star and
+  hurts your standing with the bank.
+
+### Managing the career
+
+- **Keep a cushion.** The installment grows by 300 cr every shift (on
+  Standard), and the bank only lets you go overdrawn by a third of what you
+  owe before it repossesses the tug.
+- **Pay extra when you can.** Every 1,000 cr you pay off on top of the
+  installment raises your standing with the bank, which improves the
+  installment rate.
+- **Insure risky shifts.** Insurance covers 60% of the towed cargo you lose,
+  up to 5,000 cr. It's worth it before a Frontier run or a rival surge.
+- **Buy a truce when the crews get angry.** It drops their grudge and raises
+  your rival standing by 10. A shift with no rival kills raises it too.
+- **Take contracts that fit the belt,** like a banking target on an ore boom
+  or "scrap 3 rivals" on a rival surge.
+- **Upgrade the winch and engines early.** More tonnage and more thrust raise
+  every later haul. Armor plating adds hull but also 1.5 t, which makes the
+  tug sluggish.
+- **Choose crew for your style.** A broker adds 10% to every sale, a rigger
+  helps if you tow a lot, and a fixer suits a career at war with the crews.
