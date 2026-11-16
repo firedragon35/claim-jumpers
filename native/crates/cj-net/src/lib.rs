@@ -1,4 +1,4 @@
-//! The Claim Jumpers network protocol (CJN-15): the messages a client and a
+//! The Claim Jumpers network protocol: the messages a client and a
 //! server exchange, their limits and validation, and snapshots of the world
 //! as one pilot may see it.
 //!

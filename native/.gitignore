@@ -4,8 +4,3 @@
 # Release packages (tools/package.ps1)
 /dist/
 
-# Stage builds and their test saves (tools/stage.ps1)
-/stage/
-
-# Local-only terms that must never appear in the repo (see scripts/check.sh); never commit
-/.sanitize-deny.local

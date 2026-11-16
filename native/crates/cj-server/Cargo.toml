@@ -1,6 +1,6 @@
 [package]
 name = "cj-server"
-# Kept equal to cj-game's version (check.sh verifies it): a client and a
+# Kept equal to cj-game's version: a client and a
 # server must run the same game version to play together.
 version = "1.17.1"
 description = "Claim Jumpers authoritative multiplayer server: the session library and a headless binary."

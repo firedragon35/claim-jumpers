@@ -1,4 +1,4 @@
-//! A client's side of the protocol (CJN-16), with no window or socket: the
+//! A client's side of the protocol, with no window or socket: the
 //! game wraps it in a renet transport, and the server's tests drive it
 //! directly.
 //!

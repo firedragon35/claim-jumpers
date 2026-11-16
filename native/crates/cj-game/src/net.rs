@@ -1,8 +1,8 @@
-//! Playing on a server over UDP (CJN-16): renet's netcode client carrying a
+//! Playing on a server over UDP: renet's netcode client carrying a
 //! cj-net client session.
 //!
 //! For now the way in is the `--join HOST:PORT` command-line option; the
-//! Host and Join screens come with player hosting (CJN-19). The transport
+//! Host and Join screens come with player hosting. The transport
 //! is renet's unsecure netcode, so traffic is not encrypted; the player
 //! secret itself never crosses it (see `cj_net::auth`).
 //!

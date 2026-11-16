@@ -631,7 +631,7 @@ impl Post {
 /// Run `mat` over all of `src`, writing every pixel of `dst`. Uniforms
 /// are captured per draw call, so the next pass may change them freely.
 fn pass(dst: &RenderTarget, mat: &Material, src: &Texture2D) {
-    // The one deliberate use of from_display_rect (see CLAUDE.md). Every
+    // The one deliberate use of from_display_rect (every other draw goes through draw::display_camera). Every
     // bloom level must line up with the scene when composited, so each
     // pass has to keep rows in the same order; this camera alone flips a
     // render target's rows, so the draw flips them back.

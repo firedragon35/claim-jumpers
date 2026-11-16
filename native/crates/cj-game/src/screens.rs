@@ -641,49 +641,6 @@ fn copyright(look: &Look, u: &Ui, r: Rect) {
     );
 }
 
-/// Shown instead of the game once the play-test cut-off has passed (see
-/// `expiry`). Returns true when the player presses Quit.
-pub fn expired(look: &Look, u: &mut Ui, input: &MenuInput, view: (f32, f32), dpi: f32) -> bool {
-    let (w, h) = (900.0, 330.0);
-    u.begin(input, (w, h), view, dpi);
-    let r = Rect::new(20.0, 20.0, 860.0, 290.0);
-    card(r);
-    copyright(look, u, r);
-    let (x, mut y) = (r.x + 36.0, r.y + 34.0);
-    label(look, u, "Play-test build", x, y, c(col::MUTED));
-    y += 22.0;
-    text(
-        look,
-        u,
-        "Claim Jumpers",
-        x,
-        y,
-        64.0,
-        Which::Display,
-        c(col::HAZARD),
-    );
-    y += 72.0;
-    // The saves are never touched here, so a newer build picks them up.
-    let why = format!(
-        "This play-test build stopped working on {}. Ask for a newer build to keep playing. Your career and settings are kept for it.",
-        crate::expiry::CUT_OFF_TEXT
-    );
-    y += paragraph(
-        look,
-        u,
-        &why,
-        x,
-        y,
-        760.0,
-        18.0,
-        Which::Body,
-        c(col::TEXT),
-        1.45,
-    ) + 20.0;
-    u.button_at(look, "quit", x, y, Style::Primary, "Quit", true)
-        .0
-}
-
 /// What the Join screen shows besides the address being typed.
 pub struct JoinView<'a> {
     pub address: &'a str,

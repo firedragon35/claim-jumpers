@@ -227,7 +227,7 @@ impl World {
     }
 
     /// Advances only pilot `p`'s tug and the cargo on its cable one step,
-    /// for a client predicting its own tug between snapshots (CJN-16): the
+    /// for a client predicting its own tug between snapshots: the
     /// tug's own flight, its cargo's motion, its cable and its contacts.
     /// Contacts push but deal no damage, and nothing else in the field is
     /// simulated; the server stays the authority and the next snapshot

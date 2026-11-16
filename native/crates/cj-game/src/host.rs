@@ -1,4 +1,4 @@
-//! Hosting a server inside the game (CJN-19).
+//! Hosting a server inside the game.
 //!
 //! The server runs on its own thread with the same loop as the headless
 //! `cj-server`, listening on every IPv4 interface on port 47820, and the

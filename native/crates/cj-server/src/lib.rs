@@ -1,4 +1,4 @@
-//! The Claim Jumpers authoritative server (CJN-15).
+//! The Claim Jumpers authoritative server.
 //!
 //! A [`Server`] owns the one shared [`World`] and decides everything in it.
 //! Clients only send their held controls and cable commands; the server

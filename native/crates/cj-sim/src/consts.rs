@@ -496,7 +496,7 @@ pub const WRECK_REFILL_CAP: usize = 6;
 
 /// Each pilot beyond the first adds this share of a solo field's salvage,
 /// refills and rival arrivals (see `World::crowd`). A first guess, to be
-/// judged in the three-player play test (CJN-17).
+/// judged in the three-player play test.
 pub const CROWD_SHARE: f64 = 0.5;
 
 /* Hit feedback (src/js/10d-presentation.js): real seconds of freeze or slow

@@ -1,5 +1,5 @@
 //! What only an online shift draws: each pilot's tug colour, and the
-//! player list held up with Tab (CJN-17).
+//! player list held up with Tab.
 
 use crate::look::{col, hex, rgba, text_left, text_width, Look};
 use macroquad::prelude::*;

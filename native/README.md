@@ -62,20 +62,10 @@ gamepad (typing the pilot name needs a keyboard).
 |---|---|
 | `crates/cj-sim` | The gameplay simulation: pure Rust, no window or audio, deterministic. |
 | `crates/cj-game` | The Windows game (`claim-jumpers.exe`): window, rendering, input, sound, HUD, menus and saves. |
-| `tools/golden` | Exported the original traces from the browser game (kept for reference). |
+| `crates/cj-net` | The network protocol and per-pilot snapshots. |
+| `crates/cj-server` | The authoritative multiplayer server, as a library and the headless `cj-server` binary. |
 
-## Stage build
-
-For trying a change before it ships, from the `native` folder:
-
-```bash
-powershell -ExecutionPolicy Bypass -File tools/stage.ps1
-```
-
-It builds the working tree, runs the `--smoke` check and refreshes `stage\`.
-Run `stage\play-stage.cmd` to play it: the window title says `[STAGE]`, and
-saves go in `stage\saves`, so it never touches your real career and test
-careers survive rebuilds. `stage\BUILD.txt` records what was built.
+How to play is in the [gameplay guide](docs/guide/GAMEPLAY.md).
 
 ## Stack
 
@@ -138,7 +128,7 @@ IPv6 on Windows needs a new dependency.
 
 A host's upload carries every player's snapshots: about 0.55 Mbit/s per
 player with the pilots spread out, and up to 1.5 Mbit/s each with all of
-them at the bay (measured on a quiet field; see `docs/multiplayer-spike.md`).
+them at the bay (measured on a quiet field).
 
 Testing several players on one PC: give each extra copy its own data folder,
 or the server sees one player twice, and the copy that joins second takes
@@ -326,9 +316,8 @@ cargo test
   latches onto the cable's tail and pulls) and checks that a cargo smash
   raises hit-stop, a highlight and the achievement.
 
-Marge's lines are generated from the browser's tables by
-`node tools/gen_lines.cjs .. <claim-jumpers-game checkout>` (run from `native`),
-which writes `crates/cj-game/src/lines.rs`.
+Marge's lines (`crates/cj-game/src/lines.rs`) were generated from the
+browser game's tables.
 
 The golden traces began as recordings of the browser game. This code now
 leads, so after a deliberate change re-record them from the simulation and
@@ -336,15 +325,6 @@ check that only the expected ones moved:
 
 ```bash
 UPDATE_GOLDEN=1 cargo test -p cj-sim --test golden
-```
-
-To re-record the traces and career answers from the browser game instead
-(needs Docker and a checkout of `claim-jumpers-game` with `claim-jumpers.html`
-built; run from this repository's root, with `CJ_BROWSER_REPO` set to that
-checkout's path):
-
-```bash
-docker run --rm -v "$PWD:/work" -v "$CJ_BROWSER_REPO:/browser" -e CJ_BROWSER_REPO=/browser -v /browser/tests/node_modules -w /browser/tests mcr.microsoft.com/playwright:v1.65.0-noble sh -c "npm ci --no-audit --no-fund && node /work/native/tools/golden/export.mjs && node /work/native/tools/golden/career.mjs"
 ```
 
 ## Differences from the browser's 1.0.7 baseline
@@ -423,26 +403,12 @@ milestones".
   Marge's voice.
 - **Windows 10: not yet verified.**
 
-## Play-test cut-off
-
-Builds stop running on 1 June 2027 at 00:00 UTC, because they go to play testers. Past that date
-the game shows only a screen saying the build has expired (no sound, no saves read or written),
-and `--smoke` fails with exit code 1. To move the date, change `CUT_OFF_UNIX` and `CUT_OFF_TEXT`
-in `crates/cj-game/src/expiry.rs` and the date its test checks.
-
-The date is judged by network time: at start the game sends one SNTP request (UDP port 123) to
-`time.google.com`, so setting the PC's clock back doesn't help. When no answer comes within 1.5 s
-(offline, a LAN-only party, port 123 blocked), it uses the PC's clock instead, so offline play
-keeps working; that is the one way past the cut-off. It is a reminder to update, not copy
-protection. `cargo test -p cj-game -- --ignored network` asks the real server. The headless
-`cj-server` has no cut-off.
-
 ## License
 
 Copyright © 2026, 2027 Neil Bruggeman. All rights reserved. The notice is set once in
 `crates/cj-game/build.rs`, which shows it on the game's opening screen and in the exe's
 Details tab.
 
-No license file is present and no license is granted for the code in this repository. It is a
-private repository. The bundled fonts keep their own SIL Open Font License terms (see
-`licenses/` in the release package).
+The source is public for GitHub Game Off 2026, so you can read and build it, but no
+license is granted to reuse it. The bundled fonts keep their own SIL Open Font License
+terms (see `assets/fonts/licenses/`, and `licenses/` in the release package).

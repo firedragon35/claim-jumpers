@@ -1,6 +1,6 @@
 //! Marge's radio lines, generated from the browser's tables
 //! (src/js/04-dispatcher-radio.js and the fixed lines it passes at call
-//! sites) by native/tools/gen_lines.cjs. Do not edit by hand.
+//! sites) by a generator script. Do not edit by hand.
 
 use cj_sim::events::Radio;
 

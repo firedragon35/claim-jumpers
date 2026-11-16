@@ -2,8 +2,7 @@
 
 All notable changes to the native Windows port of Claim Jumpers. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and the port uses [Semantic Versioning](https://semver.org/) as defined in
-[CLAUDE.md](CLAUDE.md#versioning).
+and the port uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 

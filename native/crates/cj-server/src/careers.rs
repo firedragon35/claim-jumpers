@@ -1,4 +1,4 @@
-//! Where a server keeps its players' careers (CJN-18): one file per player
+//! Where a server keeps its players' careers: one file per player
 //! in the server's own careers folder, never beside a single-player
 //! `career.json`, so a player starts fresh on every server and their own
 //! career is never touched.
